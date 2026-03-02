@@ -1,0 +1,1 @@
+import{j as e}from"./vendor-motion-_XdJ9pBm.js";const m={sm:"p-4",md:"p-5",lg:"p-6"},n=(...s)=>s.filter(Boolean).join(" "),c=({as:s="div",padding:a="md",className:o,children:r,...t})=>e.jsx(s,{className:n("card-surface",m[a],o),...t,children:r});export{c as C};
