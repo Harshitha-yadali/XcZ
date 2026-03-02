@@ -183,7 +183,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   try {
-    const offset = (page - 1) * pageSize;
+    const safePage = Number.isFinite(page) ? Math.max(1, page) : 1;
+    const offset = (safePage - 1) * pageSize;
     const result = await jobsService.getJobListings(newFilters, pageSize, offset);
 
     setJobs(result.jobs);
@@ -191,9 +192,9 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     setHasMore(result.hasMore);
     setTotalPages(result.totalPages);
     setTotalCompanies(result.totalCompanies);
-    setCurrentPage(page);
+    setCurrentPage(safePage);
 
-    setSearchParams({ page: page.toString() });
+    setSearchParams({ page: safePage.toString() });
 
     if (result.jobs.length > 0) {
       const jobPostings = result.jobs.slice(0, 10).map((j: JobListing) => ({
@@ -486,7 +487,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
                 </div>
               </div>
               <GradientButton
-                onClick={() => loadJobs(0)}
+                onClick={() => loadJobs(currentPage || 1)}
                 variant="secondary"
                 size="sm"
                 icon={RefreshCw}

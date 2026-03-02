@@ -17,6 +17,8 @@ const DEFAULT_SUPABASE_URL = 'https://rixmudvtbfkjpwjoefon.supabase.co';
 const RAW_SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
 const RAW_SUPABASE_PUBLIC_URL = (import.meta.env.VITE_SUPABASE_PUBLIC_URL || '').trim();
 const RAW_SUPABASE_DIRECT_URL = (import.meta.env.VITE_SUPABASE_DIRECT_URL || '').trim();
+const RAW_ALLOW_DIRECT_SUPABASE_IN_PROD = (import.meta.env.VITE_ALLOW_DIRECT_SUPABASE_IN_PROD || '').trim().toLowerCase();
+const ALLOW_DIRECT_SUPABASE_IN_PROD = ['1', 'true', 'yes'].includes(RAW_ALLOW_DIRECT_SUPABASE_IN_PROD);
 const normalizeUrl = (url: string): string => url.trim().replace(/\/+$/, '');
 const isValidAbsoluteUrl = (url: string): boolean => {
   try {
@@ -58,7 +60,24 @@ export const SUPABASE_PUBLIC_URL =
   SUPABASE_DIRECT_URL;
 export const SUPABASE_URL = SUPABASE_PUBLIC_URL;
 export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-export const SUPABASE_FALLBACK_URL = SUPABASE_PUBLIC_URL === SUPABASE_DIRECT_URL ? '' : SUPABASE_DIRECT_URL;
+const IS_SUPABASE_PROXY_ACTIVE = !isSupabaseHostedUrl(SUPABASE_PUBLIC_URL);
+const IS_PRODUCTION_BUILD = import.meta.env.PROD;
+const SHOULD_ENABLE_DIRECT_SUPABASE_FALLBACK = !IS_PRODUCTION_BUILD || ALLOW_DIRECT_SUPABASE_IN_PROD;
+export const SUPABASE_FALLBACK_URL =
+  SHOULD_ENABLE_DIRECT_SUPABASE_FALLBACK && SUPABASE_PUBLIC_URL !== SUPABASE_DIRECT_URL
+    ? SUPABASE_DIRECT_URL
+    : '';
+
+if (IS_PRODUCTION_BUILD && !IS_SUPABASE_PROXY_ACTIVE && !ALLOW_DIRECT_SUPABASE_IN_PROD) {
+  const message =
+    'Supabase proxy route is required in production. Configure VITE_SUPABASE_PUBLIC_URL with your Worker/custom domain.';
+  console.error(message, {
+    configuredPublicUrl: RAW_SUPABASE_PUBLIC_URL || '(missing)',
+    configuredSupabaseUrl: RAW_SUPABASE_URL || '(missing)',
+    resolvedPublicUrl: SUPABASE_PUBLIC_URL,
+  });
+  throw new Error(message);
+}
 
 // ======================
 // RAZORPAY (Frontend - Public Key Only)
