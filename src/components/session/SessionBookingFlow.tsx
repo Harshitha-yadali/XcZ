@@ -23,7 +23,7 @@ export const SessionBookingFlow: React.FC = () => {
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate('/session');
+      navigate('/session', { state: { promptLogin: true, redirectTo: '/session/book' } });
       return;
     }
     const load = async () => {
@@ -36,7 +36,7 @@ export const SessionBookingFlow: React.FC = () => {
       setLoading(false);
     };
     if (isAuthenticated) load();
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, navigate]);
 
   if (authLoading || loading) {
     return (

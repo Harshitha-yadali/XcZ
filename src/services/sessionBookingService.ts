@@ -51,12 +51,11 @@ class SessionBookingService {
 
     if (!service) return [];
 
-    const totalSlots = (service.time_slots as string[]).length;
     const maxSlots = service.max_slots_per_day;
 
     const { data: slots, error } = await supabase
       .from('session_slots')
-      .select('slot_date, status')
+      .select('slot_date, status, time_slot')
       .eq('service_id', serviceId)
       .gte('slot_date', startStr)
       .lte('slot_date', endStr);
@@ -66,28 +65,35 @@ class SessionBookingService {
       return [];
     }
 
-    const bookedByDate: Record<string, number> = {};
-    const blockedByDate: Record<string, number> = {};
+    const slotsByDate: Record<string, SessionSlot[]> = {};
     (slots || []).forEach((slot) => {
-      if (slot.status === 'booked') {
-        bookedByDate[slot.slot_date] = (bookedByDate[slot.slot_date] || 0) + 1;
-      } else if (slot.status === 'blocked') {
-        blockedByDate[slot.slot_date] = (blockedByDate[slot.slot_date] || 0) + 1;
-      }
+      if (!slotsByDate[slot.slot_date]) slotsByDate[slot.slot_date] = [];
+      slotsByDate[slot.slot_date].push(slot as SessionSlot);
     });
 
     const result: DateAvailability[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const todayStr = this.getLocalDateString(now);
 
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      if (d < today) continue;
+      const dateStr = this.getLocalDateString(d);
+      if (dateStr < todayStr) continue;
 
-      const dateStr = d.toISOString().split('T')[0];
-      const booked = bookedByDate[dateStr] || 0;
-      const blocked = blockedByDate[dateStr] || 0;
+      const isToday = dateStr === todayStr;
+      const availableTimeSlots = isToday
+        ? (service.time_slots as string[]).filter((ts) => this.isTimeSlotInFuture(ts, now))
+        : (service.time_slots as string[]);
+
+      const daySlots = slotsByDate[dateStr] || [];
+      const booked = daySlots.filter(
+        (s) => s.status === 'booked' && (!isToday || this.isTimeSlotInFuture(s.time_slot, now))
+      ).length;
+      const blocked = daySlots.filter(
+        (s) => s.status === 'blocked' && (!isToday || this.isTimeSlotInFuture(s.time_slot, now))
+      ).length;
+
+      const effectiveTotal = Math.min(availableTimeSlots.length, maxSlots);
       const unavailable = booked + blocked;
-      const effectiveTotal = Math.min(totalSlots, maxSlots);
       const available = Math.max(0, effectiveTotal - unavailable);
 
       result.push({
@@ -112,6 +118,9 @@ class SessionBookingService {
     if (!service) return [];
 
     const timeSlots = service.time_slots as string[];
+    const now = new Date();
+    const todayStr = this.getLocalDateString(now);
+    const isToday = date === todayStr;
 
     const { data: existingSlots, error } = await supabase
       .from('session_slots')
@@ -129,7 +138,11 @@ class SessionBookingService {
       slotMap[s.time_slot] = s as SessionSlot;
     });
 
-    return timeSlots.map((ts) => {
+    const visibleSlots = isToday
+      ? timeSlots.filter((ts) => this.isTimeSlotInFuture(ts, now))
+      : timeSlots;
+
+    return visibleSlots.map((ts) => {
       const existing = slotMap[ts];
       return {
         time_slot: ts,
@@ -329,6 +342,21 @@ class SessionBookingService {
       'END:VEVENT',
       'END:VCALENDAR',
     ].join('\r\n');
+  }
+
+  private getLocalDateString(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  private isTimeSlotInFuture(timeSlot: string, now: Date): boolean {
+    const [start] = timeSlot.split('-');
+    const [h, m] = start.split(':').map((n) => parseInt(n, 10));
+    const slotMinutes = h * 60 + (m || 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return slotMinutes > currentMinutes;
   }
 }
 

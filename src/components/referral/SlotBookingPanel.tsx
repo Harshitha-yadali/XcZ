@@ -13,7 +13,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { referralService } from '../../services/referralService';
-import { RAZORPAY_CONFIG } from '../../utils/razorpayConfig';
+import { RAZORPAY_CONFIG, getRazorpayKey } from '../../utils/razorpayConfig';
+import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../../config/env';
+import { supabase } from '../../lib/supabaseClient';
+import { sessionBookingService } from '../../services/sessionBookingService';
 import type { ReferralSlotDisplayInfo, ReferralSlotType, ReferralPricing } from '../../types/referral';
 
 interface SlotBookingPanelProps {
@@ -116,6 +119,16 @@ export const SlotBookingPanel: React.FC<SlotBookingPanelProps> = ({
     setSlotsLoading(false);
   };
 
+  const getPrefillContact = () => {
+    // Razorpay limits INR methods if contact isn’t an Indian number; default to a safe +91 dummy.
+    const phone = bookingForm.phone?.trim();
+    if (!phone) return '+919000000000';
+    // Normalize: if already has country code, keep; else prepend +91.
+    if (phone.startsWith('+')) return phone;
+    if (phone.startsWith('0')) return '+91' + phone.replace(/^0+/, '');
+    return '+91' + phone;
+  };
+
   const handleDateSelect = (dateStr: string) => {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
@@ -131,15 +144,23 @@ export const SlotBookingPanel: React.FC<SlotBookingPanelProps> = ({
       }
 
       const options = {
-        key: RAZORPAY_CONFIG.KEY_ID,
+        key: getRazorpayKey(),
         amount: amountPaise,
         currency: RAZORPAY_CONFIG.CURRENCY,
         name: RAZORPAY_CONFIG.COMPANY_NAME,
         description: `${title} - Slot Booking`,
+        // Explicitly enable common rails so Razorpay shows methods even in test/local mode
+        method: {
+          netbanking: true,
+          card: true,
+          upi: true,
+          wallet: true,
+          paylater: true,
+        },
         prefill: {
           name: bookingForm.name,
           email: bookingForm.email,
-          contact: bookingForm.phone || undefined,
+          contact: getPrefillContact(),
         },
         theme: { color: RAZORPAY_CONFIG.THEME_COLOR },
         handler: (response: { razorpay_payment_id: string }) => {
@@ -176,8 +197,7 @@ export const SlotBookingPanel: React.FC<SlotBookingPanelProps> = ({
 
     const amountPaise = getSlotPrice(pricing, slotType, listingPrices);
 
-    let paymentId: string | null = null;
-
+    // Paid path with backend order + transaction update
     if (amountPaise > 0) {
       if (!razorpayReady) {
         setBookingStatus('idle');
@@ -185,22 +205,122 @@ export const SlotBookingPanel: React.FC<SlotBookingPanelProps> = ({
         return;
       }
 
-      const paymentResult = await openRazorpay(amountPaise);
-      if (!paymentResult.success) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (!accessToken) {
+          setBookingStatus('idle');
+          setErrorMessage('Session expired. Please log in again.');
+          return;
+        }
+
+        const orderResponse = await fetchWithSupabaseFallback(
+          getSupabaseEdgeFunctionUrl('create-order'),
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+              amount: amountPaise,
+              metadata: {
+                type: 'referral_booking',
+                listingId,
+                slotType,
+                listingTitle: title,
+              },
+            }),
+          }
+        );
+
+        const orderResult = await orderResponse.json();
+        if (!orderResponse.ok) {
+          setBookingStatus('idle');
+          setErrorMessage(orderResult.error || 'Failed to create payment order.');
+          return;
+        }
+
+        const { orderId, keyId, transactionId, amount: serverAmount } = orderResult;
+
+        const rzp = new (window as any).Razorpay({
+          key: keyId || getRazorpayKey(),
+          amount: serverAmount,
+          currency: 'INR',
+          name: RAZORPAY_CONFIG.COMPANY_NAME,
+          description: `${title} - Slot Booking`,
+          order_id: orderId,
+          handler: async (response: any) => {
+            await sessionBookingService.updatePaymentTransaction(
+              transactionId,
+              response.razorpay_payment_id,
+              response.razorpay_order_id || orderId,
+              'success'
+            );
+
+            const result = await referralService.bookSlot(
+              user.id,
+              listingId,
+              selectedDate,
+              selectedSlot,
+              slotType,
+              transactionId,
+              bookingForm.name,
+              bookingForm.email,
+              bookingForm.phone
+            );
+
+            if (result.success) {
+              setBookingStatus('success');
+              loadSlots(selectedDate);
+            } else {
+              setBookingStatus('error');
+              setErrorMessage(result.error || 'Booking failed.');
+            }
+          },
+          prefill: {
+            name: bookingForm.name,
+            email: bookingForm.email,
+            contact: getPrefillContact(),
+          },
+          theme: { color: RAZORPAY_CONFIG.THEME_COLOR },
+          modal: {
+            ondismiss: () => {
+              setBookingStatus('idle');
+              sessionBookingService.updatePaymentTransaction(
+                transactionId,
+                '',
+                '',
+                'cancelled'
+              );
+            },
+          },
+          method: {
+            netbanking: true,
+            card: true,
+            upi: true,
+            wallet: true,
+            paylater: true,
+          },
+        });
+
+        rzp.open();
+      } catch (err: any) {
+        console.error('Payment error:', err);
         setBookingStatus('idle');
-        setErrorMessage(paymentResult.error || 'Payment was not completed.');
-        return;
+        setErrorMessage('Something went wrong. Please try again.');
       }
-      paymentId = paymentResult.paymentId || null;
+      return;
     }
 
+    // Free path (amount zero)
     const result = await referralService.bookSlot(
       user.id,
       listingId,
       selectedDate,
       selectedSlot,
       slotType,
-      paymentId,
+      null,
       bookingForm.name,
       bookingForm.email,
       bookingForm.phone

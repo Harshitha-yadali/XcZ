@@ -210,6 +210,8 @@ class ReferralService {
     const startMin = 0;
     const duration = this.getSlotDuration(slotType);
     const cutoffMinutes = 16 * 60;
+    const now = new Date();
+    const todayStr = this.getLocalDateString(now);
 
     const timeSlots: string[] = [];
     let i = 0;
@@ -242,7 +244,10 @@ class ReferralService {
       slotMap[s.time_slot] = s;
     });
 
-    return timeSlots.map((ts) => {
+    const visibleSlots =
+      date === todayStr ? timeSlots.filter((ts) => this.isTimeSlotInFuture(ts, now)) : timeSlots;
+
+    return visibleSlots.map((ts) => {
       const existing = slotMap[ts];
       const [start, end] = ts.split('-');
       return {
@@ -330,6 +335,21 @@ class ReferralService {
       return [];
     }
     return (data || []) as ReferralPurchase[];
+  }
+
+  private getLocalDateString(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  private isTimeSlotInFuture(timeSlot: string, now: Date): boolean {
+    const [start] = timeSlot.split('-');
+    const [h, m] = start.split(':').map((n) => parseInt(n, 10));
+    const slotMinutes = h * 60 + (m || 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    return slotMinutes > currentMinutes;
   }
 }
 

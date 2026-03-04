@@ -1,11 +1,31 @@
 // Razorpay Configuration
 export const RAZORPAY_CONFIG = {
+  // Live keys (use only in production over HTTPS)
   KEY_ID: 'rzp_live_U7N6E8ot31tiej',
-  KEY_SECRET: 'HG2iWDiXa39rXibjCYQYxDs5', // This should be kept secure on backend
+  KEY_SECRET: 'HG2iWDiXa39rXibjCYQYxDs5', // Should stay on backend only
+  // Test key for local/staging
+  TEST_KEY_ID: 'rzp_test_1DP5mmOlF5G5ag',
   CURRENCY: 'INR',
   COMPANY_NAME: 'PrimoJobs',
   COMPANY_LOGO: '/favicon.ico',
   THEME_COLOR: '#2563eb'
+};
+
+// Use test key on localhost/127.* to avoid live failures; live key elsewhere
+export const getRazorpayKey = (hostname?: string) => {
+  // Allow an explicit override to force live key even on localhost (e.g., when tunnelling via HTTPS)
+  const forceLive =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_RAZORPAY_FORCE_LIVE === 'true') ||
+    (typeof process !== 'undefined' && process.env?.VITE_RAZORPAY_FORCE_LIVE === 'true');
+
+  const host = hostname || (typeof window !== 'undefined' ? window.location.hostname : '');
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.local') ||
+    host === '';
+  if (forceLive) return RAZORPAY_CONFIG.KEY_ID;
+  return isLocal ? RAZORPAY_CONFIG.TEST_KEY_ID : RAZORPAY_CONFIG.KEY_ID;
 };
 
 // Payment verification utility (should be done on backend in production)

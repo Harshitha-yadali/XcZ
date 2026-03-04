@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { referralService } from '../../services/referralService';
 import type { ReferralListing, ReferralPricing } from '../../types/referral';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface ReferralsPageProps {
   onShowAuth: (callback?: () => void) => void;
@@ -23,6 +24,7 @@ interface ReferralsPageProps {
 
 export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [listings, setListings] = useState<ReferralListing[]>([]);
   const [pricing, setPricing] = useState<ReferralPricing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +33,12 @@ export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
 
   useEffect(() => {
     const load = async () => {
+      if (!isAuthenticated) {
+        setListings([]);
+        setPricing(null);
+        setLoading(false);
+        return;
+      }
       const [listingsData, pricingData] = await Promise.all([
         referralService.getActiveListings(),
         referralService.getPricing(),
@@ -40,7 +48,7 @@ export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
       setLoading(false);
     };
     load();
-  }, []);
+  }, [isAuthenticated]);
 
   const companies = [...new Set(listings.map((l) => l.company_name))].sort();
 
@@ -58,6 +66,25 @@ export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen pb-20 md:pl-16 flex items-center justify-center px-4">
+        <div className="max-w-xl w-full text-center space-y-4">
+          <p className="text-3xl font-bold text-white">Sign in to view referrals</p>
+          <p className="text-slate-400 text-sm">
+            Log in to browse active referral listings and book consultation slots with referrers.
+          </p>
+          <button
+            onClick={() => onShowAuth(() => navigate('/referrals'))}
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all inline-flex items-center justify-center gap-2"
+          >
+            Sign in to continue
+          </button>
+        </div>
       </div>
     );
   }

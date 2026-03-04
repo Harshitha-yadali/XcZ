@@ -57,20 +57,6 @@ const serviceCards: ServiceCardInfo[] = [
     getPrice: (p, l) => l?.query_price ?? p.query_price,
   },
   {
-    key: 'profile',
-    title: 'Profile Monetization',
-    subtitle: '1-hour session | Profile shared with referrer',
-    description: 'Your resume and profile are shared with the referrer for a detailed review and referral.',
-    features: ['Resume shared with referrer', 'Detailed profile review', 'Priority referral'],
-    icon: <Star className="w-5 h-5 text-amber-400" />,
-    cardIcon: <UserCheck className="w-6 h-6" />,
-    accentColor: 'text-amber-400',
-    borderColor: 'border-amber-500/30 hover:border-amber-500/60',
-    bgGradient: 'from-amber-500/5 to-amber-600/10',
-    iconBg: 'bg-amber-500/10',
-    getPrice: (p, l) => l?.profile_price ?? p.profile_price,
-  },
-  {
     key: 'consultation',
     title: 'Consultation Slot',
     subtitle: '15-min slots | Resume review session',
@@ -229,7 +215,7 @@ export const ReferralDetailPage: React.FC<ReferralDetailPageProps> = ({ onShowAu
         {!activeTab && (
           <>
             <h2 className="text-white font-bold text-xl mb-4">Choose a Service</h2>
-            <div className="grid sm:grid-cols-3 gap-4 mb-6">
+            <div className="grid sm:grid-cols-2 gap-4 mb-6">
               {serviceCards.map((card) => {
                 const price = pricing ? card.getPrice(pricing, listing) / 100 : 0;
                 return (

@@ -36,9 +36,10 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
   const { user } = useAuth();
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentService, setCurrentService] = useState<SessionService>(service);
 
-  const priceInRupees = service.price / 100;
-  const isFreeSession = service.price === 0;
+  const priceInRupees = currentService.price / 100;
+  const isFreeSession = currentService.price === 0;
   const slotLabel = sessionBookingService.getSlotLabel(selectedSlot);
 
   const formatDate = (dateStr: string) => {
@@ -51,6 +52,21 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
     });
   };
 
+  // Always refresh latest service/price when component mounts or when service id changes
+  React.useEffect(() => {
+    let mounted = true;
+    const refreshService = async () => {
+      const latest = await sessionBookingService.getActiveService();
+      if (mounted && latest && latest.id === service.id) {
+        setCurrentService(latest);
+      }
+    };
+    refreshService();
+    return () => {
+      mounted = false;
+    };
+  }, [service.id]);
+
   const handleFreeBooking = async () => {
     if (!user) return;
 
@@ -60,7 +76,7 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
     try {
       const result = await sessionBookingService.bookSlot(
         user.id,
-        service.id,
+        currentService.id,
         selectedDate,
         selectedSlot,
         null,
@@ -78,12 +94,12 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
               bookingId: result.booking_id || '',
               recipientEmail: user.email,
               recipientName: user.name,
-              serviceTitle: service.title,
+              serviceTitle: currentService.title,
               bookingDate: formatDate(selectedDate),
               slotLabel,
               bookingCode: result.booking_code || '',
               bonusCredits: result.bonus_credits || 0,
-              meetLink: service.meet_link || '',
+              meetLink: currentService.meet_link || '',
             },
           });
         } catch (emailErr) {
@@ -112,6 +128,21 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
     setError(null);
 
     try {
+      // Guard against stale price — fetch latest service data before creating order
+      const latestService = await sessionBookingService.getActiveService();
+      if (!latestService || latestService.id !== currentService.id) {
+        setProcessing(false);
+        setError('Service details changed. Please go back and re-open the booking.');
+        return;
+      }
+      if (latestService.price !== currentService.price) {
+        setProcessing(false);
+        setError('Price mismatch detected. Please refresh and try again.');
+        return;
+      }
+      // Update local copy so UI reflects latest price/title
+      setCurrentService(latestService);
+
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
 
@@ -130,11 +161,11 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
             Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
-            amount: service.price,
+            amount: latestService.price,
             metadata: {
               type: 'session_booking',
-              serviceId: service.id,
-              serviceTitle: service.title,
+              serviceId: latestService.id,
+              serviceTitle: latestService.title,
             },
           }),
         }
@@ -155,7 +186,7 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
         amount: serverAmount,
         currency: 'INR',
         name: 'PrimoBoost AI',
-        description: service.title,
+        description: latestService.title,
         order_id: orderId,
         handler: async (response: any) => {
           const updated = await sessionBookingService.updatePaymentTransaction(
@@ -173,7 +204,7 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
 
           const result = await sessionBookingService.bookSlot(
             user.id,
-            service.id,
+            latestService.id,
             selectedDate,
             selectedSlot,
             transactionId,
@@ -191,12 +222,12 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
                   bookingId: result.booking_id || '',
                   recipientEmail: user.email,
                   recipientName: user.name,
-                  serviceTitle: service.title,
+                  serviceTitle: latestService.title,
                   bookingDate: formatDate(selectedDate),
                   slotLabel,
                   bookingCode: result.booking_code || '',
                   bonusCredits: result.bonus_credits || 0,
-                  meetLink: service.meet_link || '',
+                  meetLink: latestService.meet_link || '',
                 },
               });
             } catch (emailErr) {

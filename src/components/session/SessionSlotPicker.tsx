@@ -71,6 +71,10 @@ export const SessionSlotPicker: React.FC<SessionSlotPickerProps> = ({
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
         </div>
+      ) : slots.length === 0 ? (
+        <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-5 text-center text-slate-300">
+          No upcoming slots remain for the selected date. Please pick another date.
+        </div>
       ) : (
         <div className="space-y-3">
           {slots.map((slot, i) => {

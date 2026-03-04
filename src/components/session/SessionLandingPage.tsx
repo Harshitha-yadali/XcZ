@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   CheckCircle,
@@ -31,17 +31,32 @@ const steps = [
 export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAuth }) => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [service, setService] = useState<SessionService | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
+      if (!isAuthenticated) {
+        setService(null);
+        setLoading(false);
+        return;
+      }
       const svc = await sessionBookingService.getActiveService();
       setService(svc);
       setLoading(false);
     };
     load();
-  }, []);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const state = location.state as { promptLogin?: boolean; redirectTo?: string } | undefined;
+    if (state?.promptLogin) {
+      onShowAuth(() => navigate(state.redirectTo || '/session/book'));
+      // Clear the state to avoid re-triggering on back/forward navigation
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate, onShowAuth]);
 
   const handleBookSlot = () => {
     if (!isAuthenticated) {
@@ -55,6 +70,25 @@ export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAu
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen pb-20 md:pl-16 flex items-center justify-center px-4">
+        <div className="max-w-xl w-full text-center space-y-4">
+          <p className="text-3xl font-bold text-white">Sign in to book a Resume Session</p>
+          <p className="text-slate-400 text-sm">
+            Create or log into your account to pick a date, select a time slot, and confirm your booking.
+          </p>
+          <button
+            onClick={() => onShowAuth(() => navigate('/session/book'))}
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all inline-flex items-center justify-center gap-2"
+          >
+            Book a session
+          </button>
+        </div>
       </div>
     );
   }
