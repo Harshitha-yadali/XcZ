@@ -135,13 +135,15 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
         setError('Service details changed. Please go back and re-open the booking.');
         return;
       }
-      if (latestService.price !== currentService.price) {
-        setProcessing(false);
-        setError('Price mismatch detected. Please refresh and try again.');
-        return;
+      // Keep local copy in sync with any admin-side price/title changes without blocking checkout
+      if (
+        latestService.price !== currentService.price ||
+        latestService.title !== currentService.title ||
+        latestService.meet_link !== currentService.meet_link
+      ) {
+        setCurrentService(latestService);
       }
-      // Update local copy so UI reflects latest price/title
-      setCurrentService(latestService);
+      const effectiveService = latestService;
 
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
@@ -161,11 +163,11 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
             Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
-            amount: latestService.price,
+            amount: effectiveService.price,
             metadata: {
               type: 'session_booking',
-              serviceId: latestService.id,
-              serviceTitle: latestService.title,
+              serviceId: effectiveService.id,
+              serviceTitle: effectiveService.title,
             },
           }),
         }
@@ -186,7 +188,7 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
         amount: serverAmount,
         currency: 'INR',
         name: 'PrimoBoost AI',
-        description: latestService.title,
+        description: effectiveService.title,
         order_id: orderId,
         handler: async (response: any) => {
           const updated = await sessionBookingService.updatePaymentTransaction(
@@ -204,7 +206,7 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
 
           const result = await sessionBookingService.bookSlot(
             user.id,
-            latestService.id,
+            effectiveService.id,
             selectedDate,
             selectedSlot,
             transactionId,
@@ -222,12 +224,12 @@ export const SessionPayment: React.FC<SessionPaymentProps> = ({
                   bookingId: result.booking_id || '',
                   recipientEmail: user.email,
                   recipientName: user.name,
-                  serviceTitle: latestService.title,
+                  serviceTitle: effectiveService.title,
                   bookingDate: formatDate(selectedDate),
                   slotLabel,
                   bookingCode: result.booking_code || '',
                   bonusCredits: result.bonus_credits || 0,
-                  meetLink: latestService.meet_link || '',
+                  meetLink: effectiveService.meet_link || '',
                 },
               });
             } catch (emailErr) {
