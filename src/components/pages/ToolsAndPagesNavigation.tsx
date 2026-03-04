@@ -7,7 +7,6 @@ import {
   Phone,
   Target,
   TrendingUp,
-  PlusCircle,
   MessageCircle,
   Sparkles,
   ArrowRight,
@@ -65,7 +64,7 @@ const FeatureCard: React.FC<FeatureCardProps> = ({
 
   const getUsageText = () => {
     if (!isAuthenticated) return null;
-    if (id === 'guided-builder' || id === 'linkedin-generator') {
+    if (id === 'linkedin-generator') {
       return null;
     }
     if (!userSubscription) return <span className="text-xs font-medium text-red-400">No active plan</span>;
@@ -81,10 +80,6 @@ const FeatureCard: React.FC<FeatureCardProps> = ({
       case 'score-checker':
         used = userSubscription.scoreChecksUsed;
         total = userSubscription.scoreChecksTotal;
-        break;
-      case 'guided-builder':
-        used = userSubscription.guidedBuildsUsed;
-        total = userSubscription.guidedBuildsTotal;
         break;
       case 'linkedin-generator':
         used = userSubscription.linkedinMessagesUsed;
@@ -159,15 +154,6 @@ export const ToolsAndPagesNavigation: React.FC<ToolsAndPagesNavigationProps> = (
       description: 'Get an instant ATS score with detailed analysis and improvement suggestions.',
       icon: <TrendingUp />,
       colorClass: 'from-purple-500 to-pink-500',
-      requiresAuth: true,
-      isTool: true,
-    },
-    {
-      id: 'guided-builder',
-      title: 'Guided Resume Builder',
-      description: 'Create a professional resume from scratch with our step-by-step AI-powered builder.',
-      icon: <PlusCircle />,
-      colorClass: 'from-green-500 to-emerald-500',
       requiresAuth: true,
       isTool: true,
     },

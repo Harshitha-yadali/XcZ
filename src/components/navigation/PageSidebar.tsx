@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Target,
-  PlusCircle,
   MessageSquare,
   TrendingUp,
   MessageCircle,
@@ -50,7 +49,6 @@ const toolsSection: SidebarSection = {
   items: [
     { id: 'optimizer', label: 'JD-Based Optimizer', icon: <Target className="w-5 h-5" />, path: '/optimizer' },
     { id: 'score-checker', label: 'Resume Score Check', icon: <TrendingUp className="w-5 h-5" />, path: '/score-checker' },
-    { id: 'guided-builder', label: 'Guided Resume Builder', icon: <PlusCircle className="w-5 h-5" />, path: '/guided-builder' },
     { id: 'mock-interview', label: 'AI Mock Interview', icon: <MessageSquare className="w-5 h-5" />, path: '/mock-interview' },
     { id: 'linkedin-generator', label: 'Outreach Messages', icon: <MessageCircle className="w-5 h-5" />, path: '/linkedin-generator' },
     { id: 'gaming', label: 'Gaming Aptitude', icon: <Gamepad2 className="w-5 h-5" />, path: '/gaming' },
