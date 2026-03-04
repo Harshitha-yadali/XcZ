@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { paymentService } from '../../services/paymentService';
+import { optimizationHistoryService } from '../../services/optimizationHistoryService';
 import { Subscription } from '../../types/payment';
+import { OptimizationSession } from '../../types/optimization';
 import { useNavigate } from 'react-router-dom';
 
 export const ProfileUsageTab: React.FC = () => {
@@ -20,9 +22,14 @@ export const ProfileUsageTab: React.FC = () => {
   const navigate = useNavigate();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<OptimizationSession[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
-    if (user) loadSubscription();
+    if (user) {
+      loadSubscription();
+      loadHistory();
+    }
   }, [user]);
 
   const loadSubscription = async () => {
@@ -34,6 +41,19 @@ export const ProfileUsageTab: React.FC = () => {
       console.error('Error loading subscription:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHistory = async () => {
+    if (!user) return;
+    try {
+      setHistoryLoading(true);
+      const rows = await optimizationHistoryService.getUserHistory(user.id, 15);
+      setHistory(rows);
+    } catch (err) {
+      console.error('Error loading optimization history:', err);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -63,6 +83,81 @@ export const ProfileUsageTab: React.FC = () => {
       </div>
     );
   }
+
+  const renderHistory = () => {
+    if (historyLoading) {
+      return (
+        <div className="flex items-center justify-center py-8 text-slate-400 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+          Fetching optimization history...
+        </div>
+      );
+    }
+
+    if (!history || history.length === 0) {
+      return (
+        <div className="text-center py-8 text-slate-500 text-sm">
+          No optimization runs yet. Optimize your resume to see history here.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        {history.map((item) => {
+          const before = item.before_score ?? 0;
+          const after = item.after_score ?? 0;
+          const delta = after - before;
+          const reachedTarget = item.reached_target ? 'Target reached' : 'Improvement recorded';
+          return (
+            <div
+              key={item.id}
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-[#0c1d25] bg-[#0a1a24] px-4 py-3 hover:border-[rgba(0,230,184,0.2)] transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-[rgba(0,230,184,0.12)] flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-[#00E6B8]" />
+                </div>
+                <div>
+                  <p className="text-slate-200 text-sm font-semibold">
+                    {new Date(item.created_at).toLocaleString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                  <p className="text-xs text-slate-500">{reachedTarget}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-sm">
+                <div className="text-slate-300">
+                  Score: <span className="text-white font-semibold">{Math.round(before)}</span>
+                  <span className="text-slate-500 mx-1">→</span>
+                  <span className="text-white font-semibold">{Math.round(after)}</span>
+                  <span className={`ml-2 text-xs font-medium ${delta >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {delta >= 0 ? '+' : ''}{Math.round(delta)}
+                  </span>
+                </div>
+                {item.changes_applied !== null && item.changes_applied !== undefined && (
+                  <div className="text-slate-400 text-xs">
+                    {item.changes_applied} changes • {item.iterations_count || 1} iters
+                  </div>
+                )}
+                {item.processing_time_ms !== null && item.processing_time_ms !== undefined && (
+                  <div className="text-slate-500 text-xs">
+                    {(item.processing_time_ms / 1000).toFixed(1)}s
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const getDaysRemaining = () => {
     const end = new Date(subscription.endDate);
@@ -173,6 +268,23 @@ export const ProfileUsageTab: React.FC = () => {
             );
           })}
         </div>
+      </div>
+
+      <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-[#00E6B8]" />
+            <h3 className="text-sm font-semibold text-slate-200">Optimization History</h3>
+          </div>
+          <button
+            onClick={loadHistory}
+            className="text-xs text-[#00E6B8] hover:text-emerald-300 transition-colors"
+            disabled={historyLoading}
+          >
+            {historyLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        {renderHistory()}
       </div>
     </div>
   );
