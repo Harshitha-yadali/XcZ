@@ -306,7 +306,7 @@ export class PipelineController {
       console.log(`📄 Parsing resume file: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
 
       // Import the parser service dynamically to avoid circular dependencies
-      const { parseResumeFromFile } = await import('./edenResumeParserService');
+      const { parseResumeFromFile } = await import('./enhancedResumeParserService');
       
       // Parse the resume using the existing service
       const parsedResume = await parseResumeFromFile(file);
