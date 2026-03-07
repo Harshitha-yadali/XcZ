@@ -1,9 +1,11 @@
 import { openrouter } from './aiProxyService';
 
 class DeepSeekService {
+  private static readonly JOB_WRITER_MODEL = 'stepfun/step-3.5-flash:free';
+
   private async callAI(systemPrompt: string, userPrompt: string, temperature = 0.7): Promise<string> {
     return openrouter.chatWithSystem(systemPrompt, userPrompt, {
-      model: 'google/gemini-2.5-flash',
+      model: DeepSeekService.JOB_WRITER_MODEL,
       temperature,
     });
   }

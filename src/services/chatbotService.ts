@@ -158,7 +158,7 @@ Accelerator Plan - Rs.11,600 - 25 Resume Credits
 Starter Plan - Rs.1,640 - 10 Resume Credits
 Kickstart Plan - Rs.1,320 - 5 Resume Credits`,
         userPrompt: userMessage,
-        model: "google/gemini-2.5-flash",
+        model: "openai/gpt-oss-120b:free",
         temperature: 0.4,
       }),
     });

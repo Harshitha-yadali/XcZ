@@ -55,7 +55,7 @@ export const openrouter = {
   async chat(prompt: string, options: { model?: string; temperature?: number; maxTokens?: number } = {}) {
     const result = await callProxy('openrouter', 'chat', {
       prompt,
-      model: options.model || 'google/gemini-2.5-flash',
+      model: options.model || 'openai/gpt-oss-120b:free',
       temperature: options.temperature || 0.3,
       maxTokens: options.maxTokens || 4000,
     });
@@ -67,7 +67,7 @@ export const openrouter = {
     const result = await callProxy('openrouter', 'chat_with_system', {
       systemPrompt,
       userPrompt,
-      model: options.model || 'google/gemini-2.5-flash',
+      model: options.model || 'openai/gpt-oss-120b:free',
       temperature: options.temperature || 0.3,
     });
 

@@ -8,16 +8,31 @@ const corsHeaders = {
 
 interface ApifyJobData {
   id?: string;
-  title: string;
-  company: string;
+  title?: string;
+  company?: string;
+  companyName?: string;
+  organization?: string;
   location?: string;
-  description: string;
+  description?: string;
+  jobDescription?: string;
+  summary?: string;
   salary?: string;
   jobType?: string;
   experienceLevel?: string;
+  seniorityLevel?: string;
   skills?: string[];
   postedDate?: string;
-  applyUrl: string;
+  postedAt?: string;
+  applyUrl?: string;
+  link?: string;
+  jobUrl?: string;
+  url?: string;
+  applicationUrl?: string;
+  redirectUrl?: string;
+  companyLogo?: string;
+  companyLogoUrl?: string;
+  logo?: string;
+  logoUrl?: string;
   [key: string]: any;
 }
 
@@ -83,7 +98,7 @@ Deno.serve(async (req: Request) => {
       const defaultConfig = {
         platform_name: 'LinkedIn',
         apify_api_token: envToken,
-        actor_id: 'anchor/linkedin-job-scraper',
+        actor_id: 'apify/linkedin-jobs-scraper',
         search_config: {
           searchUrl: 'https://www.linkedin.com/jobs/search/?keywords=software%20engineer&location=India&f_TPR=r604800',
           maxItems: 50,
@@ -165,21 +180,46 @@ async function syncJobsForConfig(supabase: any, config: any) {
 
     console.log(`Starting sync for ${config.platform_name} (${actorId})`);
 
-    const runResponse = await fetch(
-      `https://api.apify.com/v2/acts/${actorId}/runs`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apifyToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(searchConfig),
-      }
-    );
+    const runWithActor = async (candidateActorId: string) =>
+      fetch(
+        `https://api.apify.com/v2/acts/${encodeURIComponent(candidateActorId)}/runs`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apifyToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(searchConfig),
+        }
+      );
+
+    let runResponse = await runWithActor(actorId);
+    let effectiveActorId = actorId;
 
     if (!runResponse.ok) {
       const errorText = await runResponse.text();
-      throw new Error(`Apify API error: ${errorText}`);
+      const shouldRetryWithFallbackActor =
+        (config.platform_name || '').toLowerCase() === 'linkedin' &&
+        actorId === 'anchor/linkedin-job-scraper';
+
+      if (shouldRetryWithFallbackActor) {
+        const fallbackActorId = 'apify/linkedin-jobs-scraper';
+        console.warn(`Primary actor "${actorId}" failed. Retrying with fallback actor "${fallbackActorId}".`);
+        runResponse = await runWithActor(fallbackActorId);
+        effectiveActorId = fallbackActorId;
+
+        if (runResponse.ok) {
+          await supabase
+            .from('job_fetch_configs')
+            .update({ actor_id: fallbackActorId })
+            .eq('id', config.id);
+        } else {
+          const fallbackError = await runResponse.text();
+          throw new Error(`Apify API error: ${fallbackError}`);
+        }
+      } else {
+        throw new Error(`Apify API error: ${errorText}`);
+      }
     }
 
     const runData = await runResponse.json();
@@ -237,6 +277,7 @@ async function syncJobsForConfig(supabase: any, config: any) {
         sync_metadata: {
           apify_run_id: runId,
           dataset_id: datasetId,
+          actor_id: effectiveActorId,
         },
       })
       .eq('id', logId);
@@ -312,7 +353,12 @@ async function processJob(
   platform: string
 ): Promise<'created' | 'updated' | 'skipped'> {
   try {
-    const apifyJobId = job.id || `${platform}-${job.title}-${job.company}`.replace(/[^a-zA-Z0-9-]/g, '-');
+    const companyName = job.company || job.companyName || job.organization || 'Unknown Company';
+    const roleTitle = job.title || 'Untitled Position';
+    const apifyJobId = (
+      job.id ||
+      `${platform}-${roleTitle}-${companyName}`.replace(/[^a-zA-Z0-9-]/g, '-')
+    ).substring(0, 120);
 
     const { data: existing } = await supabase
       .from('job_listings')
@@ -323,10 +369,19 @@ async function processJob(
     const jobData = mapApifyJobToListing(job, platform, apifyJobId);
 
     if (existing) {
-      const { error } = await supabase
+      let { error } = await supabase
         .from('job_listings')
         .update(jobData)
         .eq('id', existing.id);
+
+      // Backward-compatible fallback for databases using `company_logo` instead of `company_logo_url`.
+      if (error && isMissingColumnError(error, 'company_logo_url')) {
+        const fallbackPayload = withCompanyLogoFallback(jobData);
+        ({ error } = await supabase
+          .from('job_listings')
+          .update(fallbackPayload)
+          .eq('id', existing.id));
+      }
 
       if (error) {
         console.error('Error updating job:', error);
@@ -334,9 +389,17 @@ async function processJob(
       }
       return 'updated';
     } else {
-      const { error } = await supabase
+      let { error } = await supabase
         .from('job_listings')
         .insert(jobData);
+
+      // Backward-compatible fallback for databases using `company_logo` instead of `company_logo_url`.
+      if (error && isMissingColumnError(error, 'company_logo_url')) {
+        const fallbackPayload = withCompanyLogoFallback(jobData);
+        ({ error } = await supabase
+          .from('job_listings')
+          .insert(fallbackPayload));
+      }
 
       if (error) {
         console.error('Error inserting job:', error);
@@ -371,28 +434,83 @@ function mapApifyJobToListing(
 
   const location = extractLocation(job.location);
   const salary = extractSalary(job.salary);
+  const companyLogo = job.companyLogo || job.companyLogoUrl || job.logo || job.logoUrl || null;
+  const description = (job.description || job.jobDescription || job.summary || '').toString();
+  const roleTitle = job.title || 'Untitled Position';
+  const applicationLink = resolveApplicationLink(job);
+  const postedDate = resolvePostedDate(job);
 
   return {
     apify_job_id: apifyJobId,
     source_platform: platform,
     last_synced_at: new Date().toISOString(),
-    company_logo_url: job.companyLogo || job.companyLogoUrl || job.logo || job.logoUrl || null,
-    company_name: job.company || 'Unknown Company',
-    role_title: job.title,
+    company_logo_url: companyLogo,
+    company_name: job.company || job.companyName || job.organization || 'Unknown Company',
+    role_title: roleTitle,
     package_amount: salary,
     package_type: salary ? 'CTC' : null,
     domain: 'Technology',
     location_type: location.type,
     location_city: location.city,
-    experience_required: job.experienceLevel || 'Not specified',
+    experience_required: job.experienceLevel || job.seniorityLevel || 'Not specified',
     qualification: 'Bachelor\'s Degree',
-    short_description: job.description?.substring(0, 200) || job.title,
-    description: job.description || '',
-    full_description: job.description || '',
-    application_link: job.applyUrl,
-    posted_date: job.postedDate || new Date().toISOString(),
+    short_description: description.substring(0, 200) || roleTitle,
+    description,
+    full_description: description,
+    application_link: applicationLink,
+    posted_date: postedDate,
     source_api: `apify-${platform}`,
     is_active: true,
     skills: job.skills || [],
   };
+}
+
+function resolveApplicationLink(job: ApifyJobData): string {
+  const candidates = [
+    job.applyUrl,
+    job.applicationUrl,
+    job.redirectUrl,
+    job.link,
+    job.jobUrl,
+    job.url,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean);
+
+  if (candidates.length > 0) {
+    return candidates[0];
+  }
+
+  // Last resort to avoid NOT NULL insert failures; keeps row visible for manual correction.
+  return 'https://www.linkedin.com/jobs/';
+}
+
+function resolvePostedDate(job: ApifyJobData): string {
+  const candidates = [job.postedDate, job.postedAt]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  for (const candidate of candidates) {
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  }
+
+  return new Date().toISOString();
+}
+
+function isMissingColumnError(error: any, column: string): boolean {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  return (
+    error?.code === 'PGRST204' ||
+    error?.code === '42703' ||
+    message.toLowerCase().includes(column.toLowerCase())
+  );
+}
+
+function withCompanyLogoFallback(payload: Record<string, any>): Record<string, any> {
+  const fallback = { ...payload };
+  fallback.company_logo = payload.company_logo_url ?? null;
+  delete fallback.company_logo_url;
+  return fallback;
 }
