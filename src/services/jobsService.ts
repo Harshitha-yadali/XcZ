@@ -1,6 +1,6 @@
 // src/services/jobsService.ts
 import { supabase } from '../lib/supabaseClient';
-import { JobListing, JobFilters, AutoApplyResult, ApplicationHistory, OptimizedResume } from '../types/jobs';
+import { JobListing, JobFilters, AutoApplyResult, ApplicationHistory, OptimizedResume, JobUpdateMetadata } from '../types/jobs';
 import { ResumeData } from '../types/resume';
 import { exportToPDF } from '../utils/exportUtils';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
@@ -167,6 +167,10 @@ class JobsService {
       }
 
       console.log('JobsService: Job listing created successfully with ID:', newJob.id);
+
+      this.createWhatsAppUpdateInBackground(newJob, session.user.id).catch((err) => {
+        console.warn('JobsService: WhatsApp update generation failed:', err);
+      });
 
       // Trigger AI polish in background (don't wait for it)
       this.polishJobDescriptionInBackground(newJob.id, newJob).catch(err => {
@@ -513,6 +517,89 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
     } catch (error) {
       console.error('Error fetching application history:', error);
       throw new Error('Failed to fetch application history');
+    }
+  }
+
+  private getPrimoBoostJobUrl(jobId: string): string {
+    return `https://primoboost.ai/jobs/${jobId}`;
+  }
+
+  private formatCompensationForShare(job: JobListing): string {
+    const amount = typeof job.package_amount === 'number' ? job.package_amount : 0;
+    if (amount <= 0) return 'Not disclosed';
+
+    const packageType = (job.package_type || '').toLowerCase();
+    if (packageType === 'stipend') {
+      return `Rs.${Math.round(amount).toLocaleString('en-IN')} / month`;
+    }
+    if (packageType === 'hourly') {
+      return `Rs.${Math.round(amount).toLocaleString('en-IN')} / hour`;
+    }
+
+    const inLakhs = amount / 100000;
+    const formattedLakhs = Number.isInteger(inLakhs) ? inLakhs.toString() : inLakhs.toFixed(1);
+    return `${formattedLakhs} LPA`;
+  }
+
+  private formatLocationForShare(job: JobListing): string {
+    if (job.location_city && job.location_city.trim()) {
+      return `${job.location_city.trim()} (${job.location_type})`;
+    }
+    return job.location_type || 'Not specified';
+  }
+
+  private buildWhatsAppUpdateText(job: JobListing, packageText: string, locationText: string, applyUrl: string): string {
+    return [
+      `Company Name: ${job.company_name}`,
+      `Role: ${job.role_title}`,
+      `Package: ${packageText}`,
+      `Location: ${locationText}`,
+      `Apply Now: ${applyUrl}`,
+    ].join('\n');
+  }
+
+  private async createWhatsAppUpdateInBackground(job: JobListing, createdBy: string): Promise<void> {
+    try {
+      const packageText = this.formatCompensationForShare(job);
+      const locationText = this.formatLocationForShare(job);
+      const applyUrl = this.getPrimoBoostJobUrl(job.id);
+      const whatsappText = this.buildWhatsAppUpdateText(job, packageText, locationText, applyUrl);
+
+      const metadata: JobUpdateMetadata = {
+        kind: 'whatsapp_job_card',
+        job_id: job.id,
+        company_name: job.company_name,
+        role_title: job.role_title,
+        package: packageText,
+        location: locationText,
+        apply_url: applyUrl,
+        whatsapp_text: whatsappText,
+        tags: ['whatsapp', 'job-update', (job.domain || 'job').toLowerCase().replace(/\s+/g, '-')],
+        companies: [job.company_name],
+        locations: [locationText],
+      };
+
+      const { error } = await supabase
+        .from('job_updates')
+        .insert({
+          title: `${job.company_name} hiring ${job.role_title}`,
+          description: `${job.role_title} | ${packageText} | ${locationText}`,
+          content: whatsappText,
+          category: 'hiring_news',
+          source_platform: 'primo_whatsapp_auto',
+          metadata,
+          external_link: applyUrl,
+          is_featured: false,
+          is_active: true,
+          published_at: new Date().toISOString(),
+          created_by: createdBy,
+        });
+
+      if (error) {
+        console.warn('JobsService: Failed to create WhatsApp update:', error);
+      }
+    } catch (error) {
+      console.warn('JobsService: Error building WhatsApp update:', error);
     }
   }
 

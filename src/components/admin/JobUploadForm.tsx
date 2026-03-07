@@ -18,7 +18,6 @@ import {
   CheckCircle,
   ArrowLeft,
   Plus,
-  Globe,
   Target,
   FileText,
   Image,
@@ -38,6 +37,7 @@ import { jobsService } from '../../services/jobsService';
 import { JobListing } from '../../types/jobs';
 import { ImageUpload } from './ImageUpload';
 import { useJobFormAutoSave } from '../../hooks/useJobFormAutoSave';
+import { openrouter } from '../../services/aiProxyService';
 
 // Helper to truly make optional number inputs tolerant of empty string/NaN from form
 const optionalPositiveNumber = (message: string) =>
@@ -90,6 +90,100 @@ const jobListingSchema = z.object({
 
 type JobFormData = z.infer<typeof jobListingSchema>;
 
+type AiJobFieldValue = string | number | boolean | null | undefined;
+type AiJobFieldMap = Partial<Record<keyof JobFormData, AiJobFieldValue>>;
+
+const AI_ALLOWED_JOB_FIELDS: Array<keyof JobFormData> = [
+  'company_name',
+  'company_logo_url',
+  'role_title',
+  'package_amount',
+  'package_type',
+  'domain',
+  'location_type',
+  'location_city',
+  'experience_required',
+  'qualification',
+  'eligible_years',
+  'short_description',
+  'full_description',
+  'application_link',
+  'is_active',
+  'referral_person_name',
+  'referral_email',
+  'referral_code',
+  'referral_link',
+  'referral_bonus_amount',
+  'referral_terms',
+  'test_requirements',
+  'has_coding_test',
+  'has_aptitude_test',
+  'has_technical_interview',
+  'has_hr_interview',
+  'test_duration_minutes',
+];
+
+const OPTIONAL_STRING_FIELDS = new Set<keyof JobFormData>([
+  'company_logo_url',
+  'location_city',
+  'eligible_years',
+  'referral_person_name',
+  'referral_email',
+  'referral_code',
+  'referral_link',
+  'referral_terms',
+  'test_requirements',
+]);
+
+const parseAiJsonObject = (rawResponse: string): Record<string, unknown> => {
+  const trimmed = rawResponse.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = fencedMatch ? fencedMatch[1].trim() : trimmed;
+
+  const parseCandidate = (json: string) => {
+    const parsed = JSON.parse(json);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('AI response must be a JSON object.');
+    }
+    return parsed as Record<string, unknown>;
+  };
+
+  try {
+    return parseCandidate(candidate);
+  } catch {
+    const objectStart = candidate.indexOf('{');
+    const objectEnd = candidate.lastIndexOf('}');
+    if (objectStart === -1 || objectEnd === -1 || objectEnd <= objectStart) {
+      throw new Error('AI returned invalid JSON. Please try again.');
+    }
+    return parseCandidate(candidate.slice(objectStart, objectEnd + 1));
+  }
+};
+
+const normalizeBoolean = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (['true', 'yes', 'y', '1'].includes(normalized)) return true;
+  if (['false', 'no', 'n', '0'].includes(normalized)) return false;
+  return null;
+};
+
+const normalizePositiveNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (typeof value !== 'string') return null;
+  const sanitized = value.replace(/[^0-9.]/g, '');
+  if (!sanitized) return null;
+  const parsed = Number.parseFloat(sanitized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
 export const JobUploadForm: React.FC = () => {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,12 +192,17 @@ export const JobUploadForm: React.FC = () => {
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>('');
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [showDraftNotification, setShowDraftNotification] = useState(false);
+  const [aiKeyValueInput, setAiKeyValueInput] = useState('');
+  const [isAiChecking, setIsAiChecking] = useState(false);
+  const [aiCheckError, setAiCheckError] = useState<string | null>(null);
+  const [aiCheckSuccess, setAiCheckSuccess] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
     reset,
     watch,
+    getValues,
     setValue,
     formState: { errors, isDirty },
   } = useForm<JobFormData>({
@@ -116,7 +215,6 @@ export const JobUploadForm: React.FC = () => {
     },
   });
 
-  const watchedPackageType = watch('package_type');
   const watchedLocationType = watch('location_type');
   const formData = watch();
 
@@ -132,7 +230,8 @@ export const JobUploadForm: React.FC = () => {
       if (draft) {
         Object.entries(draft).forEach(([key, value]) => {
           if (value !== undefined && value !== null) {
-            setValue(key as keyof JobFormData, value as any, {
+            const typedKey = key as keyof JobFormData;
+            setValue(typedKey, value as JobFormData[typeof typedKey], {
               shouldDirty: false,
             });
           }
@@ -153,6 +252,145 @@ export const JobUploadForm: React.FC = () => {
     reset();
     setCompanyLogoUrl('');
     setShowDraftNotification(false);
+    setAiCheckError(null);
+    setAiCheckSuccess(null);
+    setAiKeyValueInput('');
+  };
+
+  const handleAiCheckAndFill = async () => {
+    const trimmedInput = aiKeyValueInput.trim();
+    if (!trimmedInput) {
+      setAiCheckError('Add key:value details first, then run AI check.');
+      setAiCheckSuccess(null);
+      return;
+    }
+
+    setIsAiChecking(true);
+    setAiCheckError(null);
+    setAiCheckSuccess(null);
+
+    try {
+      const currentFormValues = getValues();
+      const systemPrompt = [
+        'You are an assistant that converts admin notes into job form values.',
+        'Return only a valid JSON object with keys from the allowed list.',
+        `Allowed keys: ${AI_ALLOWED_JOB_FIELDS.join(', ')}.`,
+        'Do not return markdown, explanation, or extra keys.',
+        'Use location_type exactly as Remote, Onsite, or Hybrid.',
+        'Use package_type exactly as CTC, stipend, or hourly.',
+        'Use boolean values for checkbox fields.',
+        'If a value is unknown, omit that key.',
+      ].join(' ');
+
+      const userPrompt = [
+        'Admin key:value input:',
+        trimmedInput,
+        '',
+        'Current form values (useful context):',
+        JSON.stringify(currentFormValues, null, 2),
+        '',
+        'Fill missing values, correct clearly wrong values, and keep good existing values.',
+      ].join('\n');
+
+      const aiResponse = await openrouter.chatWithSystem(systemPrompt, userPrompt, {
+        temperature: 0.1,
+      });
+
+      const parsed = parseAiJsonObject(aiResponse) as AiJobFieldMap;
+      let updatedCount = 0;
+
+      const applyFieldUpdate = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
+        const currentValue = getValues(field);
+        if (currentValue === value) return;
+
+        setValue(field, value, { shouldDirty: true, shouldValidate: true });
+        if (field === 'company_logo_url') {
+          setCompanyLogoUrl((value as string) || '');
+        }
+        updatedCount += 1;
+      };
+
+      const applyStringField = (field: keyof JobFormData, rawValue: unknown) => {
+        if (typeof rawValue !== 'string') return;
+        const normalized = rawValue.trim();
+        const isOptional = OPTIONAL_STRING_FIELDS.has(field);
+        if (!normalized && !isOptional) return;
+        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+      };
+
+      const applyNumberField = (
+        field: 'package_amount' | 'referral_bonus_amount' | 'test_duration_minutes',
+        rawValue: unknown
+      ) => {
+        if (rawValue === null || rawValue === '') return;
+        const normalized = normalizePositiveNumber(rawValue);
+        if (normalized === null) return;
+        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+      };
+
+      const applyBooleanField = (
+        field: 'is_active' | 'has_coding_test' | 'has_aptitude_test' | 'has_technical_interview' | 'has_hr_interview',
+        rawValue: unknown
+      ) => {
+        const normalized = normalizeBoolean(rawValue);
+        if (normalized === null) return;
+        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+      };
+
+      applyStringField('company_name', parsed.company_name);
+      applyStringField('company_logo_url', parsed.company_logo_url);
+      applyStringField('role_title', parsed.role_title);
+      applyStringField('domain', parsed.domain);
+      applyStringField('location_city', parsed.location_city);
+      applyStringField('experience_required', parsed.experience_required);
+      applyStringField('qualification', parsed.qualification);
+      applyStringField('eligible_years', parsed.eligible_years);
+      applyStringField('short_description', parsed.short_description);
+      applyStringField('full_description', parsed.full_description);
+      applyStringField('application_link', parsed.application_link);
+      applyStringField('referral_person_name', parsed.referral_person_name);
+      applyStringField('referral_email', parsed.referral_email);
+      applyStringField('referral_code', parsed.referral_code);
+      applyStringField('referral_link', parsed.referral_link);
+      applyStringField('referral_terms', parsed.referral_terms);
+      applyStringField('test_requirements', parsed.test_requirements);
+
+      applyNumberField('package_amount', parsed.package_amount);
+      applyNumberField('referral_bonus_amount', parsed.referral_bonus_amount);
+      applyNumberField('test_duration_minutes', parsed.test_duration_minutes);
+
+      if (typeof parsed.package_type === 'string') {
+        const packageType = parsed.package_type.trim().toLowerCase();
+        if (packageType === 'ctc') applyFieldUpdate('package_type', 'CTC');
+        if (packageType === 'stipend') applyFieldUpdate('package_type', 'stipend');
+        if (packageType === 'hourly') applyFieldUpdate('package_type', 'hourly');
+      }
+
+      if (typeof parsed.location_type === 'string') {
+        const locationType = parsed.location_type.trim().toLowerCase();
+        if (locationType === 'remote') applyFieldUpdate('location_type', 'Remote');
+        if (locationType === 'onsite') applyFieldUpdate('location_type', 'Onsite');
+        if (locationType === 'hybrid') applyFieldUpdate('location_type', 'Hybrid');
+      }
+
+      applyBooleanField('is_active', parsed.is_active);
+      applyBooleanField('has_coding_test', parsed.has_coding_test);
+      applyBooleanField('has_aptitude_test', parsed.has_aptitude_test);
+      applyBooleanField('has_technical_interview', parsed.has_technical_interview);
+      applyBooleanField('has_hr_interview', parsed.has_hr_interview);
+
+      if (updatedCount === 0) {
+        setAiCheckError('AI returned no usable updates. Try clearer key:value input.');
+        return;
+      }
+
+      setAiCheckSuccess(`AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and create job.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI check failed. Please retry.';
+      setAiCheckError(message);
+    } finally {
+      setIsAiChecking(false);
+    }
   };
 
   const onSubmit = async (data: JobFormData) => {
@@ -313,6 +551,56 @@ export const JobUploadForm: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-dark-200 dark:to-dark-300 p-6 rounded-xl border border-indigo-100 dark:border-dark-400">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                  <Sparkles className="w-5 h-5 mr-2 text-indigo-600 dark:text-neon-cyan-400" />
+                  AI Job Details Check
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  Paste raw key:value job details. AI will suggest values and auto-fill this form. Review manually before creating the job.
+                </p>
+                <textarea
+                  value={aiKeyValueInput}
+                  onChange={(event) => setAiKeyValueInput(event.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 h-32 resize-y dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100"
+                  placeholder={`company_name: Acme Labs\nrole_title: Backend Engineer\ndomain: SDE\nlocation_type: Hybrid\nlocation_city: Bengaluru\nexperience_required: 2-4 years\nqualification: B.Tech CSE\nshort_description: ...\nfull_description: ...\napplication_link: https://company.com/jobs/123`}
+                />
+                <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Tip: include salary, description, tests, and referral keys too.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAiCheckAndFill}
+                    disabled={isAiChecking}
+                    className={`font-semibold py-2.5 px-5 rounded-lg transition-colors flex items-center space-x-2 ${
+                      isAiChecking
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    {isAiChecking ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Checking...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>AI Check & Fill Fields</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                {aiCheckError && (
+                  <p className="mt-3 text-sm text-red-600 dark:text-red-400">{aiCheckError}</p>
+                )}
+                {aiCheckSuccess && (
+                  <p className="mt-3 text-sm text-green-600 dark:text-green-400">{aiCheckSuccess}</p>
+                )}
+              </div>
+
               {/* Company Logo Upload Section */}
               <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-dark-200 dark:to-dark-300 p-6 rounded-xl border border-blue-100 dark:border-dark-400">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">

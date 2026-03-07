@@ -2,6 +2,8 @@ import { supabase } from '../lib/supabase';
 import type { JobUpdate, JobUpdateCategory, JobUpdateMetadata } from '../types/jobs';
 
 export class JobUpdatesService {
+  private static readonly WHATSAPP_SOURCE_PLATFORM = 'primo_whatsapp_auto';
+
   async getAllUpdates(activeOnly: boolean = false): Promise<JobUpdate[]> {
     let query = supabase
       .from('job_updates')
@@ -111,6 +113,75 @@ export class JobUpdatesService {
     return this.updateUpdate(id, { is_featured: isFeatured });
   }
 
+  isWhatsAppUpdate(update: JobUpdate): boolean {
+    return update.source_platform === JobUpdatesService.WHATSAPP_SOURCE_PLATFORM;
+  }
+
+  async getWhatsAppUpdates(limit: number = 50, activeOnly: boolean = false): Promise<JobUpdate[]> {
+    let query = supabase
+      .from('job_updates')
+      .select('*')
+      .eq('source_platform', JobUpdatesService.WHATSAPP_SOURCE_PLATFORM)
+      .order('published_at', { ascending: false })
+      .limit(limit);
+
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  extractWhatsAppDetails(update: JobUpdate): {
+    companyName: string;
+    roleTitle: string;
+    packageText: string;
+    locationText: string;
+    applyUrl: string;
+  } {
+    const metadata = update.metadata || {};
+    const toText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+    const companyName =
+      toText(metadata.company_name) ||
+      toText(metadata.companyName) ||
+      (Array.isArray(metadata.companies) && metadata.companies.length > 0 ? toText(metadata.companies[0]) : '');
+
+    const roleTitle = toText(metadata.role_title) || toText(metadata.roleTitle);
+    const packageText = toText(metadata.package) || toText(metadata.package_text);
+    const locationText =
+      toText(metadata.location) ||
+      toText(metadata.location_text) ||
+      (Array.isArray(metadata.locations) && metadata.locations.length > 0 ? toText(metadata.locations[0]) : '');
+    const applyUrl = toText(metadata.apply_url) || toText(update.external_link);
+
+    return {
+      companyName: companyName || 'N/A',
+      roleTitle: roleTitle || 'N/A',
+      packageText: packageText || 'Not disclosed',
+      locationText: locationText || 'Remote/Onsite',
+      applyUrl,
+    };
+  }
+
+  getWhatsAppMessage(update: JobUpdate): string {
+    const details = this.extractWhatsAppDetails(update);
+    const lines = [
+      `Company Name: ${details.companyName}`,
+      `Role: ${details.roleTitle}`,
+      `Package: ${details.packageText}`,
+      `Location: ${details.locationText}`,
+    ];
+
+    if (details.applyUrl) {
+      lines.push(`Apply Now: ${details.applyUrl}`);
+    }
+
+    return lines.join('\n');
+  }
+
   getCategoryLabel(category: JobUpdateCategory): string {
     const labels: Record<JobUpdateCategory, string> = {
       market_trend: 'Market Trend',
@@ -140,7 +211,7 @@ export class JobUpdatesService {
 
     try {
       JSON.stringify(metadata);
-    } catch (error) {
+    } catch {
       errors.push('Invalid JSON format');
     }
 

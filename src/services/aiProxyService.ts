@@ -1,8 +1,10 @@
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 
 const PROXY_URL = getSupabaseEdgeFunctionUrl('ai-proxy');
+const DEFAULT_OPENROUTER_MODEL = 'stepfun/step-3.5-flash:free';
+const OPENROUTER_MODEL_FALLBACKS = [DEFAULT_OPENROUTER_MODEL] as const;
 
-const callProxy = async (service: string, action: string, params: Record<string, any> = {}) => {
+const callProxy = async (service: string, action: string, params: Record<string, unknown> = {}) => {
   const isAbsoluteUrl = /^https?:\/\//i.test(PROXY_URL);
   if (!isAbsoluteUrl) {
     throw new Error(
@@ -51,27 +53,65 @@ const callProxy = async (service: string, action: string, params: Record<string,
   return data;
 };
 
+const isRateLimitLikeError = (error: unknown) => {
+  if (!(error instanceof Error)) return false;
+  return /(429|rate[-\s]?limit|temporarily rate-limited|too many requests|provider returned error)/i.test(
+    error.message
+  );
+};
+
+const getModelsToTry = (requestedModel?: string) => {
+  if (requestedModel && requestedModel.trim()) return [requestedModel.trim()];
+  return [...OPENROUTER_MODEL_FALLBACKS];
+};
+
 export const openrouter = {
   async chat(prompt: string, options: { model?: string; temperature?: number; maxTokens?: number } = {}) {
-    const result = await callProxy('openrouter', 'chat', {
-      prompt,
-      model: options.model || 'openai/gpt-oss-120b:free',
-      temperature: options.temperature || 0.3,
-      maxTokens: options.maxTokens || 4000,
-    });
+    const modelsToTry = getModelsToTry(options.model);
+    let lastError: unknown = null;
 
-    return result.choices?.[0]?.message?.content || '';
+    for (let i = 0; i < modelsToTry.length; i += 1) {
+      try {
+        const result = await callProxy('openrouter', 'chat', {
+          prompt,
+          model: modelsToTry[i],
+          temperature: options.temperature || 0.3,
+          maxTokens: options.maxTokens || 4000,
+        });
+
+        return result.choices?.[0]?.message?.content || '';
+      } catch (error) {
+        lastError = error;
+        const shouldRetryWithNext = isRateLimitLikeError(error) && i < modelsToTry.length - 1;
+        if (!shouldRetryWithNext) throw error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('AI chat request failed');
   },
 
   async chatWithSystem(systemPrompt: string, userPrompt: string, options: { model?: string; temperature?: number } = {}) {
-    const result = await callProxy('openrouter', 'chat_with_system', {
-      systemPrompt,
-      userPrompt,
-      model: options.model || 'openai/gpt-oss-120b:free',
-      temperature: options.temperature || 0.3,
-    });
+    const modelsToTry = getModelsToTry(options.model);
+    let lastError: unknown = null;
 
-    return result.choices?.[0]?.message?.content || '';
+    for (let i = 0; i < modelsToTry.length; i += 1) {
+      try {
+        const result = await callProxy('openrouter', 'chat_with_system', {
+          systemPrompt,
+          userPrompt,
+          model: modelsToTry[i],
+          temperature: options.temperature || 0.3,
+        });
+
+        return result.choices?.[0]?.message?.content || '';
+      } catch (error) {
+        lastError = error;
+        const shouldRetryWithNext = isRateLimitLikeError(error) && i < modelsToTry.length - 1;
+        if (!shouldRetryWithNext) throw error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('AI chat request failed');
   },
 
   async summarize(text: string, outputLength: 'short' | 'medium' | 'long' = 'medium') {
@@ -149,8 +189,8 @@ export const edenai = {
 };
 
 export const gemini = {
-  async generate(prompt: string, _model = 'gemini-pro') {
-    return openrouter.chat(prompt);
+  async generate(prompt: string, model = 'gemini-pro') {
+    return openrouter.chat(prompt, { model });
   },
 };
 

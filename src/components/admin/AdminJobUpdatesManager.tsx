@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Star, StarOff, ExternalLink, TrendingUp } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, EyeOff, Star, StarOff, ExternalLink, TrendingUp, Copy, Check, MessageCircle } from 'lucide-react';
 import { jobUpdatesService } from '../../services/jobUpdatesService';
 import type { JobUpdate, JobUpdateCategory, JobUpdateMetadata } from '../../types/jobs';
 
@@ -9,6 +9,7 @@ export const AdminJobUpdatesManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<JobUpdate | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [copiedUpdateId, setCopiedUpdateId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -100,6 +101,19 @@ export const AdminJobUpdatesManager: React.FC = () => {
     if (filterCategory === 'all') return true;
     return update.category === filterCategory;
   });
+  const whatsappUpdates = updates.filter(update => jobUpdatesService.isWhatsAppUpdate(update));
+
+  const handleCopyWhatsAppUpdate = async (update: JobUpdate) => {
+    try {
+      const text = jobUpdatesService.getWhatsAppMessage(update);
+      await navigator.clipboard.writeText(text);
+      setCopiedUpdateId(update.id);
+      setTimeout(() => setCopiedUpdateId((current) => (current === update.id ? null : current)), 1800);
+    } catch (error) {
+      console.error('Error copying WhatsApp text:', error);
+      alert('Failed to copy update text');
+    }
+  };
 
   if (loading) {
     return (
@@ -132,6 +146,68 @@ export const AdminJobUpdatesManager: React.FC = () => {
         <StatCard title="Active" value={stats.active} color="green" />
         <StatCard title="Featured" value={stats.featured} color="yellow" />
         <StatCard title="Drafts" value={stats.total - stats.active} color="gray" />
+      </div>
+
+      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-green-600" />
+              WhatsApp Updates Panel
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Auto-created from Admin Job Upload. Click any card to copy WhatsApp text.
+            </p>
+          </div>
+          <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+            {whatsappUpdates.length} updates
+          </span>
+        </div>
+
+        {whatsappUpdates.length === 0 ? (
+          <div className="text-sm text-gray-600 bg-white/70 rounded-lg border border-green-100 p-3">
+            No WhatsApp updates yet. Create a new job and it will be generated automatically.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {whatsappUpdates.map((update) => {
+              const details = jobUpdatesService.extractWhatsAppDetails(update);
+              const isCopied = copiedUpdateId === update.id;
+              return (
+                <button
+                  key={update.id}
+                  type="button"
+                  onClick={() => handleCopyWhatsAppUpdate(update)}
+                  className="text-left bg-white border border-green-200 rounded-lg p-4 hover:border-green-400 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <h4 className="font-semibold text-gray-900 line-clamp-2">{update.title}</h4>
+                    <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${
+                      isCopied
+                        ? 'bg-green-100 text-green-700 border-green-200'
+                        : 'bg-gray-100 text-gray-600 border-gray-200'
+                    }`}>
+                      {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      {isCopied ? 'Copied' : 'Copy'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-sm text-gray-700">
+                    <p><span className="font-medium">Company:</span> {details.companyName}</p>
+                    <p><span className="font-medium">Role:</span> {details.roleTitle}</p>
+                    <p><span className="font-medium">Package:</span> {details.packageText}</p>
+                    <p><span className="font-medium">Location:</span> {details.locationText}</p>
+                  </div>
+                  {details.applyUrl && (
+                    <div className="mt-3 text-xs text-blue-700 flex items-center gap-1 break-all">
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                      {details.applyUrl}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -346,7 +422,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ update, onClose, onSuccess }) =
     let metadata: JobUpdateMetadata;
     try {
       metadata = JSON.parse(metadataJson);
-    } catch (error) {
+    } catch {
       alert('Invalid JSON in metadata field');
       return;
     }
