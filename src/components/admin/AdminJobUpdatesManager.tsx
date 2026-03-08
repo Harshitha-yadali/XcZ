@@ -5,6 +5,7 @@ import type { JobUpdate, JobUpdateCategory, JobUpdateMetadata } from '../../type
 
 export const AdminJobUpdatesManager: React.FC = () => {
   const [updates, setUpdates] = useState<JobUpdate[]>([]);
+  const [whatsappUpdates, setWhatsappUpdates] = useState<JobUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<JobUpdate | null>(null);
@@ -23,16 +24,29 @@ export const AdminJobUpdatesManager: React.FC = () => {
   }, []);
 
   const loadUpdates = async () => {
-    try {
-      setLoading(true);
-      const data = await jobUpdatesService.getAllUpdates();
-      setUpdates(data);
-    } catch (error) {
-      console.error('Error loading updates:', error);
+    setLoading(true);
+
+    const [updatesResult, whatsappResult] = await Promise.allSettled([
+      jobUpdatesService.getAllUpdates(),
+      jobUpdatesService.getWhatsAppUpdates(),
+    ]);
+
+    if (updatesResult.status === 'fulfilled') {
+      setUpdates(updatesResult.value);
+    } else {
+      console.error('Error loading updates:', updatesResult.reason);
+      setUpdates([]);
       alert('Failed to load job updates');
-    } finally {
-      setLoading(false);
     }
+
+    if (whatsappResult.status === 'fulfilled') {
+      setWhatsappUpdates(whatsappResult.value);
+    } else {
+      console.error('Error loading WhatsApp updates:', whatsappResult.reason);
+      setWhatsappUpdates([]);
+    }
+
+    setLoading(false);
   };
 
   const loadStats = async () => {
@@ -101,12 +115,28 @@ export const AdminJobUpdatesManager: React.FC = () => {
     if (filterCategory === 'all') return true;
     return update.category === filterCategory;
   });
-  const whatsappUpdates = updates.filter(update => jobUpdatesService.isWhatsAppUpdate(update));
-
   const handleCopyWhatsAppUpdate = async (update: JobUpdate) => {
     try {
       const text = jobUpdatesService.getWhatsAppMessage(update);
-      await navigator.clipboard.writeText(text);
+
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.setAttribute('readonly', '');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        if (!copied) {
+          throw new Error('Clipboard fallback failed');
+        }
+      }
+
       setCopiedUpdateId(update.id);
       setTimeout(() => setCopiedUpdateId((current) => (current === update.id ? null : current)), 1800);
     } catch (error) {
@@ -156,7 +186,7 @@ export const AdminJobUpdatesManager: React.FC = () => {
               WhatsApp Updates Panel
             </h3>
             <p className="text-sm text-gray-600 mt-1">
-              Auto-created from Admin Job Upload. Click any card to copy WhatsApp text.
+              Auto-created from Admin Job Upload and Edit. Click any card to copy WhatsApp text.
             </p>
           </div>
           <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
@@ -166,7 +196,7 @@ export const AdminJobUpdatesManager: React.FC = () => {
 
         {whatsappUpdates.length === 0 ? (
           <div className="text-sm text-gray-600 bg-white/70 rounded-lg border border-green-100 p-3">
-            No WhatsApp updates yet. Create a new job and it will be generated automatically.
+            No WhatsApp updates yet. Create or update a job and it will be generated automatically.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -196,6 +226,8 @@ export const AdminJobUpdatesManager: React.FC = () => {
                     <p><span className="font-medium">Role:</span> {details.roleTitle}</p>
                     <p><span className="font-medium">Package:</span> {details.packageText}</p>
                     <p><span className="font-medium">Location:</span> {details.locationText}</p>
+                    <p><span className="font-medium">Eligible Years:</span> {details.eligibleYears}</p>
+                    <p><span className="font-medium">Experience:</span> {details.experienceText}</p>
                   </div>
                   {details.applyUrl && (
                     <div className="mt-3 text-xs text-blue-700 flex items-center gap-1 break-all">

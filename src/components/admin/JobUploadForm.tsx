@@ -32,12 +32,13 @@ import {
   ClipboardCheck,
   Sparkles
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { jobsService } from '../../services/jobsService';
 import { JobListing } from '../../types/jobs';
 import { ImageUpload } from './ImageUpload';
 import { useJobFormAutoSave } from '../../hooks/useJobFormAutoSave';
 import { openrouter } from '../../services/aiProxyService';
+import { supabase } from '../../lib/supabaseClient';
 
 // Helper to truly make optional number inputs tolerant of empty string/NaN from form
 const optionalPositiveNumber = (message: string) =>
@@ -184,9 +185,16 @@ const normalizePositiveNumber = (value: unknown): number | null => {
   return parsed;
 };
 
-export const JobUploadForm: React.FC = () => {
+interface JobUploadFormProps {
+  mode?: 'create' | 'edit';
+}
+
+export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' }) => {
   const navigate = useNavigate();
+  const { jobId } = useParams<{ jobId: string }>();
+  const isEditMode = mode === 'edit';
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingJobData, setIsLoadingJobData] = useState(isEditMode);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>('');
@@ -220,11 +228,16 @@ export const JobUploadForm: React.FC = () => {
 
   const { saveStatus, loadDraft, deleteDraft, clearDraft } = useJobFormAutoSave({
     formData,
-    enabled: !isSubmitting && draftLoaded,
+    enabled: !isEditMode && !isSubmitting && draftLoaded,
     debounceMs: 2000,
   });
 
   useEffect(() => {
+    if (isEditMode) {
+      setDraftLoaded(true);
+      return;
+    }
+
     const restoreDraft = async () => {
       const draft = await loadDraft();
       if (draft) {
@@ -245,7 +258,79 @@ export const JobUploadForm: React.FC = () => {
       setDraftLoaded(true);
     };
     restoreDraft();
-  }, [loadDraft, setValue]);
+  }, [isEditMode, loadDraft, setValue]);
+
+  useEffect(() => {
+    if (!isEditMode) {
+      setIsLoadingJobData(false);
+      return;
+    }
+
+    if (!jobId) {
+      setSubmitError('Job ID is missing.');
+      setIsLoadingJobData(false);
+      return;
+    }
+
+    const fetchJobData = async () => {
+      setIsLoadingJobData(true);
+      setSubmitError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from('job_listings')
+          .select('*')
+          .eq('id', jobId)
+          .single();
+
+        if (error) throw error;
+
+        const resolvedLogoUrl = data.company_logo_url || data.company_logo || '';
+        const eligibleYearsValue = Array.isArray(data.eligible_years)
+          ? data.eligible_years.join(', ')
+          : (data.eligible_years || '');
+
+        reset({
+          company_name: data.company_name || '',
+          company_logo_url: resolvedLogoUrl,
+          role_title: data.role_title || '',
+          package_amount: data.package_amount || undefined,
+          package_type: data.package_type || 'CTC',
+          domain: data.domain || '',
+          location_type: data.location_type || 'Remote',
+          location_city: data.location_city || '',
+          experience_required: data.experience_required || '',
+          qualification: data.qualification || '',
+          eligible_years: eligibleYearsValue,
+          short_description: data.short_description || '',
+          full_description: data.full_description || '',
+          application_link: data.application_link || '',
+          is_active: data.is_active ?? true,
+          referral_person_name: data.referral_person_name || '',
+          referral_email: data.referral_email || '',
+          referral_code: data.referral_code || '',
+          referral_link: data.referral_link || '',
+          referral_bonus_amount: data.referral_bonus_amount || undefined,
+          referral_terms: data.referral_terms || '',
+          test_requirements: data.test_requirements || '',
+          has_coding_test: !!data.has_coding_test,
+          has_aptitude_test: !!data.has_aptitude_test,
+          has_technical_interview: !!data.has_technical_interview,
+          has_hr_interview: !!data.has_hr_interview,
+          test_duration_minutes: data.test_duration_minutes || undefined,
+        });
+
+        setCompanyLogoUrl(resolvedLogoUrl);
+      } catch (error) {
+        console.error('Error fetching job listing for edit:', error);
+        setSubmitError(error instanceof Error ? error.message : 'Failed to load job listing');
+      } finally {
+        setIsLoadingJobData(false);
+      }
+    };
+
+    fetchJobData();
+  }, [isEditMode, jobId, reset]);
 
   const handleClearDraft = () => {
     clearDraft();
@@ -384,7 +469,9 @@ export const JobUploadForm: React.FC = () => {
         return;
       }
 
-      setAiCheckSuccess(`AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and create job.`);
+      setAiCheckSuccess(
+        `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and ${isEditMode ? 'update' : 'create'} the job.`
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI check failed. Please retry.';
       setAiCheckError(message);
@@ -433,17 +520,30 @@ export const JobUploadForm: React.FC = () => {
         test_duration_minutes: data.test_duration_minutes || undefined,
       };
 
-      await jobsService.createJobListing(jobData);
+      if (isEditMode) {
+        if (!jobId) {
+          throw new Error('Job ID is missing.');
+        }
+
+        await jobsService.updateJobListing(jobId, jobData);
+      } else {
+        await jobsService.createJobListing(jobData);
+      }
+
       setSubmitSuccess(true);
-      await deleteDraft();
-      reset();
-      setCompanyLogoUrl('');
+
+      if (!isEditMode) {
+        await deleteDraft();
+        reset();
+        setCompanyLogoUrl('');
+      }
+
       setTimeout(() => {
         setSubmitSuccess(false);
-        navigate('/jobs');
-      }, 2000);
+        navigate('/admin/jobs');
+      }, isEditMode ? 1500 : 2000);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create job listing');
+      setSubmitError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} job listing`);
     } finally {
       setIsSubmitting(false);
     }
@@ -457,6 +557,17 @@ export const JobUploadForm: React.FC = () => {
     'Data Engineering', 'Business Analyst', 'Consulting', 'Support',
   ];
 
+  if (isLoadingJobData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-dark-50 dark:to-dark-200 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-blue-600 dark:text-neon-cyan-400 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-300">Loading job data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-dark-50 dark:to-dark-200 lg:pl-16 transition-colors duration-300">
       {/* Header */}
@@ -464,13 +575,15 @@ export const JobUploadForm: React.FC = () => {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16 py-3">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/admin/jobs')}
               className="lg:hidden bg-gradient-to-r from-neon-cyan-500 to-neon-blue-500 text-white hover:from-neon-cyan-400 hover:to-neon-blue-400 py-3 px-5 rounded-xl inline-flex items-center space-x-2 transition-all duration-200"
             >
               <ArrowLeft className="w-5 h-5" />
-              <span className="hidden sm:block">Back to Home</span>
+              <span className="hidden sm:block">Back to Jobs</span>
             </button>
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Admin - Upload Job Listing</h1>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {isEditMode ? 'Admin - Edit Job Listing' : 'Admin - Create Job Listing'}
+            </h1>
             <div className="w-24"></div>
           </div>
         </div>
@@ -481,13 +594,15 @@ export const JobUploadForm: React.FC = () => {
           {/* Hero Section */}
           <div className="text-center mb-8">
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <Plus className="w-10 h-10 text-white" />
+              {isEditMode ? <Save className="w-10 h-10 text-white" /> : <Plus className="w-10 h-10 text-white" />}
             </div>
             <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">
-              Create New Job Listing
+              {isEditMode ? 'Update Job Listing' : 'Create New Job Listing'}
             </h1>
             <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-              Add a new job opportunity to help candidates find their dream role
+              {isEditMode
+                ? 'Edit the existing job with the same admin format used during creation'
+                : 'Add a new job opportunity to help candidates find their dream role'}
             </p>
           </div>
 
@@ -500,9 +615,14 @@ export const JobUploadForm: React.FC = () => {
                     <Briefcase className="w-5 h-5 mr-2 text-blue-600 dark:text-neon-cyan-400" />
                     Job Details
                   </h2>
-                  <p className="text-gray-600 dark:text-gray-300 mt-1">Fill in all the required information for the job listing</p>
+                  <p className="text-gray-600 dark:text-gray-300 mt-1">
+                    {isEditMode
+                      ? 'Update the job details using the same admin fields available during creation'
+                      : 'Fill in all the required information for the job listing'}
+                  </p>
                 </div>
-                <div className="flex items-center space-x-2">
+                {!isEditMode && (
+                  <div className="flex items-center space-x-2">
                   {saveStatus.status === 'saving' && (
                     <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
                       <RotateCw className="w-4 h-4 animate-spin" />
@@ -521,12 +641,13 @@ export const JobUploadForm: React.FC = () => {
                       <span className="text-sm">Save failed</span>
                     </div>
                   )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
 
             <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
-              {showDraftNotification && (
+              {!isEditMode && showDraftNotification && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl dark:bg-blue-900/20 dark:border-blue-500/50">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start">
@@ -558,7 +679,7 @@ export const JobUploadForm: React.FC = () => {
                   AI Job Details Check
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  Paste raw key:value job details. AI will suggest values and auto-fill this form. Review manually before creating the job.
+                  Paste raw key:value job details. AI will suggest values and auto-fill this form. Review manually before {isEditMode ? 'updating' : 'creating'} the job.
                 </p>
                 <textarea
                   value={aiKeyValueInput}
@@ -634,11 +755,13 @@ export const JobUploadForm: React.FC = () => {
                     <CheckCircle className="w-5 h-5 text-green-600 dark:text-neon-cyan-400 mr-3 mt-0.5" />
                     <div>
                       <p className="text-green-700 dark:text-neon-cyan-300 text-sm font-medium">
-                        Job listing created successfully! AI enhancement in progress...
+                        {isEditMode ? 'Job listing updated successfully!' : 'Job listing created successfully! AI enhancement in progress...'}
                       </p>
-                      <p className="text-green-600 dark:text-neon-cyan-400 text-xs mt-1">
-                        Your job description will be automatically polished and enhanced by AI.
-                      </p>
+                      {!isEditMode && (
+                        <p className="text-green-600 dark:text-neon-cyan-400 text-xs mt-1">
+                          Your job description will be automatically polished and enhanced by AI.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1127,12 +1250,12 @@ export const JobUploadForm: React.FC = () => {
                 <div className="flex space-x-3">
                   <button
                     type="button"
-                    onClick={() => navigate('/')}
+                    onClick={() => navigate('/admin/jobs')}
                     className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
                   >
                     Cancel
                   </button>
-                  {isDirty && (
+                  {!isEditMode && isDirty && (
                     <button
                       type="button"
                       onClick={handleClearDraft}
@@ -1155,12 +1278,12 @@ export const JobUploadForm: React.FC = () => {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Creating Job...</span>
+                      <span>{isEditMode ? 'Updating Job...' : 'Creating Job...'}</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-5 h-5" />
-                      <span>Create Job Listing</span>
+                      <span>{isEditMode ? 'Update Job Listing' : 'Create Job Listing'}</span>
                     </>
                   )}
                 </button>

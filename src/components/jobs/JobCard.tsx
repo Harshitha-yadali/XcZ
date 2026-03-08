@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2,
@@ -36,6 +36,42 @@ export const JobCard: React.FC<JobCardProps> = ({
   const { user } = useAuth();
   const navigate = useNavigate();
   const autoApplyEnabled = import.meta.env.VITE_ENABLE_AUTO_APPLY === 'true';
+
+  const logoCandidates = useMemo(() => {
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+    const addCandidate = (value?: string | null) => {
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      candidates.push(trimmed);
+    };
+
+    const toFaviconUrl = (value?: string | null) => {
+      if (typeof value !== 'string' || !value.trim()) return null;
+
+      try {
+        const parsed = new URL(value.trim());
+        return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(parsed.origin)}&sz=128`;
+      } catch {
+        return null;
+      }
+    };
+
+    addCandidate(job.company_logo_url);
+    addCandidate(job.company_logo);
+    addCandidate(toFaviconUrl(job.company_website));
+    addCandidate(toFaviconUrl(job.application_link));
+
+    return candidates;
+  }, [job.application_link, job.company_logo, job.company_logo_url, job.company_website]);
+
+  const [logoIndex, setLogoIndex] = useState(0);
+
+  useEffect(() => {
+    setLogoIndex(0);
+  }, [logoCandidates]);
 
   const eligibleYearTags = useMemo(() => {
     const raw = job.eligible_years;
@@ -109,18 +145,18 @@ export const JobCard: React.FC<JobCardProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
           {/* Company Logo */}
           <div className="flex-shrink-0 w-16 h-16 sm:w-16 sm:h-16 bg-slate-800/50 rounded-lg border border-slate-700/50 flex items-center justify-center p-1 sm:p-2 overflow-hidden">
-            {(job.company_logo_url || job.company_logo) ? (
+            {logoCandidates[logoIndex] ? (
               <img
-                src={job.company_logo_url || job.company_logo}
+                src={logoCandidates[logoIndex]}
                 alt={`${job.company_name} jobs - ${job.role_title} opening`}
                 className="w-full h-full object-contain object-center"
                 loading="lazy"
                 onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const parent = target.parentElement;
-                  if (parent) {
-                    parent.innerHTML = `<div class="w-full h-full rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg">${job.company_name.charAt(0)}</div>`;
+                  e.stopPropagation();
+                  if (logoIndex < logoCandidates.length - 1) {
+                    setLogoIndex((current) => current + 1);
+                  } else {
+                    setLogoIndex(logoCandidates.length);
                   }
                 }}
               />

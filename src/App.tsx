@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { Menu, X, Home, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users } from 'lucide-react';
+import { Menu, X, Home, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/navigation/Navigation';
@@ -38,6 +38,7 @@ const AdminRoute = lazy(() => import('./components/admin/AdminRoute').then(m => 
 const JobUploadForm = lazy(() => import('./components/admin/JobUploadForm').then(m => ({ default: m.JobUploadForm })));
 const AdminJobsPage = lazy(() => import('./components/admin/AdminJobsPage').then(m => ({ default: m.AdminJobsPage })));
 const JobEditPage = lazy(() => import('./components/admin/JobEditPage').then(m => ({ default: m.JobEditPage })));
+const AdminJobUpdatesManager = lazy(() => import('./components/admin/AdminJobUpdatesManager').then(m => ({ default: m.AdminJobUpdatesManager })));
 const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
 const PortfolioBuilderPage = lazy(() => import('./components/pages/PortfolioBuilderPage').then(m => ({ default: m.PortfolioBuilderPage })));
 const MockInterviewPage = lazy(() => import('./components/pages/MockInterviewPage').then(m => ({ default: m.MockInterviewPage })));
@@ -591,6 +592,14 @@ const handleDiwaliCTAClick = useCallback(() => {
             }
           />
           <Route
+            path="/admin/job-updates"
+            element={
+              <AdminRoute>
+                <AdminJobUpdatesManager />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/users"
             element={
               <AdminRoute>
@@ -707,6 +716,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       { id: '/careers', label: 'Careers', icon: <Briefcase className="w-5 h-5" /> },
                       { id: '/jobs', label: 'Latest Jobs', icon: <Briefcase className="w-5 h-5" /> },
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/jobs', label: 'Admin Panel', icon: <Crown className="w-5 h-5" /> }] : []),
+                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/job-updates', label: 'Job Updates', icon: <MessageCircle className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/webinars', label: 'Webinar Management', icon: <Video className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/blog', label: 'Blog Management', icon: <FileText className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/referrals', label: 'Referral Mgmt', icon: <Users className="w-5 h-5" /> }] : []),

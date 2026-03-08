@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, ToggleLeft, ToggleRight, ArrowLeft, Briefcase, MapPin, Clock, IndianRupee, Building2, AlertCircle, Loader2, CheckCircle, Users, Mail } from 'lucide-react';
+import { Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, ToggleLeft, ToggleRight, ArrowLeft, Briefcase, MapPin, Clock, IndianRupee, Building2, AlertCircle, Loader2, CheckCircle, Users, Mail, MessageCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { JobListing } from '../../types/jobs';
 
@@ -128,6 +128,13 @@ export const AdminJobsPage: React.FC = () => {
             </button>
             <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Admin - Manage Jobs</h1>
             <div className="flex items-center space-x-2">
+              <button
+                onClick={() => navigate('/admin/job-updates')}
+                className="bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white py-3 px-5 rounded-xl inline-flex items-center space-x-2 transition-all duration-200 shadow-lg"
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span className="hidden sm:block">WhatsApp Updates</span>
+              </button>
               <button
                 onClick={() => navigate('/admin/email-testing')}
                 className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3 px-5 rounded-xl inline-flex items-center space-x-2 transition-all duration-200 shadow-lg"

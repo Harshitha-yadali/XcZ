@@ -1,1 +1,0 @@
-import{o as t}from"./aiProxyService-DzMwr7OW.js";class o{async generateText(e){return t.chat(e,{temperature:.3,maxTokens:4e3})}async chat(e){var a;const n=((a=e.find(c=>c.role==="system"))==null?void 0:a.content)||"",r=e[e.length-1];return n?t.chatWithSystem(n,r.content,{temperature:.3}):t.chat(r.content,{temperature:.3,maxTokens:4e3})}}const m=new o;export{m as g};

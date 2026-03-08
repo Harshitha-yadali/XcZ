@@ -15,15 +15,123 @@ export const isEligibleYearsColumnMissing = (error: any): boolean => {
   );
 };
 
+const isMissingColumnError = (error: any, column: string): boolean => {
+  if (!error) return false;
+  const message = typeof error.message === 'string' ? error.message : '';
+  return (
+    error.code === 'PGRST204' ||
+    error.code === '42703' ||
+    message.toLowerCase().includes(column.toLowerCase())
+  );
+};
+
+const withCompanyLogoFallback = (payload: Record<string, any>): Record<string, any> => {
+  const fallback = { ...payload };
+  fallback.company_logo = payload.company_logo_url ?? null;
+  delete fallback.company_logo_url;
+  return fallback;
+};
+
 class JobsService {
   private static eligibleYearsSupported = true;
+
+  private async getAuthenticatedAdminSession() {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.error('JobsService: Session error:', sessionError);
+      throw new Error('Failed to verify authentication. Please log out and log back in.');
+    }
+    if (!session) {
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    console.log('JobsService: Checking admin status...');
+    let isAdmin = false;
+
+    try {
+      const { data: adminStatus, error: adminCheckError } = await supabase.rpc('debug_admin_status');
+
+      if (adminCheckError) {
+        console.warn('JobsService: debug_admin_status not available, falling back to metadata check:', adminCheckError.message);
+        const userRole = session.user?.app_metadata?.role || session.user?.user_metadata?.role;
+        isAdmin = userRole === 'admin';
+      } else if (adminStatus && adminStatus.is_admin_result) {
+        console.log('JobsService: Admin check via RPC succeeded.');
+        isAdmin = true;
+      }
+    } catch (err) {
+      console.warn('JobsService: Error calling debug_admin_status, using fallback:', err);
+      const userRole = session.user?.app_metadata?.role || session.user?.user_metadata?.role;
+      isAdmin = userRole === 'admin';
+    }
+
+    if (!isAdmin) {
+      throw new Error('❌ Admin privileges required. You do not have permission to manage job listings.');
+    }
+
+    console.log('JobsService: ✅ Admin verification successful.');
+    return session;
+  }
+
+  private normalizeEligibleYears(value: JobListing['eligible_years'] | undefined | null): string | null {
+    if (!value) return null;
+
+    if (Array.isArray(value)) {
+      const cleaned = value.map((item) => item.trim()).filter(Boolean);
+      return cleaned.length ? cleaned.join(', ') : null;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.includes(',') || value.includes('|') || value.includes('/')
+        ? value.split(/[,|/]/)
+        : value.split(/\s+/);
+
+      const cleaned = normalized.map((item) => item.trim()).filter(Boolean);
+      return cleaned.length ? cleaned.join(', ') : null;
+    }
+
+    return null;
+  }
+
+  private async runJobMutationWithFallbacks<T>(
+    mutation: (payload: Record<string, any>) => Promise<{ data: T | null; error: any }>,
+    payload: Record<string, any>
+  ): Promise<{ data: T | null; error: any }> {
+    let nextPayload = { ...payload };
+    let attemptedEligibleYearsFallback = false;
+    let attemptedCompanyLogoFallback = false;
+
+    let result = await mutation(nextPayload);
+
+    while (result.error) {
+      if (isEligibleYearsColumnMissing(result.error) && !attemptedEligibleYearsFallback) {
+        console.warn('JobsService: eligible_years column not found. Retrying without it.');
+        JobsService.eligibleYearsSupported = false;
+        attemptedEligibleYearsFallback = true;
+        delete nextPayload.eligible_years;
+        result = await mutation(nextPayload);
+        continue;
+      }
+
+      if (isMissingColumnError(result.error, 'company_logo_url') && !attemptedCompanyLogoFallback) {
+        console.warn('JobsService: company_logo_url column not found. Retrying with company_logo fallback.');
+        attemptedCompanyLogoFallback = true;
+        nextPayload = withCompanyLogoFallback(nextPayload);
+        result = await mutation(nextPayload);
+        continue;
+      }
+
+      break;
+    }
+
+    return result;
+  }
 
   // Create a new job listing (Admin only)
   async createJobListing(jobData: Partial<JobListing>): Promise<JobListing> {
     try {
       console.log('JobsService: Creating new job listing...');
 
-      // Validate required fields
       if (!jobData.company_name || !jobData.role_title || !jobData.domain ||
           !jobData.location_type || !jobData.experience_required ||
           !jobData.qualification || !jobData.short_description ||
@@ -31,89 +139,32 @@ class JobsService {
         throw new Error('Missing required job listing fields');
       }
 
-      // Get current session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        console.error('JobsService: Session error:', sessionError);
-        throw new Error('Failed to verify authentication. Please log out and log back in.');
-      }
-      if (!session) {
-        throw new Error('Authentication required. Please log in.');
-      }
+      const session = await this.getAuthenticatedAdminSession();
+      console.log('JobsService: Proceeding with job creation...');
 
-      // Verify admin status (with graceful fallback)
-      console.log('JobsService: Checking admin status...');
-      let isAdmin = false;
-
-      try {
-        const { data: adminStatus, error: adminCheckError } = await supabase.rpc('debug_admin_status');
-
-        if (adminCheckError) {
-          console.warn('JobsService: debug_admin_status not available, falling back to metadata check:', adminCheckError.message);
-          const userRole = session.user?.app_metadata?.role || session.user?.user_metadata?.role;
-          isAdmin = userRole === 'admin';
-        } else if (adminStatus && adminStatus.is_admin_result) {
-          console.log('JobsService: Admin check via RPC succeeded.');
-          isAdmin = true;
-        }
-      } catch (err) {
-        console.warn('JobsService: Error calling debug_admin_status, using fallback:', err);
-        const userRole = session.user?.app_metadata?.role || session.user?.user_metadata?.role;
-        isAdmin = userRole === 'admin';
-      }
-
-      if (!isAdmin) {
-        throw new Error('❌ Admin privileges required. You do not have permission to create job listings.');
-      }
-
-      console.log('JobsService: ✅ Admin verification successful. Proceeding with job creation...');
-
-      // Prepare job data with default values
-      const eligibleYears = (() => {
-        const value = jobData.eligible_years;
-        if (!value) return null;
-
-        if (Array.isArray(value)) {
-          const cleaned = value.map((item) => item.trim()).filter(Boolean);
-          return cleaned.length ? cleaned.join(', ') : null;
-        }
-
-        if (typeof value === 'string') {
-          const normalized = value.includes(',') || value.includes('|') || value.includes('/')
-            ? value.split(/[,|/]/)
-            : value.split(/\s+/);
-
-          const cleaned = normalized.map((item) => item.trim()).filter(Boolean);
-          return cleaned.length ? cleaned.join(', ') : null;
-        }
-
-        return null;
-      })();
-
-     const insertData: Record<string, any> = {
-  company_name: jobData.company_name,
-  company_logo: jobData.company_logo_url || null,  // CHANGED: company_logo_url → company_logo
-  company_website: jobData.company_website || null,
-  company_description: jobData.company_description || null,
-  role_title: jobData.role_title,
-  package_amount: jobData.package_amount || null,
-  package_currency: jobData.package_currency || null,  // CHANGED: Added package_currency
-  package_type: jobData.package_type || null,
-  domain: jobData.domain,
-  location_type: jobData.location_type,
-  location_city: jobData.location_city || null,
-  experience_required: jobData.experience_required,
-  qualification: jobData.qualification,
-  eligible_years: eligibleYears,
-  short_description: jobData.short_description,
-  full_description: jobData.full_description,
-  description: jobData.full_description,
-  application_link: jobData.application_link,
-  posted_date: new Date().toISOString(),
-  source_api: 'manual_admin',
-  is_active: jobData.is_active !== undefined ? jobData.is_active : true,
-  
-
+      const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
+      const insertData: Record<string, any> = {
+        company_name: jobData.company_name,
+        company_logo_url: jobData.company_logo_url || null,
+        company_website: jobData.company_website || null,
+        company_description: jobData.company_description || null,
+        role_title: jobData.role_title,
+        package_amount: jobData.package_amount || null,
+        package_currency: jobData.package_currency || null,
+        package_type: jobData.package_type || null,
+        domain: jobData.domain,
+        location_type: jobData.location_type,
+        location_city: jobData.location_city || null,
+        experience_required: jobData.experience_required,
+        qualification: jobData.qualification,
+        eligible_years: eligibleYears,
+        short_description: jobData.short_description,
+        full_description: jobData.full_description,
+        description: jobData.full_description,
+        application_link: jobData.application_link,
+        posted_date: new Date().toISOString(),
+        source_api: 'manual_admin',
+        is_active: jobData.is_active !== undefined ? jobData.is_active : true,
 
         // Referral information
         referral_person_name: jobData.referral_person_name || null,
@@ -135,7 +186,7 @@ class JobsService {
         // AI polish tracking (will be updated after creation)
         ai_polished: false,
         ai_polished_at: null,
-        original_description: jobData.full_description, // Store original before polish
+        original_description: jobData.full_description,
       };
 
       if (!JobsService.eligibleYearsSupported) {
@@ -144,18 +195,10 @@ class JobsService {
 
       console.log('JobsService: Inserting job data:', insertData);
 
-      const attemptInsert = async (payload: Record<string, any>) =>
-        supabase.from('job_listings').insert(payload).select().single();
-
-      let { data: newJob, error } = await attemptInsert(insertData);
-
-      if (error && isEligibleYearsColumnMissing(error)) {
-        console.warn('JobsService: eligible_years column not found. Retrying without it.');
-        JobsService.eligibleYearsSupported = false;
-        const fallbackPayload = { ...insertData };
-        delete fallbackPayload.eligible_years;
-        ({ data: newJob, error } = await attemptInsert(fallbackPayload));
-      }
+      const { data: newJob, error } = await this.runJobMutationWithFallbacks<JobListing>(
+        (payload) => supabase.from('job_listings').insert(payload).select().single(),
+        insertData
+      );
 
       if (error) {
         console.error('JobsService: Error creating job listing:', error);
@@ -166,20 +209,115 @@ class JobsService {
         );
       }
 
+      if (!newJob) {
+        throw new Error('Job listing was not created');
+      }
+
       console.log('JobsService: Job listing created successfully with ID:', newJob.id);
 
-      this.createWhatsAppUpdateInBackground(newJob, session.user.id).catch((err) => {
+      try {
+        await this.syncWhatsAppUpdateForJob(newJob, session.user.id);
+      } catch (err) {
         console.warn('JobsService: WhatsApp update generation failed:', err);
-      });
+      }
 
-      // Trigger AI polish in background (don't wait for it)
-      this.polishJobDescriptionInBackground(newJob.id, newJob).catch(err => {
+      this.polishJobDescriptionInBackground(newJob.id, newJob).catch((err) => {
         console.warn('JobsService: AI polish failed, job will use original description:', err);
       });
 
       return newJob;
     } catch (error) {
       console.error('JobsService: Error in createJobListing:', error);
+      throw error;
+    }
+  }
+
+  async updateJobListing(jobId: string, jobData: Partial<JobListing>): Promise<JobListing> {
+    try {
+      console.log('JobsService: Updating job listing...', jobId);
+
+      if (!jobId) {
+        throw new Error('Job ID is required');
+      }
+
+      if (!jobData.company_name || !jobData.role_title || !jobData.domain ||
+          !jobData.location_type || !jobData.experience_required ||
+          !jobData.qualification || !jobData.short_description ||
+          !jobData.full_description || !jobData.application_link) {
+        throw new Error('Missing required job listing fields');
+      }
+
+      const session = await this.getAuthenticatedAdminSession();
+
+      const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
+      const updateData: Record<string, any> = {
+        company_name: jobData.company_name,
+        company_logo_url: jobData.company_logo_url || null,
+        company_website: jobData.company_website || null,
+        company_description: jobData.company_description || null,
+        role_title: jobData.role_title,
+        package_amount: jobData.package_amount || null,
+        package_currency: jobData.package_currency || null,
+        package_type: jobData.package_type || null,
+        domain: jobData.domain,
+        location_type: jobData.location_type,
+        location_city: jobData.location_city || null,
+        experience_required: jobData.experience_required,
+        qualification: jobData.qualification,
+        eligible_years: eligibleYears,
+        short_description: jobData.short_description,
+        full_description: jobData.full_description,
+        description: jobData.full_description,
+        application_link: jobData.application_link,
+        is_active: jobData.is_active !== undefined ? jobData.is_active : true,
+        referral_person_name: jobData.referral_person_name || null,
+        referral_email: jobData.referral_email || null,
+        referral_code: jobData.referral_code || null,
+        referral_link: jobData.referral_link || null,
+        referral_bonus_amount: jobData.referral_bonus_amount || null,
+        referral_terms: jobData.referral_terms || null,
+        has_referral: !!(jobData.referral_person_name || jobData.referral_email || jobData.referral_code || jobData.referral_link),
+        test_requirements: jobData.test_requirements || null,
+        has_coding_test: jobData.has_coding_test || false,
+        has_aptitude_test: jobData.has_aptitude_test || false,
+        has_technical_interview: jobData.has_technical_interview || false,
+        has_hr_interview: jobData.has_hr_interview || false,
+        test_duration_minutes: jobData.test_duration_minutes || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (!JobsService.eligibleYearsSupported) {
+        delete updateData.eligible_years;
+      }
+
+      const { data: updatedJob, error } = await this.runJobMutationWithFallbacks<JobListing>(
+        (payload) => supabase.from('job_listings').update(payload).eq('id', jobId).select().single(),
+        updateData
+      );
+
+      if (error) {
+        console.error('JobsService: Error updating job listing:', error);
+        throw new Error(
+          `Failed to update job listing: ${error.message}\n\n` +
+          `Error Code: ${error.code || 'UNKNOWN'}\n` +
+          `Hint: ${error.hint || 'No additional information'}`
+        );
+      }
+
+      if (!updatedJob) {
+        throw new Error('Job listing was not found or could not be updated');
+      }
+
+      try {
+        await this.syncWhatsAppUpdateForJob(updatedJob, session.user.id);
+      } catch (err) {
+        console.warn('JobsService: WhatsApp update sync failed after job update:', err);
+      }
+
+      console.log('JobsService: Job listing updated successfully with ID:', updatedJob.id);
+      return updatedJob;
+    } catch (error) {
+      console.error('JobsService: Error in updateJobListing:', error);
       throw error;
     }
   }
@@ -521,7 +659,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
   }
 
   private getPrimoBoostJobUrl(jobId: string): string {
-    return `https://primoboost.ai/jobs/${jobId}`;
+    return `https://primoboostai.in/jobs/${jobId}`;
   }
 
   private formatCompensationForShare(job: JobListing): string {
@@ -548,22 +686,52 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
     return job.location_type || 'Not specified';
   }
 
-  private buildWhatsAppUpdateText(job: JobListing, packageText: string, locationText: string, applyUrl: string): string {
+  private formatEligibleYearsForShare(job: JobListing): string {
+    const eligibleYears = this.normalizeEligibleYears(job.eligible_years);
+    return eligibleYears || 'Not specified';
+  }
+
+  private formatExperienceForShare(job: JobListing): string {
+    if (typeof job.experience_required === 'string' && job.experience_required.trim()) {
+      return job.experience_required.trim();
+    }
+    return 'Not specified';
+  }
+
+  private buildWhatsAppUpdateText(
+    job: JobListing,
+    packageText: string,
+    locationText: string,
+    eligibleYearsText: string,
+    experienceText: string,
+    applyUrl: string
+  ): string {
     return [
       `Company Name: ${job.company_name}`,
       `Role: ${job.role_title}`,
       `Package: ${packageText}`,
       `Location: ${locationText}`,
+      `Eligible Years: ${eligibleYearsText}`,
+      `Experience: ${experienceText}`,
       `Apply Now: ${applyUrl}`,
     ].join('\n');
   }
 
-  private async createWhatsAppUpdateInBackground(job: JobListing, createdBy: string): Promise<void> {
+  private async syncWhatsAppUpdateForJob(job: JobListing, createdBy: string): Promise<void> {
     try {
       const packageText = this.formatCompensationForShare(job);
       const locationText = this.formatLocationForShare(job);
+      const eligibleYearsText = this.formatEligibleYearsForShare(job);
+      const experienceText = this.formatExperienceForShare(job);
       const applyUrl = this.getPrimoBoostJobUrl(job.id);
-      const whatsappText = this.buildWhatsAppUpdateText(job, packageText, locationText, applyUrl);
+      const whatsappText = this.buildWhatsAppUpdateText(
+        job,
+        packageText,
+        locationText,
+        eligibleYearsText,
+        experienceText,
+        applyUrl
+      );
 
       const metadata: JobUpdateMetadata = {
         kind: 'whatsapp_job_card',
@@ -572,6 +740,8 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         role_title: job.role_title,
         package: packageText,
         location: locationText,
+        eligible_years: eligibleYearsText,
+        experience_required: experienceText,
         apply_url: applyUrl,
         whatsapp_text: whatsappText,
         tags: ['whatsapp', 'job-update', (job.domain || 'job').toLowerCase().replace(/\s+/g, '-')],
@@ -579,19 +749,48 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         locations: [locationText],
       };
 
+      const updatePayload = {
+        title: `${job.company_name} hiring ${job.role_title}`,
+        description: `${job.role_title} | ${packageText} | ${locationText} | ${eligibleYearsText} | ${experienceText}`,
+        content: whatsappText,
+        category: 'hiring_news' as const,
+        source_platform: 'primo_whatsapp_auto',
+        metadata,
+        external_link: applyUrl,
+        is_featured: false,
+        is_active: true,
+        published_at: new Date().toISOString(),
+      };
+
+      const { data: existingUpdates, error: lookupError } = await supabase
+        .from('job_updates')
+        .select('id')
+        .eq('source_platform', 'primo_whatsapp_auto')
+        .contains('metadata', { job_id: job.id })
+        .order('published_at', { ascending: false })
+        .limit(1);
+
+      if (lookupError) {
+        console.warn('JobsService: Failed to lookup existing WhatsApp update, falling back to insert:', lookupError);
+      }
+
+      if (!lookupError && existingUpdates && existingUpdates.length > 0) {
+        const { error } = await supabase
+          .from('job_updates')
+          .update(updatePayload)
+          .eq('id', existingUpdates[0].id);
+
+        if (error) {
+          console.warn('JobsService: Failed to update WhatsApp update:', error);
+        }
+
+        return;
+      }
+
       const { error } = await supabase
         .from('job_updates')
         .insert({
-          title: `${job.company_name} hiring ${job.role_title}`,
-          description: `${job.role_title} | ${packageText} | ${locationText}`,
-          content: whatsappText,
-          category: 'hiring_news',
-          source_platform: 'primo_whatsapp_auto',
-          metadata,
-          external_link: applyUrl,
-          is_featured: false,
-          is_active: true,
-          published_at: new Date().toISOString(),
+          ...updatePayload,
           created_by: createdBy,
         });
 
@@ -599,7 +798,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         console.warn('JobsService: Failed to create WhatsApp update:', error);
       }
     } catch (error) {
-      console.warn('JobsService: Error building WhatsApp update:', error);
+      console.warn('JobsService: Error syncing WhatsApp update:', error);
     }
   }
 
