@@ -34,6 +34,7 @@ const withCompanyLogoFallback = (payload: Record<string, any>): Record<string, a
 
 class JobsService {
   private static eligibleYearsSupported = true;
+  private static skillsSupported = true;
 
   private async getAuthenticatedAdminSession() {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -93,12 +94,43 @@ class JobsService {
     return null;
   }
 
+  private normalizeSkills(value: JobListing['skills'] | undefined | null): string[] {
+    if (!value || value.length === 0) return [];
+
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    value.forEach((skill) => {
+      if (typeof skill !== 'string') return;
+
+      const cleaned = skill.trim();
+      if (!cleaned) return;
+
+      const dedupeKey = cleaned.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+
+      seen.add(dedupeKey);
+      normalized.push(cleaned);
+    });
+
+    return normalized;
+  }
+
+  private buildSkillsSearchClause(searchTerm: string): string | null {
+    const trimmed = searchTerm.trim();
+    if (!trimmed || /[{}]/.test(trimmed)) return null;
+
+    const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `skills.cs.{"${escaped}"}`;
+  }
+
   private async runJobMutationWithFallbacks<T>(
     mutation: (payload: Record<string, any>) => Promise<{ data: T | null; error: any }>,
     payload: Record<string, any>
   ): Promise<{ data: T | null; error: any }> {
     let nextPayload = { ...payload };
     let attemptedEligibleYearsFallback = false;
+    let attemptedSkillsFallback = false;
     let attemptedCompanyLogoFallback = false;
 
     let result = await mutation(nextPayload);
@@ -109,6 +141,15 @@ class JobsService {
         JobsService.eligibleYearsSupported = false;
         attemptedEligibleYearsFallback = true;
         delete nextPayload.eligible_years;
+        result = await mutation(nextPayload);
+        continue;
+      }
+
+      if (isMissingColumnError(result.error, 'skills') && !attemptedSkillsFallback) {
+        console.warn('JobsService: skills column not found. Retrying without it.');
+        JobsService.skillsSupported = false;
+        attemptedSkillsFallback = true;
+        delete nextPayload.skills;
         result = await mutation(nextPayload);
         continue;
       }
@@ -143,6 +184,7 @@ class JobsService {
       console.log('JobsService: Proceeding with job creation...');
 
       const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
+      const normalizedSkills = this.normalizeSkills(jobData.skills);
       const insertData: Record<string, any> = {
         company_name: jobData.company_name,
         company_logo_url: jobData.company_logo_url || null,
@@ -158,12 +200,13 @@ class JobsService {
         experience_required: jobData.experience_required,
         qualification: jobData.qualification,
         eligible_years: eligibleYears,
+        skills: normalizedSkills,
         short_description: jobData.short_description,
         full_description: jobData.full_description,
         description: jobData.full_description,
         application_link: jobData.application_link,
         posted_date: new Date().toISOString(),
-        source_api: 'manual_admin',
+        source_api: jobData.source_api || 'manual_admin',
         is_active: jobData.is_active !== undefined ? jobData.is_active : true,
 
         // Referral information
@@ -191,6 +234,10 @@ class JobsService {
 
       if (!JobsService.eligibleYearsSupported) {
         delete insertData.eligible_years;
+      }
+
+      if (!JobsService.skillsSupported) {
+        delete insertData.skills;
       }
 
       console.log('JobsService: Inserting job data:', insertData);
@@ -250,6 +297,7 @@ class JobsService {
       const session = await this.getAuthenticatedAdminSession();
 
       const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
+      const normalizedSkills = this.normalizeSkills(jobData.skills);
       const updateData: Record<string, any> = {
         company_name: jobData.company_name,
         company_logo_url: jobData.company_logo_url || null,
@@ -265,6 +313,7 @@ class JobsService {
         experience_required: jobData.experience_required,
         qualification: jobData.qualification,
         eligible_years: eligibleYears,
+        skills: normalizedSkills,
         short_description: jobData.short_description,
         full_description: jobData.full_description,
         description: jobData.full_description,
@@ -286,8 +335,16 @@ class JobsService {
         updated_at: new Date().toISOString(),
       };
 
+      if (jobData.source_api) {
+        updateData.source_api = jobData.source_api;
+      }
+
       if (!JobsService.eligibleYearsSupported) {
         delete updateData.eligible_years;
+      }
+
+      if (!JobsService.skillsSupported) {
+        delete updateData.skills;
       }
 
       const { data: updatedJob, error } = await this.runJobMutationWithFallbacks<JobListing>(
@@ -445,8 +502,22 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       }
 
       if (filters.search) {
-        const searchTerm = filters.search.toLowerCase();
-        query = query.or(`role_title.ilike.%${searchTerm}%,company_name.ilike.%${searchTerm}%,domain.ilike.%${searchTerm}%`);
+        const searchTerm = filters.search.trim();
+        const searchClauses = [
+          `role_title.ilike.%${searchTerm}%`,
+          `company_name.ilike.%${searchTerm}%`,
+          `domain.ilike.%${searchTerm}%`,
+          `qualification.ilike.%${searchTerm}%`,
+          `short_description.ilike.%${searchTerm}%`,
+          `description.ilike.%${searchTerm}%`,
+        ];
+        const skillsSearchClause = JobsService.skillsSupported
+          ? this.buildSkillsSearchClause(searchTerm)
+          : null;
+        if (skillsSearchClause) {
+          searchClauses.push(skillsSearchClause);
+        }
+        query = query.or(searchClauses.join(','));
       }
 
       // Apply sorting
@@ -465,6 +536,12 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       const { data: jobs, error, count } = await query;
 
       if (error) {
+        if (isMissingColumnError(error, 'skills') && JobsService.skillsSupported) {
+          console.warn('JobsService: skills column not found while searching. Retrying without skills search.');
+          JobsService.skillsSupported = false;
+          return this.getJobListings(filters, limit, offset);
+        }
+
         console.error('JobsService: Database error:', error);
         throw new Error(`Failed to fetch jobs: ${error.message}`);
       }

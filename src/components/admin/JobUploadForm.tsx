@@ -1,5 +1,5 @@
 // src/components/admin/JobUploadForm.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -38,6 +38,7 @@ import { JobListing } from '../../types/jobs';
 import { ImageUpload } from './ImageUpload';
 import { useJobFormAutoSave } from '../../hooks/useJobFormAutoSave';
 import { openrouter } from '../../services/aiProxyService';
+import { jobExtractionService, type ExtractedJobFromUrl } from '../../services/jobExtractionService';
 import { supabase } from '../../lib/supabaseClient';
 
 // Helper to truly make optional number inputs tolerant of empty string/NaN from form
@@ -54,6 +55,31 @@ const optionalPositiveNumber = (message: string) =>
     z.number().positive(message).optional()
   );
 
+const parseSkillsInput = (value: string | string[] | null | undefined): string[] => {
+  const rawSkills = Array.isArray(value)
+    ? value.filter((skill): skill is string => typeof skill === 'string')
+    : (value || '').split(/[\n,;|]/);
+
+  const seen = new Set<string>();
+  const normalizedSkills: string[] = [];
+
+  rawSkills.forEach((skill) => {
+    const cleaned = skill
+      .replace(/^[-*]+/, '')
+      .trim();
+
+    if (!cleaned) return;
+
+    const dedupeKey = cleaned.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+
+    seen.add(dedupeKey);
+    normalizedSkills.push(cleaned);
+  });
+
+  return normalizedSkills;
+};
+
 // Zod schema for job listing validation
 const jobListingSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
@@ -67,6 +93,7 @@ const jobListingSchema = z.object({
   experience_required: z.string().min(1, 'Experience requirement is required'),
   qualification: z.string().min(1, 'Qualification is required'),
   eligible_years: z.string().optional().or(z.literal('')),
+  skills: z.string().optional().or(z.literal('')),
   short_description: z.string().min(50, 'Short description must be at least 50 characters'),
   full_description: z.string().min(100, 'Full description must be at least 100 characters'),
   application_link: z.string().url('Must be a valid URL'),
@@ -106,6 +133,7 @@ const AI_ALLOWED_JOB_FIELDS: Array<keyof JobFormData> = [
   'experience_required',
   'qualification',
   'eligible_years',
+  'skills',
   'short_description',
   'full_description',
   'application_link',
@@ -128,6 +156,7 @@ const OPTIONAL_STRING_FIELDS = new Set<keyof JobFormData>([
   'company_logo_url',
   'location_city',
   'eligible_years',
+  'skills',
   'referral_person_name',
   'referral_email',
   'referral_code',
@@ -185,14 +214,91 @@ const normalizePositiveNumber = (value: unknown): number | null => {
   return parsed;
 };
 
+const normalizeExtractedPackageType = (value: unknown): JobFormData['package_type'] | undefined => {
+  if (typeof value !== 'string') return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  if (normalized.includes('stipend')) return 'stipend';
+  if (normalized.includes('hour')) return 'hourly';
+  if (
+    normalized.includes('ctc') ||
+    normalized.includes('annual') ||
+    normalized.includes('salary') ||
+    normalized.includes('lpa')
+  ) {
+    return 'CTC';
+  }
+
+  return undefined;
+};
+
+const normalizeExtractedLocationType = (
+  locationType: unknown,
+  city: unknown
+): JobFormData['location_type'] => {
+  const combined = [locationType, city]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .trim()
+    .toLowerCase();
+
+  if (combined.includes('hybrid')) return 'Hybrid';
+  if (combined.includes('remote') || combined.includes('work from home') || combined.includes('wfh')) {
+    return 'Remote';
+  }
+
+  return 'Onsite';
+};
+
+const normalizeExtractedText = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, ' ').trim();
+};
+
+const normalizeExtractedSkills = (value: unknown): string => {
+  if (typeof value !== 'string' && !Array.isArray(value)) {
+    return '';
+  }
+
+  return parseSkillsInput(value as string | string[]).join(', ');
+};
+
+const buildExtractedShortDescription = (job: ExtractedJobFromUrl): string => {
+  const shortDescription = normalizeExtractedText(job.short_description);
+  if (shortDescription) return shortDescription;
+
+  const fullDescription = normalizeExtractedText(job.full_job_description);
+  if (!fullDescription) return '';
+
+  return fullDescription.slice(0, 220).trim();
+};
+
+const buildExtractedFullDescription = (job: ExtractedJobFromUrl): string => {
+  const fullDescription = normalizeExtractedText(job.full_job_description);
+  if (fullDescription) return fullDescription;
+
+  return normalizeExtractedText(job.short_description);
+};
+
 interface JobUploadFormProps {
   mode?: 'create' | 'edit';
 }
+
+const DEFAULT_JOB_FORM_VALUES: Partial<JobFormData> = {
+  is_active: true,
+  package_type: 'CTC',
+  location_type: 'Remote',
+  eligible_years: '',
+  skills: '',
+};
 
 export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' }) => {
   const navigate = useNavigate();
   const { jobId } = useParams<{ jobId: string }>();
   const isEditMode = mode === 'edit';
+  const jobUrlInputRef = useRef<HTMLInputElement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingJobData, setIsLoadingJobData] = useState(isEditMode);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -200,6 +306,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string>('');
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [showDraftNotification, setShowDraftNotification] = useState(false);
+  const [jobUrlInput, setJobUrlInput] = useState('');
+  const [isUrlExtracting, setIsUrlExtracting] = useState(false);
+  const [isAutoCreatingFromUrl, setIsAutoCreatingFromUrl] = useState(false);
+  const [urlExtractError, setUrlExtractError] = useState<string | null>(null);
+  const [urlExtractSuccess, setUrlExtractSuccess] = useState<string | null>(null);
+  const [extractedSourcePlatform, setExtractedSourcePlatform] = useState<string | null>(null);
   const [aiKeyValueInput, setAiKeyValueInput] = useState('');
   const [isAiChecking, setIsAiChecking] = useState(false);
   const [aiCheckError, setAiCheckError] = useState<string | null>(null);
@@ -215,16 +327,24 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     formState: { errors, isDirty },
   } = useForm<JobFormData>({
     resolver: zodResolver(jobListingSchema),
-    defaultValues: {
-      is_active: true,
-      package_type: 'CTC',
-      location_type: 'Remote',
-      eligible_years: '',
-    },
+    defaultValues: DEFAULT_JOB_FORM_VALUES,
   });
 
   const watchedLocationType = watch('location_type');
   const formData = watch();
+  const isUrlImportBusy = isUrlExtracting || isAutoCreatingFromUrl || isSubmitting;
+
+  const applyFieldUpdate = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
+    const currentValue = getValues(field);
+    if (currentValue === value) return false;
+
+    setValue(field, value, { shouldDirty: true, shouldValidate: true });
+    if (field === 'company_logo_url') {
+      setCompanyLogoUrl((value as string) || '');
+    }
+
+    return true;
+  };
 
   const { saveStatus, loadDraft, deleteDraft, clearDraft } = useJobFormAutoSave({
     formData,
@@ -302,6 +422,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
           experience_required: data.experience_required || '',
           qualification: data.qualification || '',
           eligible_years: eligibleYearsValue,
+          skills: parseSkillsInput(data.skills).join(', '),
           short_description: data.short_description || '',
           full_description: data.full_description || '',
           application_link: data.application_link || '',
@@ -334,12 +455,305 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
   const handleClearDraft = () => {
     clearDraft();
-    reset();
+    reset(DEFAULT_JOB_FORM_VALUES);
     setCompanyLogoUrl('');
     setShowDraftNotification(false);
+    setJobUrlInput('');
+    setUrlExtractError(null);
+    setUrlExtractSuccess(null);
+    setExtractedSourcePlatform(null);
     setAiCheckError(null);
     setAiCheckSuccess(null);
     setAiKeyValueInput('');
+  };
+
+  const buildJobPayload = (
+    data: JobFormData,
+    sourcePlatformOverride?: string | null
+  ): Partial<JobListing> => ({
+    company_name: data.company_name,
+    company_logo_url: companyLogoUrl || data.company_logo_url || undefined,
+    role_title: data.role_title,
+    package_amount: data.package_amount || undefined,
+    package_type: data.package_type || undefined,
+    domain: data.domain,
+    location_type: data.location_type,
+    location_city: data.location_city || undefined,
+    experience_required: data.experience_required,
+    qualification: data.qualification,
+    eligible_years: data.eligible_years?.trim() ? data.eligible_years.trim() : undefined,
+    skills: parseSkillsInput(data.skills),
+    short_description: data.short_description,
+    full_description: data.full_description,
+    application_link: data.application_link,
+    source_api: sourcePlatformOverride ? `manual_extract_${sourcePlatformOverride}` : undefined,
+    is_active: data.is_active,
+
+    referral_person_name: data.referral_person_name || undefined,
+    referral_email: data.referral_email || undefined,
+    referral_code: data.referral_code || undefined,
+    referral_link: data.referral_link || undefined,
+    referral_bonus_amount: data.referral_bonus_amount || undefined,
+    referral_terms: data.referral_terms || undefined,
+
+    test_requirements: data.test_requirements || undefined,
+    has_coding_test: data.has_coding_test || false,
+    has_aptitude_test: data.has_aptitude_test || false,
+    has_technical_interview: data.has_technical_interview || false,
+    has_hr_interview: data.has_hr_interview || false,
+    test_duration_minutes: data.test_duration_minutes || undefined,
+  });
+
+  const resetCreateFormForNextUrl = async () => {
+    await deleteDraft();
+    reset(DEFAULT_JOB_FORM_VALUES);
+    setCompanyLogoUrl('');
+    setJobUrlInput('');
+    setUrlExtractError(null);
+    setExtractedSourcePlatform(null);
+    setAiCheckError(null);
+    setAiCheckSuccess(null);
+    setAiKeyValueInput('');
+  };
+
+  const persistJobListing = async (
+    data: JobFormData,
+    options?: {
+      stayOnPageAfterCreate?: boolean;
+      sourcePlatformOverride?: string | null;
+      successMessage?: string;
+    }
+  ) => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    try {
+      const jobData = buildJobPayload(data, options?.sourcePlatformOverride ?? extractedSourcePlatform);
+
+      if (isEditMode) {
+        if (!jobId) {
+          throw new Error('Job ID is missing.');
+        }
+
+        await jobsService.updateJobListing(jobId, jobData);
+      } else {
+        await jobsService.createJobListing(jobData);
+      }
+
+      setSubmitSuccess(true);
+
+      if (!isEditMode) {
+        await resetCreateFormForNextUrl();
+      }
+
+      if (options?.stayOnPageAfterCreate && !isEditMode) {
+        if (options.successMessage) {
+          setUrlExtractSuccess(options.successMessage);
+        }
+        window.setTimeout(() => {
+          setSubmitSuccess(false);
+        }, 4000);
+        window.setTimeout(() => {
+          jobUrlInputRef.current?.focus();
+        }, 0);
+        return;
+      }
+
+      setTimeout(() => {
+        setSubmitSuccess(false);
+        navigate('/admin/jobs');
+      }, isEditMode ? 1500 : 2000);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} job listing`);
+      throw err;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const applyExtractedJobToForm = (
+    extractedJob: ExtractedJobFromUrl,
+    fallbackUrl: string,
+    options?: { replaceExisting?: boolean }
+  ) => {
+    let updatedCount = 0;
+    const nextValues = options?.replaceExisting
+      ? { ...DEFAULT_JOB_FORM_VALUES }
+      : { ...getValues() };
+
+    if (options?.replaceExisting) {
+      reset(DEFAULT_JOB_FORM_VALUES);
+      setCompanyLogoUrl('');
+    }
+
+    const applyIfChanged = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
+      nextValues[field] = value;
+      if (applyFieldUpdate(field, value)) {
+        updatedCount += 1;
+      }
+    };
+
+    const normalizedCompanyName = normalizeExtractedText(extractedJob.company_name);
+    if (normalizedCompanyName) applyIfChanged('company_name', normalizedCompanyName);
+
+    const normalizedLogoUrl = normalizeExtractedText(extractedJob.company_logo_url);
+    if (normalizedLogoUrl) applyIfChanged('company_logo_url', normalizedLogoUrl);
+
+    const normalizedRoleTitle = normalizeExtractedText(extractedJob.role_title);
+    if (normalizedRoleTitle) applyIfChanged('role_title', normalizedRoleTitle);
+
+    const normalizedDomain = normalizeExtractedText(extractedJob.domain);
+    if (normalizedDomain) applyIfChanged('domain', normalizedDomain);
+
+    const normalizedPackageAmount = normalizePositiveNumber(extractedJob.package_amount);
+    if (normalizedPackageAmount !== null) {
+      applyIfChanged('package_amount', normalizedPackageAmount);
+    }
+
+    const normalizedPackageType = normalizeExtractedPackageType(extractedJob.package_type);
+    if (normalizedPackageType) applyIfChanged('package_type', normalizedPackageType);
+
+    const normalizedCity = normalizeExtractedText(extractedJob.city);
+    const normalizedLocationType = normalizeExtractedText(extractedJob.location_type);
+    if (normalizedLocationType || normalizedCity) {
+      applyIfChanged(
+        'location_type',
+        normalizeExtractedLocationType(extractedJob.location_type, extractedJob.city)
+      );
+    }
+
+    if (normalizedCity) {
+      applyIfChanged('location_city', normalizedCity);
+    }
+
+    const normalizedExperience = normalizeExtractedText(extractedJob.experience_required);
+    if (normalizedExperience) applyIfChanged('experience_required', normalizedExperience);
+
+    const normalizedQualification = normalizeExtractedText(extractedJob.qualification);
+    if (normalizedQualification) applyIfChanged('qualification', normalizedQualification);
+
+    const normalizedEligibleYears = normalizeExtractedText(extractedJob.eligible_graduation_years);
+    if (normalizedEligibleYears) {
+      applyIfChanged('eligible_years', normalizedEligibleYears);
+    }
+
+    const normalizedSkills = normalizeExtractedSkills(extractedJob.required_skills);
+    if (normalizedSkills) {
+      applyIfChanged('skills', normalizedSkills);
+    }
+
+    const normalizedShortDescription = buildExtractedShortDescription(extractedJob);
+    if (normalizedShortDescription) {
+      applyIfChanged('short_description', normalizedShortDescription);
+    }
+
+    const normalizedFullDescription = buildExtractedFullDescription(extractedJob);
+    if (normalizedFullDescription) {
+      applyIfChanged('full_description', normalizedFullDescription);
+    }
+
+    const normalizedApplicationLink =
+      normalizeExtractedText(extractedJob.application_link) ||
+      normalizeExtractedText(extractedJob.source_url) ||
+      fallbackUrl;
+    if (normalizedApplicationLink) {
+      applyIfChanged('application_link', normalizedApplicationLink);
+    }
+
+    const normalizedSourcePlatform = normalizeExtractedText(extractedJob.source_platform) || null;
+    setExtractedSourcePlatform(normalizedSourcePlatform);
+
+    return {
+      updatedCount,
+      nextValues,
+      normalizedSourcePlatform,
+      platformLabel: normalizedSourcePlatform || 'job page',
+      logoReusedFromDatabase: !!extractedJob.logo_reused_from_database,
+    };
+  };
+
+  const handleExtractFromJobUrl = async (options?: { jobUrl?: string; autoCreate?: boolean }) => {
+    const trimmedUrl = (options?.jobUrl ?? jobUrlInput).trim();
+
+    if (!trimmedUrl) {
+      setUrlExtractError('Paste a job URL first, then extract.');
+      setUrlExtractSuccess(null);
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      setUrlExtractError('Enter a valid URL starting with http:// or https://');
+      setUrlExtractSuccess(null);
+      return;
+    }
+
+    setIsUrlExtracting(true);
+    setIsAutoCreatingFromUrl(!!options?.autoCreate);
+    setUrlExtractError(null);
+    setUrlExtractSuccess(null);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    try {
+      const extractedJob = await jobExtractionService.extractJobFromUrl(trimmedUrl);
+      const extractionResult = applyExtractedJobToForm(extractedJob, trimmedUrl, {
+        replaceExisting: !!options?.autoCreate && !isEditMode,
+      });
+
+      if (extractionResult.updatedCount === 0) {
+        setUrlExtractError('No usable job fields were extracted from this URL.');
+        return;
+      }
+
+      const logoNote = extractionResult.logoReusedFromDatabase
+        ? ' Existing company logo was reused from your database.'
+        : '';
+
+      if (options?.autoCreate && !isEditMode) {
+        const validationResult = jobListingSchema.safeParse(extractionResult.nextValues);
+        if (!validationResult.success) {
+          const firstIssue = validationResult.error.issues[0];
+          setUrlExtractSuccess(
+            `Extracted ${extractionResult.updatedCount} field${extractionResult.updatedCount > 1 ? 's' : ''} from ${extractionResult.platformLabel}.${logoNote}`
+          );
+          setUrlExtractError(
+            firstIssue?.message
+              ? `Job extracted, but auto-create stopped: ${firstIssue.message}. Review the form and save manually.`
+              : 'Job extracted, but auto-create stopped. Review the form and save manually.'
+          );
+          return;
+        }
+
+        await persistJobListing(validationResult.data, {
+          stayOnPageAfterCreate: true,
+          sourcePlatformOverride: extractionResult.normalizedSourcePlatform,
+          successMessage: `Job created automatically from ${extractionResult.platformLabel}. Paste the next URL.`,
+        });
+        return;
+      }
+
+      setUrlExtractSuccess(
+        `Extracted ${extractionResult.updatedCount} field${extractionResult.updatedCount > 1 ? 's' : ''} from ${extractionResult.platformLabel}.${logoNote}`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to extract job details from the URL.';
+      setUrlExtractError(message);
+    } finally {
+      setIsUrlExtracting(false);
+      setIsAutoCreatingFromUrl(false);
+    }
+  };
+
+  const handleJobUrlPaste = async (event: React.ClipboardEvent<HTMLInputElement>) => {
+    if (isEditMode || isUrlImportBusy) return;
+
+    const pastedUrl = event.clipboardData.getData('text').trim();
+    if (!/^https?:\/\//i.test(pastedUrl)) return;
+
+    event.preventDefault();
+    setJobUrlInput(pastedUrl);
+    await handleExtractFromJobUrl({ jobUrl: pastedUrl, autoCreate: true });
   };
 
   const handleAiCheckAndFill = async () => {
@@ -384,23 +798,14 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       const parsed = parseAiJsonObject(aiResponse) as AiJobFieldMap;
       let updatedCount = 0;
 
-      const applyFieldUpdate = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
-        const currentValue = getValues(field);
-        if (currentValue === value) return;
-
-        setValue(field, value, { shouldDirty: true, shouldValidate: true });
-        if (field === 'company_logo_url') {
-          setCompanyLogoUrl((value as string) || '');
-        }
-        updatedCount += 1;
-      };
-
       const applyStringField = (field: keyof JobFormData, rawValue: unknown) => {
         if (typeof rawValue !== 'string') return;
         const normalized = rawValue.trim();
         const isOptional = OPTIONAL_STRING_FIELDS.has(field);
         if (!normalized && !isOptional) return;
-        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
+          updatedCount += 1;
+        }
       };
 
       const applyNumberField = (
@@ -410,7 +815,9 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         if (rawValue === null || rawValue === '') return;
         const normalized = normalizePositiveNumber(rawValue);
         if (normalized === null) return;
-        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
+          updatedCount += 1;
+        }
       };
 
       const applyBooleanField = (
@@ -419,7 +826,9 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       ) => {
         const normalized = normalizeBoolean(rawValue);
         if (normalized === null) return;
-        applyFieldUpdate(field, normalized as JobFormData[typeof field]);
+        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
+          updatedCount += 1;
+        }
       };
 
       applyStringField('company_name', parsed.company_name);
@@ -430,6 +839,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       applyStringField('experience_required', parsed.experience_required);
       applyStringField('qualification', parsed.qualification);
       applyStringField('eligible_years', parsed.eligible_years);
+      if (typeof parsed.skills === 'string' || Array.isArray(parsed.skills)) {
+        const normalizedSkills = parseSkillsInput(parsed.skills as string | string[]);
+        if (applyFieldUpdate('skills', normalizedSkills.join(', '))) {
+          updatedCount += 1;
+        }
+      }
       applyStringField('short_description', parsed.short_description);
       applyStringField('full_description', parsed.full_description);
       applyStringField('application_link', parsed.application_link);
@@ -446,16 +861,16 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
       if (typeof parsed.package_type === 'string') {
         const packageType = parsed.package_type.trim().toLowerCase();
-        if (packageType === 'ctc') applyFieldUpdate('package_type', 'CTC');
-        if (packageType === 'stipend') applyFieldUpdate('package_type', 'stipend');
-        if (packageType === 'hourly') applyFieldUpdate('package_type', 'hourly');
+        if (packageType === 'ctc' && applyFieldUpdate('package_type', 'CTC')) updatedCount += 1;
+        if (packageType === 'stipend' && applyFieldUpdate('package_type', 'stipend')) updatedCount += 1;
+        if (packageType === 'hourly' && applyFieldUpdate('package_type', 'hourly')) updatedCount += 1;
       }
 
       if (typeof parsed.location_type === 'string') {
         const locationType = parsed.location_type.trim().toLowerCase();
-        if (locationType === 'remote') applyFieldUpdate('location_type', 'Remote');
-        if (locationType === 'onsite') applyFieldUpdate('location_type', 'Onsite');
-        if (locationType === 'hybrid') applyFieldUpdate('location_type', 'Hybrid');
+        if (locationType === 'remote' && applyFieldUpdate('location_type', 'Remote')) updatedCount += 1;
+        if (locationType === 'onsite' && applyFieldUpdate('location_type', 'Onsite')) updatedCount += 1;
+        if (locationType === 'hybrid' && applyFieldUpdate('location_type', 'Hybrid')) updatedCount += 1;
       }
 
       applyBooleanField('is_active', parsed.is_active);
@@ -481,71 +896,10 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
   };
 
   const onSubmit = async (data: JobFormData) => {
-    setIsSubmitting(true);
-    setSubmitError(null);
-    setSubmitSuccess(false);
-
     try {
-      const jobData: Partial<JobListing> = {
-        company_name: data.company_name,
-        company_logo_url: companyLogoUrl || data.company_logo_url || undefined,
-        role_title: data.role_title,
-        package_amount: data.package_amount || undefined,
-        package_type: data.package_type || undefined,
-        domain: data.domain,
-        location_type: data.location_type,
-        location_city: data.location_city || undefined,
-        experience_required: data.experience_required,
-        qualification: data.qualification,
-        eligible_years: data.eligible_years?.trim() ? data.eligible_years.trim() : undefined,
-        short_description: data.short_description,
-        full_description: data.full_description,
-        application_link: data.application_link,
-        is_active: data.is_active,
-
-        // Referral information
-        referral_person_name: data.referral_person_name || undefined,
-        referral_email: data.referral_email || undefined,
-        referral_code: data.referral_code || undefined,
-        referral_link: data.referral_link || undefined,
-        referral_bonus_amount: data.referral_bonus_amount || undefined,
-        referral_terms: data.referral_terms || undefined,
-
-        // Test pattern information
-        test_requirements: data.test_requirements || undefined,
-        has_coding_test: data.has_coding_test || false,
-        has_aptitude_test: data.has_aptitude_test || false,
-        has_technical_interview: data.has_technical_interview || false,
-        has_hr_interview: data.has_hr_interview || false,
-        test_duration_minutes: data.test_duration_minutes || undefined,
-      };
-
-      if (isEditMode) {
-        if (!jobId) {
-          throw new Error('Job ID is missing.');
-        }
-
-        await jobsService.updateJobListing(jobId, jobData);
-      } else {
-        await jobsService.createJobListing(jobData);
-      }
-
-      setSubmitSuccess(true);
-
-      if (!isEditMode) {
-        await deleteDraft();
-        reset();
-        setCompanyLogoUrl('');
-      }
-
-      setTimeout(() => {
-        setSubmitSuccess(false);
-        navigate('/admin/jobs');
-      }, isEditMode ? 1500 : 2000);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} job listing`);
-    } finally {
-      setIsSubmitting(false);
+      await persistJobListing(data);
+    } catch {
+      return;
     }
   };
 
@@ -672,6 +1026,64 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                   </div>
                 </div>
               )}
+
+              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-dark-200 dark:to-dark-300 p-6 rounded-xl border border-cyan-100 dark:border-dark-400">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                  <LinkIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-neon-cyan-400" />
+                  Extract From Job URL
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  Paste a Workday, Superset, or Greenhouse job link to auto-create the job instantly. Use the button only when you want to extract into the form without creating yet.
+                </p>
+                <div className="flex flex-col lg:flex-row gap-3">
+                  <input
+                    ref={jobUrlInputRef}
+                    type="url"
+                    value={jobUrlInput}
+                    onChange={(event) => setJobUrlInput(event.target.value)}
+                    onPaste={handleJobUrlPaste}
+                    disabled={isUrlImportBusy}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100 dark:disabled:bg-dark-300"
+                    placeholder="https://company.myworkdayjobs.com/... or https://boards.greenhouse.io/..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleExtractFromJobUrl()}
+                    disabled={isUrlImportBusy}
+                    className={`font-semibold py-3 px-5 rounded-xl transition-colors flex items-center justify-center space-x-2 ${
+                      isUrlImportBusy
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    }`}
+                  >
+                    {isAutoCreatingFromUrl ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Creating...</span>
+                      </>
+                    ) : isUrlExtracting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Extracting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <LinkIcon className="w-4 h-4" />
+                        <span>Extract Only</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  Paste a valid URL to auto-create and stay on this page for the next link. Manual extract still fills the current form only.
+                </p>
+                {urlExtractError && (
+                  <p className="mt-3 text-sm text-red-600 dark:text-red-400">{urlExtractError}</p>
+                )}
+                {urlExtractSuccess && (
+                  <p className="mt-3 text-sm text-green-600 dark:text-green-400">{urlExtractSuccess}</p>
+                )}
+              </div>
 
               <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-dark-200 dark:to-dark-300 p-6 rounded-xl border border-indigo-100 dark:border-dark-400">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
@@ -970,6 +1382,24 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Mention the graduation batches that can apply. Separate multiple years with commas.
                 </p>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <Code className="w-4 h-4 inline mr-1" />
+                  Required Skills
+                </label>
+                <textarea
+                  {...register('skills')}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-24 resize-none dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100"
+                  placeholder="React, TypeScript, Node.js, PostgreSQL"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Add comma-separated skills or one skill per line. These appear as searchable skill chips on job cards and the detail page.
+                </p>
+                {errors.skills && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.skills.message}</p>
+                )}
               </div>
             </div>
 

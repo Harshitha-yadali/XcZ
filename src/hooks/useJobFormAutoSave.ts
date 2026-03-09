@@ -12,6 +12,8 @@ interface JobFormData {
   location_city?: string;
   experience_required?: string;
   qualification?: string;
+  eligible_years?: string;
+  skills?: string;
   short_description?: string;
   full_description?: string;
   application_link?: string;
@@ -29,6 +31,31 @@ interface SaveStatus {
   lastSaved: Date | null;
   error: string | null;
 }
+
+let draftTableSupported = true;
+let didWarnDraftTableFallback = false;
+
+const isMissingDraftTableError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+
+  const record = error as Record<string, unknown>;
+  const code = typeof record.code === 'string' ? record.code : '';
+  const message = typeof record.message === 'string' ? record.message : '';
+
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    message.toLowerCase().includes('job_listing_drafts')
+  );
+};
+
+const warnDraftTableFallback = () => {
+  if (didWarnDraftTableFallback) return;
+  didWarnDraftTableFallback = true;
+  console.warn('job_listing_drafts table is not available. Falling back to local draft storage only.');
+};
+
+const getLocalDraftKey = (userId: string) => `job_draft_${userId}`;
 
 export const useJobFormAutoSave = ({
   formData,
@@ -62,6 +89,16 @@ export const useJobFormAutoSave = ({
 
       previousDataRef.current = dataString;
 
+      if (!draftTableSupported) {
+        localStorage.setItem(getLocalDraftKey(user.id), dataString);
+        setSaveStatus({
+          status: 'saved',
+          lastSaved: new Date(),
+          error: null,
+        });
+        return;
+      }
+
       if (draftId) {
         const { error } = await supabase
           .from('job_listing_drafts')
@@ -93,8 +130,26 @@ export const useJobFormAutoSave = ({
         error: null,
       });
 
-      localStorage.setItem(`job_draft_${user.id}`, dataString);
+      localStorage.setItem(getLocalDraftKey(user.id), dataString);
     } catch (error) {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (isMissingDraftTableError(error)) {
+        draftTableSupported = false;
+        warnDraftTableFallback();
+
+        if (user) {
+          localStorage.setItem(getLocalDraftKey(user.id), JSON.stringify(data));
+        }
+
+        setSaveStatus({
+          status: 'saved',
+          lastSaved: new Date(),
+          error: null,
+        });
+        return;
+      }
+
       console.error('Error saving draft:', error);
       setSaveStatus({
         status: 'error',
@@ -102,9 +157,8 @@ export const useJobFormAutoSave = ({
         error: error instanceof Error ? error.message : 'Failed to save draft',
       });
 
-      const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        localStorage.setItem(`job_draft_${user.id}`, JSON.stringify(data));
+        localStorage.setItem(getLocalDraftKey(user.id), JSON.stringify(data));
       }
     }
   }, [draftId]);
@@ -113,6 +167,11 @@ export const useJobFormAutoSave = ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
+
+      if (!draftTableSupported) {
+        const localDraft = localStorage.getItem(getLocalDraftKey(user.id));
+        return localDraft ? JSON.parse(localDraft) as JobFormData : null;
+      }
 
       const { data: drafts, error } = await supabase
         .from('job_listing_drafts')
@@ -134,13 +193,24 @@ export const useJobFormAutoSave = ({
         return draft.form_data as JobFormData;
       }
 
-      const localDraft = localStorage.getItem(`job_draft_${user.id}`);
+      const localDraft = localStorage.getItem(getLocalDraftKey(user.id));
       if (localDraft) {
         return JSON.parse(localDraft) as JobFormData;
       }
 
       return null;
     } catch (error) {
+      if (isMissingDraftTableError(error)) {
+        draftTableSupported = false;
+        warnDraftTableFallback();
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+
+        const localDraft = localStorage.getItem(getLocalDraftKey(user.id));
+        return localDraft ? JSON.parse(localDraft) as JobFormData : null;
+      }
+
       console.error('Error loading draft:', error);
       return null;
     }
@@ -151,14 +221,14 @@ export const useJobFormAutoSave = ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      if (draftId) {
+      if (draftTableSupported && draftId) {
         await supabase
           .from('job_listing_drafts')
           .delete()
           .eq('id', draftId);
       }
 
-      localStorage.removeItem(`job_draft_${user.id}`);
+      localStorage.removeItem(getLocalDraftKey(user.id));
       setDraftId(null);
       setSaveStatus({
         status: 'idle',
@@ -167,6 +237,23 @@ export const useJobFormAutoSave = ({
       });
       previousDataRef.current = '';
     } catch (error) {
+      if (isMissingDraftTableError(error)) {
+        draftTableSupported = false;
+        warnDraftTableFallback();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          localStorage.removeItem(getLocalDraftKey(user.id));
+        }
+        setDraftId(null);
+        setSaveStatus({
+          status: 'idle',
+          lastSaved: null,
+          error: null,
+        });
+        previousDataRef.current = '';
+        return;
+      }
+
       console.error('Error deleting draft:', error);
     }
   }, [draftId]);
