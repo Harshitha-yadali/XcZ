@@ -16,6 +16,9 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { sessionBookingService } from '../../services/sessionBookingService';
 import type { SessionService } from '../../types/session';
+import { getSessionRegularPrice, hasSessionOffer } from '../../utils/sessionPricing';
+
+const SESSION_SCORE_CHECK_BONUS = 5;
 
 interface SessionLandingPageProps {
   onShowAuth: (callback?: () => void) => void;
@@ -101,7 +104,9 @@ export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAu
     );
   }
 
-  const priceInRupees = service.price / 100;
+  const offerPriceInRupees = service.price / 100;
+  const regularPriceInRupees = getSessionRegularPrice(service) / 100;
+  const showOfferPricing = hasSessionOffer(service);
 
   return (
     <div className="min-h-screen pb-20 md:pl-16">
@@ -166,7 +171,7 @@ export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAu
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 text-slate-300 text-sm">
                   <Gift className="w-4 h-4 text-amber-400" />
-                  <span>+{service.bonus_credits} JD Credits</span>
+                  <span>+{service.bonus_credits} JD Credits + {SESSION_SCORE_CHECK_BONUS} Score Checks</span>
                 </div>
               </div>
             </div>
@@ -174,12 +179,19 @@ export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAu
             {/* Right: Price + CTA */}
             <div className="lg:col-span-2 bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-t lg:border-t-0 lg:border-l border-slate-700/50 p-6 sm:p-8 lg:p-10 flex flex-col items-center justify-center text-center">
               <p className="text-slate-400 text-sm uppercase tracking-wider mb-2">One-time Session</p>
+              {showOfferPricing && (
+                <p className="text-slate-500 text-sm line-through mb-1">
+                  {'\u20B9'}{regularPriceInRupees.toLocaleString('en-IN')}
+                </p>
+              )}
               <div className="flex items-baseline gap-1 mb-1">
                 <span className="text-4xl sm:text-5xl font-bold text-white">
-                  {'\u20B9'}{priceInRupees.toLocaleString('en-IN')}
+                  {'\u20B9'}{offerPriceInRupees.toLocaleString('en-IN')}
                 </span>
               </div>
-              <p className="text-slate-500 text-sm mb-6">One-time payment</p>
+              <p className="text-slate-500 text-sm mb-6">
+                {showOfferPricing ? 'Offer price before promo code' : 'One-time payment'}
+              </p>
 
               <motion.button
                 onClick={handleBookSlot}

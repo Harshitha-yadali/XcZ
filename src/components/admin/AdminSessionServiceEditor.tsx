@@ -18,11 +18,12 @@ import {
   Users,
   Clock,
   ListChecks,
+  Tag,
   Video,
 } from 'lucide-react';
 import { adminSessionService } from '../../services/adminSessionService';
 import { sessionBookingService } from '../../services/sessionBookingService';
-import type { SessionService } from '../../types/session';
+import type { SessionPromoCode, SessionService } from '../../types/session';
 
 interface SaveStatus {
   type: 'success' | 'error';
@@ -38,8 +39,10 @@ export const AdminSessionServiceEditor: React.FC = () => {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [regularPriceRupees, setRegularPriceRupees] = useState(0);
   const [priceRupees, setPriceRupees] = useState(0);
   const [highlights, setHighlights] = useState<string[]>([]);
+  const [promoCodes, setPromoCodes] = useState<SessionPromoCode[]>([]);
   const [bonusCredits, setBonusCredits] = useState(0);
   const [maxSlots, setMaxSlots] = useState(5);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
@@ -59,8 +62,10 @@ export const AdminSessionServiceEditor: React.FC = () => {
         setService(full);
         setTitle(full.title);
         setDescription(full.description);
+        setRegularPriceRupees((full.regular_price ?? full.price) / 100);
         setPriceRupees(full.price / 100);
         setHighlights([...(full.highlights || [])]);
+        setPromoCodes([...(full.promo_codes || [])]);
         setBonusCredits(full.bonus_credits);
         setMaxSlots(full.max_slots_per_day);
         setTimeSlots([...(full.time_slots || [])]);
@@ -73,7 +78,32 @@ export const AdminSessionServiceEditor: React.FC = () => {
 
   const validateForm = () => {
     if (!title.trim()) return 'Title is required';
-    if (priceRupees < 0) return 'Price cannot be negative';
+    if (regularPriceRupees < 0) return 'Regular price cannot be negative';
+    if (priceRupees < 0) return 'Offer price cannot be negative';
+    if (regularPriceRupees > 0 && priceRupees > regularPriceRupees) {
+      return 'Offer price cannot exceed regular price';
+    }
+
+    const seenCodes = new Set<string>();
+    for (const promo of promoCodes) {
+      const code = promo.code.trim().toUpperCase();
+      const description = promo.description?.trim() || '';
+      const discountPercentage = Number(promo.discount_percentage || 0);
+      const hasAnyValue = Boolean(code || description || discountPercentage);
+
+      if (!hasAnyValue) {
+        continue;
+      }
+      if (!code) return 'Each promo code row needs a code';
+      if (!Number.isFinite(discountPercentage) || discountPercentage <= 0 || discountPercentage > 100) {
+        return `Promo code "${code}" must have a discount between 1 and 100`;
+      }
+      if (seenCodes.has(code)) {
+        return `Promo code "${code}" is duplicated`;
+      }
+      seenCodes.add(code);
+    }
+
     if (!timeSlots.filter((t) => t.trim()).length) return 'At least one time slot is required';
     return null;
   };
@@ -91,11 +121,21 @@ export const AdminSessionServiceEditor: React.FC = () => {
     setSaving(true);
     setSaveStatus(null);
 
+    const sanitizedPromoCodes = promoCodes
+      .map((promo) => ({
+        code: promo.code.trim().toUpperCase(),
+        discount_percentage: Math.round(Number(promo.discount_percentage || 0)),
+        description: promo.description?.trim() || '',
+      }))
+      .filter((promo) => promo.code);
+
     const result = await adminSessionService.updateService(service.id, {
       title: title.trim(),
       description: description.trim(),
+      regular_price: Math.round(Math.max(regularPriceRupees, priceRupees) * 100),
       price: Math.round(priceRupees * 100),
       highlights: highlights.filter((h) => h.trim() !== ''),
+      promo_codes: sanitizedPromoCodes,
       bonus_credits: bonusCredits,
       max_slots_per_day: maxSlots,
       time_slots: timeSlots.filter((t) => t.trim() !== ''),
@@ -120,6 +160,35 @@ export const AdminSessionServiceEditor: React.FC = () => {
     const updated = [...highlights];
     updated[index] = value;
     setHighlights(updated);
+  };
+
+  const addPromoCode = () => {
+    setPromoCodes([
+      ...promoCodes,
+      { code: '', discount_percentage: 10, description: '' },
+    ]);
+  };
+
+  const removePromoCode = (index: number) => {
+    setPromoCodes(promoCodes.filter((_, i) => i !== index));
+  };
+
+  const updatePromoCode = (
+    index: number,
+    field: keyof SessionPromoCode,
+    value: string | number
+  ) => {
+    const updated = [...promoCodes];
+    updated[index] = {
+      ...updated[index],
+      [field]:
+        field === 'code'
+          ? String(value).toUpperCase()
+          : field === 'discount_percentage'
+            ? Number(value)
+            : String(value),
+    };
+    setPromoCodes(updated);
   };
 
   const addTimeSlot = () => setTimeSlots([...timeSlots, '']);
@@ -158,7 +227,7 @@ export const AdminSessionServiceEditor: React.FC = () => {
           </div>
           <div className="text-left">
             <p className="text-white font-semibold text-sm">Service Settings</p>
-            <p className="text-slate-500 text-xs">Edit session page title, price, highlights, and time slots</p>
+            <p className="text-slate-500 text-xs">Edit session title, regular price, offer price, promo codes, and time slots</p>
           </div>
         </div>
         {expanded ? (
@@ -198,8 +267,25 @@ export const AdminSessionServiceEditor: React.FC = () => {
                 </FieldGroup>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                <FieldGroup icon={<DollarSign className="w-4 h-4" />} label="Price (INR)">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+                <FieldGroup icon={<DollarSign className="w-4 h-4" />} label="Regular Price (INR)">
+                  <input
+                    type="number"
+                    min={0}
+                    value={regularPriceRupees}
+                    onChange={(e) => setRegularPriceRupees(Number(e.target.value))}
+                    className={`w-full bg-slate-900/50 border rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-1 ${
+                      regularPriceRupees < 0
+                        ? 'border-red-500/50 focus:ring-red-500/50'
+                        : 'border-slate-700 focus:ring-emerald-500/50'
+                    }`}
+                  />
+                  <p className="text-slate-500 text-xs mt-1">
+                    Shown as the struck-through original price.
+                  </p>
+                </FieldGroup>
+
+                <FieldGroup icon={<DollarSign className="w-4 h-4" />} label="Offer Price (INR)">
                   <input
                     type="number"
                     min={0}
@@ -220,7 +306,13 @@ export const AdminSessionServiceEditor: React.FC = () => {
                   {priceRupees < 0 && (
                     <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" />
-                      Price cannot be negative
+                      Offer price cannot be negative
+                    </p>
+                  )}
+                  {regularPriceRupees > 0 && priceRupees > regularPriceRupees && (
+                    <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Offer price cannot be higher than regular price
                     </p>
                   )}
                 </FieldGroup>
@@ -272,6 +364,59 @@ export const AdminSessionServiceEditor: React.FC = () => {
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Add Highlight
+                  </button>
+                </div>
+              </FieldGroup>
+
+              <FieldGroup icon={<Tag className="w-4 h-4" />} label="Promo Codes">
+                <div className="space-y-3">
+                  {promoCodes.length === 0 && (
+                    <p className="text-slate-500 text-xs">
+                      Add optional promo codes. These discounts apply on top of the offer price during session checkout.
+                    </p>
+                  )}
+                  {promoCodes.map((promo, i) => (
+                    <div
+                      key={`${promo.code || 'promo'}-${i}`}
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-lg border border-slate-700/50 bg-slate-900/30 p-3"
+                    >
+                      <input
+                        type="text"
+                        value={promo.code}
+                        onChange={(e) => updatePromoCode(i, 'code', e.target.value)}
+                        placeholder="Code"
+                        className="md:col-span-3 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm uppercase focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={promo.discount_percentage}
+                        onChange={(e) => updatePromoCode(i, 'discount_percentage', Number(e.target.value))}
+                        placeholder="% Off"
+                        className="md:col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                      />
+                      <input
+                        type="text"
+                        value={promo.description || ''}
+                        onChange={(e) => updatePromoCode(i, 'description', e.target.value)}
+                        placeholder="Description (optional)"
+                        className="md:col-span-6 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                      />
+                      <button
+                        onClick={() => removePromoCode(i)}
+                        className="md:col-span-1 p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={addPromoCode}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Promo Code
                   </button>
                 </div>
               </FieldGroup>

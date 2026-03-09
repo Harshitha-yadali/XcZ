@@ -1,5 +1,18 @@
 import { supabase } from '../lib/supabaseClient';
 import type { SessionBooking, SessionService } from '../types/session';
+import { normalizeSessionService } from '../utils/sessionPricing';
+
+const getSessionSchemaErrorMessage = (errorMessage: string): string | null => {
+  const normalized = errorMessage.toLowerCase();
+  if (
+    normalized.includes("promo_codes") ||
+    normalized.includes("regular_price") ||
+    normalized.includes('schema cache')
+  ) {
+    return 'Session promo pricing is not enabled in the database yet. Run migration 20260309133000_add_session_service_promos.sql in Supabase, then try again.';
+  }
+  return null;
+};
 
 interface AdminSlotView {
   id: string;
@@ -161,25 +174,27 @@ class AdminSessionService {
 
     if (error || !data) return null;
 
-    return {
-      id: data.id,
-      title: data.title,
-      description: data.description,
-      price: data.price,
-      currency: data.currency,
-      highlights: data.highlights as string[],
-      bonus_credits: data.bonus_credits,
-      max_slots_per_day: data.max_slots_per_day,
-      time_slots: data.time_slots as string[],
-      is_active: data.is_active,
-      created_at: data.created_at,
-      updated_at: data.updated_at,
-    };
+    return normalizeSessionService(data);
   }
 
   async updateService(
     serviceId: string,
-    updates: Partial<Pick<SessionService, 'title' | 'description' | 'price' | 'highlights' | 'bonus_credits' | 'max_slots_per_day' | 'time_slots' | 'is_active'>>
+    updates: Partial<
+      Pick<
+        SessionService,
+        | 'title'
+        | 'description'
+        | 'price'
+        | 'regular_price'
+        | 'highlights'
+        | 'promo_codes'
+        | 'bonus_credits'
+        | 'max_slots_per_day'
+        | 'time_slots'
+        | 'meet_link'
+        | 'is_active'
+      >
+    >
   ): Promise<{ success: boolean; error?: string }> {
     const { error } = await supabase
       .from('session_services')
@@ -189,7 +204,9 @@ class AdminSessionService {
       })
       .eq('id', serviceId);
 
-    if (error) return { success: false, error: error.message };
+    if (error) {
+      return { success: false, error: getSessionSchemaErrorMessage(error.message) || error.message };
+    }
     return { success: true };
   }
 

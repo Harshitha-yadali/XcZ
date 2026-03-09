@@ -6,7 +6,74 @@ import type {
   DateAvailability,
   BookingResult,
   SlotDisplayInfo,
+  SessionPreparationDetails,
 } from '../types/session';
+import {
+  calculateSessionPromoDiscount,
+  normalizeSessionPromoCodes,
+  normalizeSessionService,
+  type SessionPromoValidationResult,
+} from '../utils/sessionPricing';
+
+const getSessionSchemaErrorMessage = (errorMessage: string): string | null => {
+  const normalized = errorMessage.toLowerCase();
+  if (
+    normalized.includes("promo_codes") ||
+    normalized.includes("regular_price") ||
+    normalized.includes('schema cache')
+  ) {
+    return 'Session promo pricing is not enabled in the database yet. Run migration 20260309133000_add_session_service_promos.sql in Supabase.';
+  }
+  return null;
+};
+
+const OUTDATED_SESSION_PROMO_FUNCTIONS_MESSAGE =
+  'Session promo pricing is not deployed on the server yet. Deploy the latest validate-coupon and create-order functions in Supabase, then try again.';
+
+const hasSessionPromoPricingPayload = (data: unknown): data is {
+  isValid: boolean;
+  couponApplied?: string | null;
+  discountPercentage: number;
+  discountAmount: number;
+  finalAmount: number;
+  message?: string;
+} => {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  return (
+    Object.prototype.hasOwnProperty.call(data, 'discountPercentage') &&
+    Object.prototype.hasOwnProperty.call(data, 'discountAmount') &&
+    Object.prototype.hasOwnProperty.call(data, 'finalAmount')
+  );
+};
+
+const buildLocalSessionPromoResult = (
+  serviceRow: { price: number | null; promo_codes: unknown },
+  couponCode: string
+): SessionPromoValidationResult | null => {
+  const normalizedCoupon = couponCode.trim().toUpperCase();
+  const promo = normalizeSessionPromoCodes(serviceRow.promo_codes).find(
+    (entry) => entry.code === normalizedCoupon
+  );
+
+  if (!promo) {
+    return null;
+  }
+
+  const offerPrice = Math.max(0, Number(serviceRow.price || 0));
+  const discountAmount = calculateSessionPromoDiscount(offerPrice, promo.discount_percentage);
+
+  return {
+    isValid: true,
+    couponApplied: promo.code,
+    discountPercentage: promo.discount_percentage,
+    discountAmount,
+    finalAmount: Math.max(offerPrice - discountAmount, 0),
+    message: `Coupon "${promo.code}" applied. ${promo.discount_percentage}% off.`,
+  };
+};
 
 const SLOT_LABELS: Record<string, string> = {
   '10:00-11:00': '10:00 AM - 11:00 AM',
@@ -29,7 +96,104 @@ class SessionBookingService {
       console.error('SessionBookingService: Error fetching service:', error.message);
       return null;
     }
-    return data;
+    return data ? normalizeSessionService(data) : null;
+  }
+
+  async applyPromoCode(
+    serviceId: string,
+    couponCode: string,
+    userId: string
+  ): Promise<SessionPromoValidationResult> {
+    const normalizedCoupon = couponCode.trim().toUpperCase();
+
+    if (!normalizedCoupon) {
+      return {
+        isValid: false,
+        couponApplied: null,
+        discountPercentage: 0,
+        discountAmount: 0,
+        finalAmount: 0,
+        message: 'Please enter a promo code.',
+      };
+    }
+
+    const { data, error } = await supabase.functions.invoke('validate-coupon', {
+      body: {
+        couponCode: normalizedCoupon,
+        userId,
+        purchaseType: 'session_booking',
+        serviceId,
+      },
+    });
+
+    if (error || !data) {
+      console.error(
+        'SessionBookingService: Error validating promo code:',
+        error?.message || 'Unknown error'
+      );
+      return {
+        isValid: false,
+        couponApplied: null,
+        discountPercentage: 0,
+        discountAmount: 0,
+        finalAmount: 0,
+        message:
+          getSessionSchemaErrorMessage(data?.message || error?.message || '') ||
+          data?.message ||
+          error?.message ||
+          'Failed to validate the promo code.',
+      };
+    }
+
+    if (Boolean(data.isValid)) {
+      if (hasSessionPromoPricingPayload(data) && Number(data.discountPercentage || 0) > 0) {
+        return {
+          isValid: true,
+          couponApplied: data.couponApplied || normalizedCoupon,
+          discountPercentage: Number(data.discountPercentage || 0),
+          discountAmount: Number(data.discountAmount || 0),
+          finalAmount: Number(data.finalAmount || 0),
+          message: data.message || 'Promo code applied.',
+        };
+      }
+
+      const { data: serviceRow, error: serviceError } = await supabase
+        .from('session_services')
+        .select('price, promo_codes')
+        .eq('id', serviceId)
+        .maybeSingle();
+
+      if (!serviceError && serviceRow) {
+        const fallbackResult = buildLocalSessionPromoResult(serviceRow, normalizedCoupon);
+        if (fallbackResult) {
+          return fallbackResult;
+        }
+      }
+
+      return {
+        isValid: false,
+        couponApplied: null,
+        discountPercentage: 0,
+        discountAmount: 0,
+        finalAmount: 0,
+        message: OUTDATED_SESSION_PROMO_FUNCTIONS_MESSAGE,
+      };
+    }
+
+    return {
+      isValid: Boolean(data.isValid),
+      couponApplied: data.couponApplied || null,
+      discountPercentage: hasSessionPromoPricingPayload(data)
+        ? Number(data.discountPercentage || 0)
+        : 0,
+      discountAmount: hasSessionPromoPricingPayload(data)
+        ? Number(data.discountAmount || 0)
+        : 0,
+      finalAmount: hasSessionPromoPricingPayload(data)
+        ? Number(data.finalAmount || 0)
+        : 0,
+      message: data.message || 'Promo code applied.',
+    };
   }
 
   async getAvailableDates(
@@ -194,7 +358,12 @@ class SessionBookingService {
       return [];
     }
 
-    return (data || []) as SessionBooking[];
+    return (data || []).map((booking: any) => ({
+      ...booking,
+      session_services: booking.session_services
+        ? normalizeSessionService(booking.session_services)
+        : undefined,
+    })) as SessionBooking[];
   }
 
   async getBookingById(bookingId: string): Promise<SessionBooking | null> {
@@ -208,7 +377,118 @@ class SessionBookingService {
       console.error('SessionBookingService: Error fetching booking:', error.message);
       return null;
     }
-    return data as SessionBooking | null;
+    if (!data) {
+      return null;
+    }
+
+    return {
+      ...data,
+      session_services: data.session_services
+        ? normalizeSessionService(data.session_services)
+        : undefined,
+    } as SessionBooking;
+  }
+
+  async uploadPreparationResume(
+    bookingId: string,
+    _userId: string,
+    file: File
+  ): Promise<{ success: boolean; fileName?: string; storagePath?: string; error?: string }> {
+    const { data, error } = await supabase.functions.invoke('create-session-resume-upload', {
+      body: {
+        bookingId,
+        fileName: file.name,
+        contentType: file.type || 'application/pdf',
+        fileSize: file.size,
+      },
+    });
+
+    if (error || !data?.success || !data?.storagePath || !data?.token || !data?.bucketId) {
+      console.error(
+        'SessionBookingService: Error preparing session resume upload:',
+        error?.message || data?.error || 'Unknown error',
+      );
+      return {
+        success: false,
+        error: data?.error || error?.message || 'Failed to prepare resume upload. Please try again.',
+      };
+    }
+
+    const uploadResult = await supabase.storage
+      .from(data.bucketId)
+      .uploadToSignedUrl(data.storagePath, data.token, file, {
+        upsert: true,
+        contentType: file.type || 'application/pdf',
+        cacheControl: '86400',
+      });
+
+    if (uploadResult.error) {
+      console.error('SessionBookingService: Error uploading session resume:', uploadResult.error.message);
+      return { success: false, error: 'Failed to upload resume PDF. Please try again.' };
+    }
+
+    return {
+      success: true,
+      fileName: data.fileName || file.name,
+      storagePath: data.storagePath,
+    };
+  }
+
+  async savePreparationDetails(
+    bookingId: string,
+    details: SessionPreparationDetails
+  ): Promise<{ success: boolean; resumeFileUrl?: string; expiresAt?: string; error?: string }> {
+    const { data, error } = await supabase.functions.invoke('save-session-preparation', {
+      body: {
+        bookingId,
+        preparationNotes: details.preparationNotes,
+        resumeFileName: details.resumeFileName,
+        resumeStoragePath: details.resumeStoragePath,
+      },
+    });
+
+    if (error || !data?.success) {
+      console.error(
+        'SessionBookingService: Error saving preparation details:',
+        error?.message || data?.error || 'Unknown error',
+      );
+      return {
+        success: false,
+        error: data?.error || error?.message || 'Failed to save your session details. Please try again.',
+      };
+    }
+
+    return {
+      success: true,
+      resumeFileUrl: data.resumeFileUrl,
+      expiresAt: data.expiresAt,
+    };
+  }
+
+  async grantSessionBookingCredits(
+    bookingId: string
+  ): Promise<{ success: boolean; scoreCheckCredits: number; alreadyGranted?: boolean; error?: string }> {
+    const { data, error } = await supabase.functions.invoke('grant-session-booking-credits', {
+      body: { bookingId },
+    });
+
+    if (error || !data?.success) {
+      console.error(
+        'SessionBookingService: Error granting session booking credits:',
+        error?.message || data?.error || 'Unknown error'
+      );
+      return {
+        success: false,
+        scoreCheckCredits: 0,
+        error: data?.error || error?.message || 'Failed to grant session booking credits.',
+      };
+    }
+
+    return {
+      success: true,
+      scoreCheckCredits: Number(data.scoreCheckCredits || 0),
+      alreadyGranted: Boolean(data.alreadyGranted),
+    };
   }
 
   async cancelBooking(bookingId: string, reason?: string): Promise<{ success: boolean; error?: string }> {

@@ -1,5 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  applySessionPromo,
+  findSessionPromo,
+  normalizeSessionPromoCode,
+} from "../_shared/sessionPromo.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -310,7 +315,11 @@ Deno.serve(async (req: Request) => {
       if (!metadata?.serviceId) {
         return new Response(JSON.stringify({ error: 'Missing service ID for session booking' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
       }
-      const { data: serviceRow, error: serviceErr } = await supabase.from('session_services').select('price, title').eq('id', metadata.serviceId).single();
+      const { data: serviceRow, error: serviceErr } = await supabase
+        .from('session_services')
+        .select('price, title, promo_codes')
+        .eq('id', metadata.serviceId)
+        .single();
       if (serviceErr || !serviceRow) {
         return new Response(JSON.stringify({ error: 'Unable to fetch session service pricing' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
       }
@@ -319,6 +328,35 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: 'Invalid session service price' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
       }
       finalAmount = originalPrice;
+
+      if (couponCode) {
+        const normalizedCoupon = normalizeSessionPromoCode(couponCode);
+
+        const { count: sessionCouponUsageCount, error: sessionCouponUsageError } = await supabase
+          .from('payment_transactions')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id)
+          .eq('purchase_type', 'session_booking')
+          .ilike('coupon_code', normalizedCoupon)
+          .in('status', ['success', 'pending']);
+
+        if (sessionCouponUsageError) {
+          throw new Error('Failed to verify session promo usage.');
+        }
+        if ((sessionCouponUsageCount || 0) > 0) {
+          return new Response(JSON.stringify({ error: `Promo code "${couponCode.trim().toUpperCase()}" has already been used by this account.` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+        }
+
+        const promo = findSessionPromo(serviceRow.promo_codes, normalizedCoupon);
+        if (!promo) {
+          return new Response(JSON.stringify({ error: 'Invalid promo code for this session.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+        }
+
+        const promoTotals = applySessionPromo(originalPrice, promo);
+        discountAmount = promoTotals.discountAmount;
+        finalAmount = promoTotals.finalAmount;
+        appliedCoupon = promo.code;
+      }
     } else if (isWebinarPayment) {
       if (!metadata?.webinarId || !metadata?.registrationId) {
         return new Response(JSON.stringify({ error: 'Missing required webinar information' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
@@ -468,6 +506,27 @@ Deno.serve(async (req: Request) => {
       } catch (e2: any) {
         throw new Error(`Failed to initiate payment transaction: ${e2?.message || 'unknown error'}`);
       }
+    }
+
+    if (isSessionBooking && finalAmount === 0) {
+      await supabase
+        .from('payment_transactions')
+        .update({
+          status: 'success',
+          order_id: 'FREE_SESSION_PROMO',
+          payment_id: 'FREE_SESSION_PROMO',
+        })
+        .eq('id', transactionId as string);
+
+      return new Response(
+        JSON.stringify({
+          freeCheckout: true,
+          amount: 0,
+          currency: 'INR',
+          transactionId,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 },
+      );
     }
 
     const envTestMode = (Deno.env.get('RAZORPAY_TEST_MODE') || '').toLowerCase() === 'true';
