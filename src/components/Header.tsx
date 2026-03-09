@@ -1,6 +1,6 @@
 // src/components/Header.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Menu, X, Loader2 } from 'lucide-react';
+import { User, LogOut, Menu, X, Loader2, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { AuthModal } from './auth/AuthModal';
@@ -45,6 +45,15 @@ export const Header: React.FC<HeaderProps> = ({
     } finally {
       setIsLoggingOut(false);
     }
+  };
+
+  const openProfile = () => {
+    if (onShowProfile) {
+      onShowProfile();
+    } else {
+      headerNavigate('/profile');
+    }
+    setShowUserMenu(false);
   };
 
   const getUserDisplayName = () => {
@@ -105,12 +114,10 @@ export const Header: React.FC<HeaderProps> = ({
               {children}
 
               {isAuthenticated && user ? (
-                <div className="relative" ref={userMenuRef}>
+                <div className="relative flex items-center space-x-2" ref={userMenuRef}>
                   <button
-                    onClick={() => {
-                      console.log('Profile button clicked. Current showUserMenu:', showUserMenu, 'New state:', !showUserMenu);
-                      setShowUserMenu(!showUserMenu);
-                    }}
+                    type="button"
+                    onClick={openProfile}
                     className={`flex items-center space-x-3 rounded-full px-4 py-1 transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
                       isChristmasMode
                         ? 'bg-slate-800/50 hover:bg-slate-800/70 border-green-500/30 focus:ring-green-400'
@@ -132,32 +139,31 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </button>
 
+                  <button
+                    type="button"
+                    aria-label="Open account menu"
+                    aria-expanded={showUserMenu}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowUserMenu((current) => !current);
+                    }}
+                    className={`flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
+                      isChristmasMode
+                        ? 'bg-slate-800/50 hover:bg-slate-800/70 border-green-500/30 focus:ring-green-400'
+                        : 'bg-slate-800/50 hover:bg-slate-800/70 border-emerald-500/30 focus:ring-emerald-400'
+                    }`}
+                  >
+                    <ChevronDown className={`w-4 h-4 text-slate-200 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
+                  </button>
+
                   {/* User Dropdown Menu */}
                   {showUserMenu && (
-                    <div className="absolute right-0 mt-2 w-64 bg-slate-900 rounded-xl shadow-xl border border-slate-700/50 py-2 z-50 overflow-hidden backdrop-blur-xl">
+                    <div className="absolute right-0 top-full mt-2 w-56 bg-slate-900 rounded-xl shadow-xl border border-slate-700/50 py-2 z-50 overflow-hidden backdrop-blur-xl">
                       <div className="px-4 py-3 border-b border-slate-700/50 bg-slate-800/50">
-                        <div className="flex items-center space-x-3">
-                          <div className="bg-gradient-to-br from-emerald-500 to-cyan-500 w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold shadow-md">
-                            {getUserInitials()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-100 truncate">{user.name}</p>
-                            <p className="text-xs text-slate-400 truncate">{user.email}</p>
-                          </div>
-                        </div>
+                        <p className="text-sm font-semibold text-slate-100 truncate">{user.name}</p>
+                        <p className="text-xs text-slate-400 truncate">{user.email}</p>
                       </div>
-
-                      <button
-                        onClick={() => {
-                          headerNavigate('/profile');
-                          setShowUserMenu(false);
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-slate-800/70 hover:text-emerald-400 transition-colors flex items-center space-x-3 min-h-touch"
-                      >
-                        <User className="w-4 h-4" />
-                        <span>Profile Settings</span>
-                      </button>
-
                       <button
                         onClick={handleLogout}
                         disabled={isLoggingOut}
