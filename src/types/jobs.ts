@@ -22,6 +22,7 @@ export interface JobListing {
   full_description: string;
   application_link: string;
   posted_date: string;
+  expires_at?: string | null;
   source_api: string;
   is_active: boolean;
   created_at: string;

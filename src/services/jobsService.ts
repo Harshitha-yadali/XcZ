@@ -4,6 +4,7 @@ import { JobListing, JobFilters, AutoApplyResult, ApplicationHistory, OptimizedR
 import { ResumeData } from '../types/resume';
 import { exportToPDF } from '../utils/exportUtils';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import { isJobOpen } from '../utils/jobStatus';
 
 export const isEligibleYearsColumnMissing = (error: any): boolean => {
   if (!error) return false;
@@ -35,6 +36,7 @@ const withCompanyLogoFallback = (payload: Record<string, any>): Record<string, a
 class JobsService {
   private static eligibleYearsSupported = true;
   private static skillsSupported = true;
+  private static expiresAtSupported = true;
 
   private async getAuthenticatedAdminSession() {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -132,6 +134,7 @@ class JobsService {
     let attemptedEligibleYearsFallback = false;
     let attemptedSkillsFallback = false;
     let attemptedCompanyLogoFallback = false;
+    let attemptedExpiresAtFallback = false;
 
     let result = await mutation(nextPayload);
 
@@ -158,6 +161,15 @@ class JobsService {
         console.warn('JobsService: company_logo_url column not found. Retrying with company_logo fallback.');
         attemptedCompanyLogoFallback = true;
         nextPayload = withCompanyLogoFallback(nextPayload);
+        result = await mutation(nextPayload);
+        continue;
+      }
+
+      if (isMissingColumnError(result.error, 'expires_at') && !attemptedExpiresAtFallback) {
+        console.warn('JobsService: expires_at column not found. Retrying without it.');
+        JobsService.expiresAtSupported = false;
+        attemptedExpiresAtFallback = true;
+        delete nextPayload.expires_at;
         result = await mutation(nextPayload);
         continue;
       }
@@ -206,6 +218,7 @@ class JobsService {
         description: jobData.full_description,
         application_link: jobData.application_link,
         posted_date: new Date().toISOString(),
+        expires_at: jobData.expires_at || null,
         source_api: jobData.source_api || 'manual_admin',
         is_active: jobData.is_active !== undefined ? jobData.is_active : true,
 
@@ -238,6 +251,10 @@ class JobsService {
 
       if (!JobsService.skillsSupported) {
         delete insertData.skills;
+      }
+
+      if (!JobsService.expiresAtSupported) {
+        delete insertData.expires_at;
       }
 
       console.log('JobsService: Inserting job data:', insertData);
@@ -318,6 +335,7 @@ class JobsService {
         full_description: jobData.full_description,
         description: jobData.full_description,
         application_link: jobData.application_link,
+        expires_at: jobData.expires_at || null,
         is_active: jobData.is_active !== undefined ? jobData.is_active : true,
         referral_person_name: jobData.referral_person_name || null,
         referral_email: jobData.referral_email || null,
@@ -345,6 +363,10 @@ class JobsService {
 
       if (!JobsService.skillsSupported) {
         delete updateData.skills;
+      }
+
+      if (!JobsService.expiresAtSupported) {
+        delete updateData.expires_at;
       }
 
       const { data: updatedJob, error } = await this.runJobMutationWithFallbacks<JobListing>(
@@ -386,7 +408,6 @@ class JobsService {
         .from('job_listings')
         .select('*')
         .eq('id', jobId)
-        .eq('is_active', true)
         .maybeSingle();
 
       if (error) {
@@ -468,13 +489,20 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
 }> {
     try {
       console.log('JobsService: Fetching job listings from database with filters:', filters);
+      const nowIso = new Date().toISOString();
 
       // Start building the query
-      // Note: Removed is_active filter - show both active and inactive jobs
-      // Inactive jobs will show "Expired" button instead of "Apply Now"
       let query = supabase
         .from('job_listings')
         .select('*', { count: 'exact' });
+
+      // Public jobs page should show open jobs and truly expired jobs,
+      // but exclude manually inactive jobs whose deadline has not passed.
+      if (JobsService.expiresAtSupported) {
+        query = query.or(`is_active.eq.true,expires_at.lte.${nowIso}`);
+      } else {
+        query = query.eq('is_active', true);
+      }
 
       // Apply filters
       if (filters.domain) {
@@ -536,6 +564,12 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       const { data: jobs, error, count } = await query;
 
       if (error) {
+        if (isMissingColumnError(error, 'expires_at') && JobsService.expiresAtSupported) {
+          console.warn('JobsService: expires_at column not found while fetching public jobs. Retrying without expiry filter.');
+          JobsService.expiresAtSupported = false;
+          return this.getJobListings(filters, limit, offset);
+        }
+
         if (isMissingColumnError(error, 'skills') && JobsService.skillsSupported) {
           console.warn('JobsService: skills column not found while searching. Retrying without skills search.');
           JobsService.skillsSupported = false;
@@ -549,10 +583,23 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       console.log(`JobsService: Fetched ${jobs?.length || 0} jobs from database (total: ${count})`);
 
       // Get total unique companies count from ALL active jobs
-      const { data: companiesData, error: companiesError } = await supabase
+      let companiesQuery = supabase
         .from('job_listings')
-        .select('company_name')
-        .eq('is_active', true);
+        .select('company_name');
+
+      if (JobsService.expiresAtSupported) {
+        companiesQuery = companiesQuery.or(`is_active.eq.true,expires_at.lte.${nowIso}`);
+      } else {
+        companiesQuery = companiesQuery.eq('is_active', true);
+      }
+
+      const { data: companiesData, error: companiesError } = await companiesQuery;
+
+      if (companiesError && isMissingColumnError(companiesError, 'expires_at') && JobsService.expiresAtSupported) {
+        console.warn('JobsService: expires_at column not found while counting public companies. Retrying without expiry filter.');
+        JobsService.expiresAtSupported = false;
+        return this.getJobListings(filters, limit, offset);
+      }
 
       const totalCompanies = companiesError ? 0 : new Set(companiesData?.map(c => c.company_name) || []).size;
 
@@ -597,7 +644,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       }
 
       console.log(`JobsService: Fetched ${jobs?.length || 0} jobs for AI matching`);
-      return jobs || [];
+      return (jobs || []).filter((job) => isJobOpen(job));
     } catch (error) {
       console.error('JobsService: Error fetching all jobs:', error);
       throw error;
@@ -953,7 +1000,6 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         .from('job_listings')
         .select('*', { count: 'exact' })
         .ilike('company_name', `%${searchTerm}%`)
-        .eq('is_active', true)
         .order('posted_date', { ascending: false });
 
       if (error) {

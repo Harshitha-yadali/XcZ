@@ -34,6 +34,7 @@ import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
 import { ApplicationMethodModal } from '../modals/ApplicationMethodModal';
 import { useSEO, injectJsonLd, removeJsonLd } from '../../hooks/useSEO';
+import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
 interface JobDetailsPageProps {
   onShowAuth: (callback?: () => void) => void;
@@ -69,6 +70,9 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
   }, [job?.posted_date]);
 
   const postedLabel = postedDaysAgo === 0 ? 'Today' : postedDaysAgo === 1 ? 'Yesterday' : `${postedDaysAgo} days ago`;
+  const jobDisplayStatus = job ? getJobDisplayStatus(job) : 'inactive';
+  const jobOpen = job ? isJobOpen(job) : false;
+  const expiryLabel = formatJobExpiryLabel(job?.expires_at);
 
   useSEO({
     title: job ? `${job.role_title} at ${job.company_name} - Apply Now` : 'Job Details',
@@ -113,6 +117,9 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
           value: { '@type': 'QuantitativeValue', value: job.package_amount },
         };
       }
+      if (job.expires_at) {
+        jsonLd.validThrough = job.expires_at;
+      }
       injectJsonLd('job-detail-structured-data', jsonLd);
     }
     return () => removeJsonLd('job-detail-structured-data');
@@ -132,6 +139,8 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
   }, [jobId, navigate]);
 
   const handleApplyClick = () => {
+    if (!jobOpen) return;
+
     if (!isAuthenticated) {
       onShowAuth(() => setShowApplicationModal(true));
     } else {
@@ -169,6 +178,13 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
     ].filter(Boolean).join('\n');
     navigate('/score-checker', { state: { jobDescription: fullJobDescription, jobTitle: job.role_title } });
     setShowApplicationModal(false);
+  };
+
+  const handleSkillSearch = (skill: string) => {
+    navigate({
+      pathname: '/jobs',
+      search: `?search=${encodeURIComponent(skill)}&page=1`,
+    });
   };
 
   const copyReferralCode = (code: string) => {
@@ -340,16 +356,32 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                       AI Enhanced
                     </span>
                   )}
+                  {jobDisplayStatus === 'expired' && (
+                    <span className="px-2.5 py-1 bg-red-500/15 text-red-300 text-xs rounded-lg font-semibold border border-red-500/30">
+                      Expired
+                    </span>
+                  )}
+                  {expiryLabel && (
+                    <span className="px-2.5 py-1 bg-slate-700/40 text-slate-200 text-xs rounded-lg font-medium border border-slate-600/40 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      Deadline {expiryLabel}
+                    </span>
+                  )}
                 </div>
 
                 {/* Apply CTA - Desktop */}
                 <div className="mt-6 hidden lg:flex items-center gap-3">
                   <button
                     onClick={handleApplyClick}
-                    className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-emerald-500/20 flex items-center gap-2"
+                    disabled={!jobOpen}
+                    className={`font-semibold py-3 px-8 rounded-xl transition-all duration-200 shadow-lg flex items-center gap-2 ${
+                      jobOpen
+                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white hover:shadow-emerald-500/20'
+                        : 'bg-slate-700/60 text-slate-400 cursor-not-allowed border border-slate-600/50'
+                    }`}
                   >
                     <Zap className="w-5 h-5" />
-                    Apply Now
+                    {jobDisplayStatus === 'expired' ? 'Expired' : jobOpen ? 'Apply Now' : 'Inactive'}
                   </button>
                 </div>
               </div>
@@ -399,16 +431,32 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* Skills */}
             {skillTags.length > 0 && (
-              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
-                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-cyan-400" />
-                  Skills Required
-                </h2>
+              <div className="bg-gradient-to-br from-cyan-500/8 via-slate-800/70 to-emerald-500/8 rounded-2xl border border-cyan-500/20 p-6">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Target className="w-5 h-5 text-cyan-400" />
+                      Skills Required
+                    </h2>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Click any skill to find matching roles with the same requirement.
+                    </p>
+                  </div>
+                  <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 self-start">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Skill Match</p>
+                    <p className="text-lg font-semibold text-white">{skillTags.length} tagged</p>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {skillTags.map((skill, i) => (
-                    <span key={i} className="px-3 py-1.5 bg-slate-700/50 text-slate-200 rounded-lg text-sm font-medium border border-slate-600/40">
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleSkillSearch(skill)}
+                      className="px-3 py-1.5 bg-slate-900/55 text-cyan-200 rounded-lg text-sm font-medium border border-cyan-500/25 hover:bg-cyan-500/15 hover:border-cyan-400/40 transition-colors"
+                    >
                       {skill}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -571,14 +619,21 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
               <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
                 <h3 className="text-base font-bold text-white mb-3">Apply for this role</h3>
                 <p className="text-sm text-slate-400 mb-5">
-                  Choose manual apply or optimize your resume with AI for a better match.
+                  {jobOpen
+                    ? 'Choose manual apply or optimize your resume with AI for a better match.'
+                    : 'This job is no longer accepting applications on PrimoBoost because the deadline has passed or the listing is inactive.'}
                 </p>
                 <button
                   onClick={handleApplyClick}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3.5 rounded-xl transition-all duration-200 shadow-lg hover:shadow-emerald-500/20 flex items-center justify-center gap-2"
+                  disabled={!jobOpen}
+                  className={`w-full font-semibold py-3.5 rounded-xl transition-all duration-200 shadow-lg flex items-center justify-center gap-2 ${
+                    jobOpen
+                      ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white hover:shadow-emerald-500/20'
+                      : 'bg-slate-700/60 text-slate-400 cursor-not-allowed border border-slate-600/50'
+                  }`}
                 >
                   <Zap className="w-5 h-5" />
-                  Apply Now
+                  {jobDisplayStatus === 'expired' ? 'Expired' : jobOpen ? 'Apply Now' : 'Inactive'}
                 </button>
               </div>
 
@@ -598,10 +653,15 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
       <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-slate-900/95 backdrop-blur-xl border-t border-slate-700/40 p-3 shadow-2xl z-40">
         <button
           onClick={handleApplyClick}
-          className="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-semibold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+          disabled={!jobOpen}
+          className={`w-full font-semibold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 ${
+            jobOpen
+              ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white'
+              : 'bg-slate-700/60 text-slate-400 cursor-not-allowed border border-slate-600/50'
+          }`}
         >
           <Zap className="w-5 h-5" />
-          Apply Now
+          {jobDisplayStatus === 'expired' ? 'Expired' : jobOpen ? 'Apply Now' : 'Inactive'}
         </button>
       </div>
 

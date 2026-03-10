@@ -41,6 +41,52 @@ interface JobsPageProps {
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
 }
 
+const getFiltersFromSearchParams = (params: URLSearchParams): JobFilters => {
+  const filters: JobFilters = {};
+
+  const search = params.get('search')?.trim();
+  const domain = params.get('domain')?.trim();
+  const locationType = params.get('location_type')?.trim();
+  const experienceRequired = params.get('experience_required')?.trim();
+  const eligibleYear = params.get('eligible_year')?.trim();
+  const packageMin = params.get('package_min');
+  const packageMax = params.get('package_max');
+  const sortBy = params.get('sort_by');
+  const sortOrder = params.get('sort_order');
+
+  if (search) filters.search = search;
+  if (domain) filters.domain = domain;
+  if (locationType) filters.location_type = locationType;
+  if (experienceRequired) filters.experience_required = experienceRequired;
+  if (eligibleYear) filters.eligible_year = eligibleYear;
+  if (packageMin && !Number.isNaN(Number(packageMin))) filters.package_min = Number(packageMin);
+  if (packageMax && !Number.isNaN(Number(packageMax))) filters.package_max = Number(packageMax);
+  if (sortBy === 'posted_date' || sortBy === 'package_amount' || sortBy === 'company_name') {
+    filters.sort_by = sortBy;
+  }
+  if (sortOrder === 'asc' || sortOrder === 'desc') {
+    filters.sort_order = sortOrder;
+  }
+
+  return filters;
+};
+
+const buildSearchParamsFromFilters = (filters: JobFilters, page: number): URLSearchParams => {
+  const params = new URLSearchParams({ page: page.toString() });
+
+  if (filters.search) params.set('search', filters.search);
+  if (filters.domain) params.set('domain', filters.domain);
+  if (filters.location_type) params.set('location_type', filters.location_type);
+  if (filters.experience_required) params.set('experience_required', filters.experience_required);
+  if (filters.eligible_year) params.set('eligible_year', filters.eligible_year);
+  if (typeof filters.package_min === 'number') params.set('package_min', filters.package_min.toString());
+  if (typeof filters.package_max === 'number') params.set('package_max', filters.package_max.toString());
+  if (filters.sort_by) params.set('sort_by', filters.sort_by);
+  if (filters.sort_order) params.set('sort_order', filters.sort_order);
+
+  return params;
+};
+
 export const JobsPage: React.FC<JobsPageProps> = ({
   isAuthenticated,
   onShowAuth,
@@ -61,7 +107,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   });
 
   const [jobs, setJobs] = useState<JobListing[]>([]);
-  const [filters, setFilters] = useState<JobFilters>({});
+  const [filters, setFilters] = useState<JobFilters>(() => getFiltersFromSearchParams(searchParams));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -194,7 +240,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     setTotalCompanies(result.totalCompanies);
     setCurrentPage(safePage);
 
-    setSearchParams({ page: safePage.toString() });
+    setSearchParams(buildSearchParamsFromFilters(newFilters, safePage));
 
     if (result.jobs.length > 0) {
       const jobPostings = result.jobs.slice(0, 10).map((j: JobListing) => ({
@@ -250,16 +296,24 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   useEffect(() => {
     const pageParam = searchParams.get('page');
     const pageNumber = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
+    const nextFilters = getFiltersFromSearchParams(searchParams);
+
+    if (JSON.stringify(nextFilters) !== JSON.stringify(filters)) {
+      setFilters(nextFilters);
+      setCurrentPage(pageNumber);
+      return;
+    }
+
     if (pageNumber !== currentPage) {
       setCurrentPage(pageNumber);
-      loadJobs(pageNumber, filters);
+      loadJobs(pageNumber, nextFilters);
     }
-  }, [searchParams]);
+  }, [currentPage, filters, loadJobs, searchParams]);
 
   const handleFiltersChange = (newFilters: JobFilters) => {
     setFilters(newFilters);
     setCurrentPage(1);
-    setSearchParams({ page: '1' });
+    setSearchParams(buildSearchParamsFromFilters(newFilters, 1));
   };
 
   const handlePageChange = (page: number) => {

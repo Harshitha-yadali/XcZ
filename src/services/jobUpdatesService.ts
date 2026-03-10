@@ -283,7 +283,7 @@ export class JobUpdatesService {
         is_active,
         source_api
       `)
-      .eq('source_api', 'manual_admin')
+      .or('source_api.eq.manual_admin,source_api.like.manual_extract_%')
       .order('posted_date', { ascending: false })
       .limit(limit);
 

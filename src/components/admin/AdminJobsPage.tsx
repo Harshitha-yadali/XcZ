@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, ToggleLeft, ToggleRight, ArrowLeft, Briefcase, MapPin, Clock, IndianRupee, Building2, AlertCircle, Loader2, CheckCircle, Users, Mail, MessageCircle } from 'lucide-react';
+import { Plus, Search, CreditCard as Edit, Trash2, Eye, ToggleLeft, ToggleRight, ArrowLeft, Briefcase, MapPin, Clock, Calendar, IndianRupee, Building2, AlertCircle, Loader2, CheckCircle, Users, Mail, MessageCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { JobListing } from '../../types/jobs';
+import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
 export const AdminJobsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -10,7 +11,7 @@ export const AdminJobsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDomain, setFilterDomain] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'expired'>('all');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -26,12 +27,6 @@ export const AdminJobsPage: React.FC = () => {
         .from('job_listings')
         .select('*')
         .order('created_at', { ascending: false });
-
-      if (filterStatus === 'active') {
-        query = query.eq('is_active', true);
-      } else if (filterStatus === 'inactive') {
-        query = query.eq('is_active', false);
-      }
 
       if (filterDomain) {
         query = query.eq('domain', filterDomain);
@@ -55,20 +50,28 @@ export const AdminJobsPage: React.FC = () => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const toggleJobStatus = async (jobId: string, currentStatus: boolean) => {
+  const toggleJobStatus = async (job: JobListing) => {
     try {
+      const nextStatus = !job.is_active;
       const { error } = await supabase
         .from('job_listings')
-        .update({ is_active: !currentStatus })
-        .eq('id', jobId);
+        .update({ is_active: nextStatus })
+        .eq('id', job.id);
 
       if (error) throw error;
 
-      setJobs(jobs.map(job =>
-        job.id === jobId ? { ...job, is_active: !currentStatus } : job
-      ));
+      setJobs((currentJobs) =>
+        currentJobs.map((currentJob) =>
+          currentJob.id === job.id ? { ...currentJob, is_active: nextStatus } : currentJob
+        )
+      );
 
-      showNotification('success', `Job ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
+      showNotification(
+        'success',
+        nextStatus && getJobDisplayStatus(job) === 'expired'
+          ? 'Job activated, but it will still show as expired until you update or clear the deadline.'
+          : `Job ${nextStatus ? 'activated' : 'deactivated'} successfully`
+      );
     } catch (error) {
       console.error('Error toggling job status:', error);
       showNotification('error', 'Failed to update job status');
@@ -102,13 +105,21 @@ export const AdminJobsPage: React.FC = () => {
       job.role_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       job.domain.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesSearch;
+    const displayStatus = getJobDisplayStatus(job);
+    const matchesStatus =
+      filterStatus === 'all' ||
+      (filterStatus === 'active' && displayStatus === 'active') ||
+      (filterStatus === 'inactive' && displayStatus === 'inactive') ||
+      (filterStatus === 'expired' && displayStatus === 'expired');
+
+    return matchesSearch && matchesStatus;
   });
 
   const stats = {
     total: jobs.length,
-    active: jobs.filter(j => j.is_active).length,
-    inactive: jobs.filter(j => !j.is_active).length,
+    active: jobs.filter((job) => isJobOpen(job)).length,
+    expired: jobs.filter((job) => getJobDisplayStatus(job) === 'expired').length,
+    inactive: jobs.filter((job) => getJobDisplayStatus(job) === 'inactive').length,
   };
 
   const uniqueDomains = [...new Set(jobs.map(j => j.domain))];
@@ -183,7 +194,7 @@ export const AdminJobsPage: React.FC = () => {
 
       <div className="container mx-auto px-4 py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
           <div className="bg-white dark:bg-dark-100 rounded-xl shadow-md p-6 border border-gray-200 dark:border-dark-300">
             <div className="flex items-center justify-between">
               <div>
@@ -204,6 +215,18 @@ export const AdminJobsPage: React.FC = () => {
               </div>
               <div className="bg-green-100 dark:bg-neon-cyan-500/20 w-12 h-12 rounded-lg flex items-center justify-center">
                 <CheckCircle className="w-6 h-6 text-green-600 dark:text-neon-cyan-400" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-dark-100 rounded-xl shadow-md p-6 border border-gray-200 dark:border-dark-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Expired Jobs</p>
+                <p className="text-3xl font-bold text-red-500 dark:text-red-400">{stats.expired}</p>
+              </div>
+              <div className="bg-red-100 dark:bg-red-900/20 w-12 h-12 rounded-lg flex items-center justify-center">
+                <Calendar className="w-6 h-6 text-red-600 dark:text-red-400" />
               </div>
             </div>
           </div>
@@ -252,7 +275,8 @@ export const AdminJobsPage: React.FC = () => {
               className="w-full px-4 py-3 border border-gray-300 dark:border-dark-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-dark-200 dark:text-gray-100"
             >
               <option value="all">All Status</option>
-              <option value="active">Active Only</option>
+              <option value="active">Open Only</option>
+              <option value="expired">Expired Only</option>
               <option value="inactive">Inactive Only</option>
             </select>
           </div>
@@ -280,11 +304,15 @@ export const AdminJobsPage: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredJobs.map(job => (
-              <div
-                key={job.id}
-                className="bg-white dark:bg-dark-100 rounded-xl shadow-md border border-gray-200 dark:border-dark-300 p-6 hover:shadow-lg transition-shadow"
-              >
+            {filteredJobs.map(job => {
+              const displayStatus = getJobDisplayStatus(job);
+              const expiryLabel = formatJobExpiryLabel(job.expires_at);
+
+              return (
+                <div
+                  key={job.id}
+                  className="bg-white dark:bg-dark-100 rounded-xl shadow-md border border-gray-200 dark:border-dark-300 p-6 hover:shadow-lg transition-shadow"
+                >
                 <div className="flex items-start space-x-4">
                   {/* Company Logo */}
                   <div className="flex-shrink-0 w-16 h-16 bg-gray-100 dark:bg-dark-200 rounded-lg overflow-hidden border border-gray-200 dark:border-dark-300 flex items-center justify-center">
@@ -312,11 +340,13 @@ export const AdminJobsPage: React.FC = () => {
                       </div>
                       <div className="flex items-center space-x-2">
                         <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          job.is_active
+                          displayStatus === 'active'
                             ? 'bg-green-100 text-green-700 dark:bg-neon-cyan-500/20 dark:text-neon-cyan-300'
-                            : 'bg-gray-100 text-gray-700 dark:bg-dark-200 dark:text-gray-400'
+                            : displayStatus === 'expired'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+                              : 'bg-gray-100 text-gray-700 dark:bg-dark-200 dark:text-gray-400'
                         }`}>
-                          {job.is_active ? 'Active' : 'Inactive'}
+                          {displayStatus === 'active' ? 'Active' : displayStatus === 'expired' ? 'Expired' : 'Inactive'}
                         </span>
                       </div>
                     </div>
@@ -340,6 +370,12 @@ export const AdminJobsPage: React.FC = () => {
                           <span>{(job.package_amount / 100000).toFixed(1)}L {job.package_type}</span>
                         </div>
                       )}
+                      {expiryLabel && (
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                          <span>Deadline {expiryLabel}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Action Buttons */}
@@ -361,7 +397,7 @@ export const AdminJobsPage: React.FC = () => {
                       </button>
 
                       <button
-                        onClick={() => toggleJobStatus(job.id, job.is_active)}
+                        onClick={() => toggleJobStatus(job)}
                         className={`flex items-center space-x-1 px-4 py-2 rounded-lg transition-colors ${
                           job.is_active
                             ? 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-500/10 dark:hover:bg-orange-500/20 text-orange-600 dark:text-orange-400'
@@ -385,8 +421,9 @@ export const AdminJobsPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -18,15 +18,23 @@ export interface ExtractedJobFromUrl {
   full_job_description?: string;
   application_link?: string;
   posted_date?: string;
+  expires_at?: string;
   source_url: string;
   source_platform: string;
   logo_reused_from_database?: boolean;
 }
 
+export type JobExtractionAiMode = 'bulk' | 'standard' | 'priority';
+
 interface ExtractJobFromUrlResponse {
   success: boolean;
   job?: ExtractedJobFromUrl;
   error?: string;
+}
+
+interface ExtractJobFromUrlOptions {
+  aiMode?: JobExtractionAiMode;
+  priority?: boolean;
 }
 
 const parseExtractionResponse = async (response: Response): Promise<ExtractJobFromUrlResponse> => {
@@ -60,7 +68,10 @@ const isExtractorReachabilityError = (error: unknown): boolean => {
 };
 
 class JobExtractionService {
-  async extractJobFromUrl(jobUrl: string): Promise<ExtractedJobFromUrl> {
+  async extractJobFromUrl(
+    jobUrl: string,
+    options: ExtractJobFromUrlOptions = {}
+  ): Promise<ExtractedJobFromUrl> {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) {
@@ -80,7 +91,11 @@ class JobExtractionService {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ jobUrl }),
+          body: JSON.stringify({
+            jobUrl,
+            aiMode: options.aiMode,
+            priority: options.priority,
+          }),
         }
       );
 

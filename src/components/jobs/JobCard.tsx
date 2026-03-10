@@ -11,6 +11,7 @@ import {
 import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
 interface JobCardProps {
   job: JobListing & {
@@ -115,6 +116,9 @@ export const JobCard: React.FC<JobCardProps> = ({
 
   const skillTags = job.skills || [];
   const postedDaysAgo = Math.floor((Date.now() - new Date(job.posted_date).getTime()) / (1000 * 60 * 60 * 24));
+  const jobDisplayStatus = getJobDisplayStatus(job);
+  const jobOpen = isJobOpen(job);
+  const expiryLabel = formatJobExpiryLabel(job.expires_at);
 
   return (
     <motion.div
@@ -281,14 +285,24 @@ export const JobCard: React.FC<JobCardProps> = ({
                     AI
                   </span>
                 )}
+                {jobDisplayStatus === 'expired' && (
+                  <span className="px-2 py-0.5 bg-red-500/20 text-red-300 rounded text-[10px] font-semibold border border-red-500/30">
+                    Expired
+                  </span>
+                )}
                 <span className="text-[11px] text-slate-500">
                   {postedDaysAgo === 0 ? 'Today' : `${postedDaysAgo}d ago`}
                 </span>
+                {expiryLabel && (
+                  <span className="text-[11px] text-slate-500">
+                    Deadline {expiryLabel}
+                  </span>
+                )}
               </div>
 
               {/* Apply Buttons */}
               <div className="flex items-center sm:space-x-2 gap-2 sm:gap-0">
-                {job.is_active ? (
+                {jobOpen ? (
                   <>
                     <div className="relative">
                       <button
@@ -318,7 +332,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                     disabled
                     className="px-4 py-2 bg-slate-700/50 text-slate-400 rounded-lg text-sm font-semibold cursor-not-allowed border border-slate-600/50 w-full sm:w-auto"
                   >
-                    Expired
+                    {jobDisplayStatus === 'expired' ? 'Expired' : 'Inactive'}
                   </button>
                 )}
               </div>
