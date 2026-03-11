@@ -21,12 +21,15 @@ interface OrderRequest {
   selectedAddOns?: { [key: string]: number };
   testMode?: boolean;
   metadata?: {
-    type?: 'webinar' | 'subscription' | 'session_booking';
+    type?: 'webinar' | 'subscription' | 'session_booking' | 'referral_booking';
     webinarId?: string;
     registrationId?: string;
     webinarTitle?: string;
     serviceId?: string;
     serviceTitle?: string;
+    listingId?: string;
+    listingTitle?: string;
+    slotType?: 'query' | 'profile' | 'consultation';
   };
   userId?: string;
   currency?: string;
@@ -305,13 +308,65 @@ Deno.serve(async (req: Request) => {
 
     const isWebinarPayment = metadata?.type === 'webinar';
     const isSessionBooking = metadata?.type === 'session_booking';
+    const isReferralBooking = metadata?.type === 'referral_booking';
 
     let originalPrice = 0;
     let finalAmount = 0;
     let discountAmount = 0;
     let appliedCoupon: string | null = null;
 
-    if (isSessionBooking) {
+    if (isReferralBooking) {
+      if (!metadata?.listingId || !metadata?.slotType) {
+        return new Response(
+          JSON.stringify({ error: 'Missing referral listing or slot type for referral booking' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      const [{ data: listingRow, error: listingErr }, { data: pricingRow, error: pricingErr }] = await Promise.all([
+        supabase
+          .from('referral_listings')
+          .select('company_name, role_title, query_price, profile_price, slot_price')
+          .eq('id', metadata.listingId)
+          .maybeSingle(),
+        supabase
+          .from('referral_pricing')
+          .select('query_price, profile_price, slot_price')
+          .eq('id', '1')
+          .maybeSingle(),
+      ]);
+
+      if (listingErr || !listingRow) {
+        return new Response(
+          JSON.stringify({ error: 'Unable to fetch referral listing pricing' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      if (pricingErr || !pricingRow) {
+        return new Response(
+          JSON.stringify({ error: 'Unable to fetch referral default pricing' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      const resolvedPrice =
+        metadata.slotType === 'query'
+          ? Number(listingRow.query_price ?? pricingRow.query_price ?? 0)
+          : metadata.slotType === 'profile'
+            ? Number(listingRow.profile_price ?? pricingRow.profile_price ?? 0)
+            : Number(listingRow.slot_price ?? pricingRow.slot_price ?? 0);
+
+      if (!resolvedPrice || resolvedPrice <= 0) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid referral booking price configured' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      originalPrice = resolvedPrice;
+      finalAmount = resolvedPrice;
+    } else if (isSessionBooking) {
       if (!metadata?.serviceId) {
         return new Response(JSON.stringify({ error: 'Missing service ID for session booking' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
       }
@@ -383,7 +438,27 @@ Deno.serve(async (req: Request) => {
     }
 
     let plan: PlanConfig;
-    if (isSessionBooking) {
+    if (isReferralBooking) {
+      plan = {
+        id: 'referral_booking',
+        name: metadata?.listingTitle || 'Referral Booking',
+        price: originalPrice / 100,
+        mrp: originalPrice / 100,
+        discountPercentage: 0,
+        duration: 'One-time Purchase',
+        optimizations: 0,
+        scoreChecks: 0,
+        linkedinMessages: 0,
+        guidedBuilds: 0,
+        sessions: 0,
+        durationInHours: 0,
+        tag: '',
+        tagColor: '',
+        gradient: '',
+        icon: '',
+        features: [],
+      };
+    } else if (isSessionBooking) {
       plan = { id: 'session_booking', name: metadata?.serviceTitle || 'Session Booking', price: originalPrice / 100, mrp: originalPrice / 100, discountPercentage: 0, duration: 'One-time Purchase', optimizations: 0, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 0, tag: '', tagColor: '', gradient: '', icon: '', features: [] };
     } else if (isWebinarPayment) {
       plan = { id: 'webinar_payment', name: metadata?.webinarTitle || 'Webinar Registration', price: originalPrice / 100, mrp: originalPrice / 100, discountPercentage: 0, duration: 'One-time Purchase', optimizations: 0, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 0, tag: '', tagColor: '', gradient: '', icon: '', features: [] };
@@ -395,14 +470,14 @@ Deno.serve(async (req: Request) => {
       plan = foundPlan;
     }
 
-    if (!isWebinarPayment && !isSessionBooking) {
+    if (!isWebinarPayment && !isSessionBooking && !isReferralBooking) {
       originalPrice = (plan?.price || 0) * 100;
       discountAmount = 0;
       finalAmount = originalPrice;
       appliedCoupon = null;
     }
 
-    if (couponCode && !isWebinarPayment && !isSessionBooking) {
+    if (couponCode && !isWebinarPayment && !isSessionBooking && !isReferralBooking) {
       const normalizedCoupon = couponCode.toLowerCase().trim();
 
       const { count: userCouponUsageCount, error: userCouponUsageError } = await supabase
@@ -430,7 +505,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (!isWebinarPayment && !isSessionBooking && walletDeduction && walletDeduction > 0) {
+    if (!isWebinarPayment && !isSessionBooking && !isReferralBooking && walletDeduction && walletDeduction > 0) {
       const { data: walletRows, error: walletBalanceError } = await supabase
         .from("wallet_transactions")
         .select("amount")
@@ -447,7 +522,7 @@ Deno.serve(async (req: Request) => {
       finalAmount = Math.max(0, finalAmount - walletDeduction);
     }
 
-    if (!isSessionBooking && addOnsTotal && addOnsTotal > 0) {
+    if (!isSessionBooking && !isReferralBooking && addOnsTotal && addOnsTotal > 0) {
       finalAmount += addOnsTotal;
     }
 
@@ -459,6 +534,7 @@ Deno.serve(async (req: Request) => {
 
     const getPurchaseType = () => {
       if (isSessionBooking) return 'session_booking';
+      if (isReferralBooking) return 'referral_booking';
       if (isWebinarPayment) return 'webinar';
       if (planId === 'addon_only_purchase') return 'addon_only';
       if (Object.keys(selectedAddOns || {}).length > 0) return 'plan_with_addons';
@@ -467,7 +543,7 @@ Deno.serve(async (req: Request) => {
 
     const baseInsert: any = {
       user_id: user.id,
-      plan_id: (isWebinarPayment || isSessionBooking || planId === 'addon_only_purchase') ? null : planId,
+      plan_id: (isWebinarPayment || isSessionBooking || isReferralBooking || planId === 'addon_only_purchase') ? null : planId,
       status: 'pending',
       amount: plan.price * 100,
       currency: 'INR',
@@ -484,6 +560,14 @@ Deno.serve(async (req: Request) => {
     }
     if (isSessionBooking && metadata) {
       baseInsert.metadata = { type: 'session_booking', serviceId: metadata.serviceId, serviceTitle: metadata.serviceTitle };
+    }
+    if (isReferralBooking && metadata) {
+      baseInsert.metadata = {
+        type: 'referral_booking',
+        listingId: metadata.listingId,
+        listingTitle: metadata.listingTitle,
+        slotType: metadata.slotType,
+      };
     }
 
     const tryInsert = async (payload: any): Promise<{ id: string }> => {
@@ -546,7 +630,7 @@ Deno.serve(async (req: Request) => {
       currency: 'INR',
       receipt: `receipt_${Date.now()}`,
       notes: {
-        planId: planId || 'webinar_payment',
+        planId: planId || (isReferralBooking ? 'referral_booking' : 'webinar_payment'),
         planName: plan.name,
         originalAmount: plan.price * 100,
         couponCode: appliedCoupon,
@@ -555,12 +639,15 @@ Deno.serve(async (req: Request) => {
         addOnsTotal: addOnsTotal || 0,
         transactionId: transactionId,
         selectedAddOns: JSON.stringify(selectedAddOns || {}),
-        paymentType: isWebinarPayment ? 'webinar' : (isSessionBooking ? 'session_booking' : 'subscription'),
+        paymentType: isWebinarPayment ? 'webinar' : (isSessionBooking ? 'session_booking' : (isReferralBooking ? 'referral_booking' : 'subscription')),
         webinarId: metadata?.webinarId || '',
         registrationId: metadata?.registrationId || '',
         webinarTitle: metadata?.webinarTitle || '',
         serviceId: metadata?.serviceId || '',
         serviceTitle: metadata?.serviceTitle || '',
+        listingId: metadata?.listingId || '',
+        listingTitle: metadata?.listingTitle || '',
+        slotType: metadata?.slotType || '',
         mode: isTestMode ? 'test' : 'live',
       },
     };

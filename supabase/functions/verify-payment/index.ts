@@ -153,8 +153,15 @@ Deno.serve(async (req: Request) => {
     }
 
     let subscriptionId: string | null = null;
+    let suggestionMessage: string | undefined;
 
-    if (planId && planId !== "addon_only_purchase" && !isWebinarPayment && paymentType !== 'session_booking') {
+    if (
+      planId &&
+      planId !== "addon_only_purchase" &&
+      !isWebinarPayment &&
+      paymentType !== 'session_booking' &&
+      paymentType !== 'referral_booking'
+    ) {
       const { data: existingSubscription } = await supabase
         .from("subscriptions").select("*").eq("user_id", user.id).eq("status", "active")
         .gt("end_date", new Date().toISOString()).order("end_date", { ascending: false }).limit(1).maybeSingle();
@@ -217,7 +224,7 @@ Deno.serve(async (req: Request) => {
     } catch (_referralError) {}
 
     return new Response(
-      JSON.stringify({ success: true, verified: true, subscriptionId, transactionId, message: isWebinarPayment ? "Webinar payment verified successfully" : "Payment verified and credits granted successfully" }),
+      JSON.stringify({ success: true, verified: true, subscriptionId, transactionId, message: isWebinarPayment ? "Webinar payment verified successfully" : paymentType === 'referral_booking' ? "Referral booking payment verified successfully" : "Payment verified and credits granted successfully" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );
   } catch (error: any) {

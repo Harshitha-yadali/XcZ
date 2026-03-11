@@ -572,7 +572,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
   const { jobId } = useParams<{ jobId: string }>();
   const isEditMode = mode === 'edit';
   const jobUrlInputRef = useRef<HTMLInputElement | null>(null);
-  const autoCreateFromUrlRef = useRef<string | null>(null);
+  const aiKeyValueInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingJobData, setIsLoadingJobData] = useState(isEditMode);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -749,7 +749,6 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     setBulkImportSummary(null);
     setBulkImportProgress(null);
     setJobUrlInput('');
-    autoCreateFromUrlRef.current = null;
     setUrlExtractError(null);
     setUrlExtractSuccess(null);
     setExtractedSourcePlatform(null);
@@ -825,7 +824,6 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     setPackageAmountPlaceholder(DEFAULT_PACKAGE_AMOUNT_PLACEHOLDER);
     setPackageAmountSourceNote(null);
     setJobUrlInput('');
-    autoCreateFromUrlRef.current = null;
     setUrlExtractError(null);
     setExtractedSourcePlatform(null);
     setAiCheckError(null);
@@ -839,6 +837,8 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       stayOnPageAfterCreate?: boolean;
       sourcePlatformOverride?: string | null;
       successMessage?: string;
+      successMessageTarget?: 'url' | 'ai';
+      focusTarget?: 'url' | 'ai' | 'none';
     }
   ) => {
     setIsSubmitting(true);
@@ -868,21 +868,41 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
       if (options?.stayOnPageAfterCreate && !isEditMode) {
         if (options.successMessage) {
-          setUrlExtractSuccess(options.successMessage);
+          if (options.successMessageTarget === 'ai') {
+            setAiCheckSuccess(options.successMessage);
+          } else {
+            setUrlExtractSuccess(options.successMessage);
+          }
         }
         window.setTimeout(() => {
           setSubmitSuccess(false);
         }, 4000);
         window.setTimeout(() => {
+          if (options.focusTarget === 'none') {
+            return;
+          }
+
+          if (options.focusTarget === 'ai') {
+            aiKeyValueInputRef.current?.focus();
+            return;
+          }
+
           jobUrlInputRef.current?.focus();
         }, 0);
+        return;
+      }
+
+      if (isEditMode) {
+        window.setTimeout(() => {
+          setSubmitSuccess(false);
+        }, 4000);
         return;
       }
 
       setTimeout(() => {
         setSubmitSuccess(false);
         navigate('/admin/jobs');
-      }, isEditMode ? 1500 : 2000);
+      }, 2000);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} job listing`);
       throw err;
@@ -946,10 +966,6 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       return;
     }
 
-    if (options?.autoCreate && !isEditMode) {
-      autoCreateFromUrlRef.current = trimmedUrl;
-    }
-
     setIsUrlExtracting(true);
     setIsAutoCreatingFromUrl(!!options?.autoCreate);
     setUrlExtractError(null);
@@ -1006,39 +1022,6 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       setIsAutoCreatingFromUrl(false);
     }
   };
-
-  const handleJobUrlPaste = async (event: React.ClipboardEvent<HTMLInputElement>) => {
-    if (isEditMode || isUrlImportBusy) return;
-
-    const pastedUrl = event.clipboardData.getData('text').trim();
-    if (!/^https?:\/\//i.test(pastedUrl)) return;
-
-    event.preventDefault();
-    setJobUrlInput(pastedUrl);
-    autoCreateFromUrlRef.current = pastedUrl;
-    await handleExtractFromJobUrl({ jobUrl: pastedUrl, autoCreate: true });
-  };
-
-  useEffect(() => {
-    if (isEditMode || isUrlImportBusy) return;
-
-    const trimmedUrl = jobUrlInput.trim();
-    if (!/^https?:\/\//i.test(trimmedUrl)) return;
-    if (autoCreateFromUrlRef.current === trimmedUrl) return;
-
-    const timeoutId = window.setTimeout(() => {
-      if (autoCreateFromUrlRef.current === trimmedUrl) {
-        return;
-      }
-
-      autoCreateFromUrlRef.current = trimmedUrl;
-      void handleExtractFromJobUrl({ jobUrl: trimmedUrl, autoCreate: true });
-    }, 450);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [handleExtractFromJobUrl, isEditMode, isUrlImportBusy, jobUrlInput]);
 
   const handleBulkUrlInputChange = (index: number, value: string) => {
     setBulkJobUrlInputs((currentValues) =>
@@ -1157,9 +1140,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     setIsAiChecking(true);
     setAiCheckError(null);
     setAiCheckSuccess(null);
+    setSubmitError(null);
+    setSubmitSuccess(false);
 
     try {
       const currentFormValues = getValues();
+      const nextValues: JobFormData = { ...currentFormValues };
       const systemPrompt = [
         'You are an assistant that converts admin notes into job form values.',
         'Return only a valid JSON object with keys from the allowed list.',
@@ -1188,14 +1174,19 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       const parsed = parseAiJsonObject(aiResponse) as AiJobFieldMap;
       let updatedCount = 0;
 
+      const applyFormValue = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
+        nextValues[field] = value;
+        if (applyFieldUpdate(field, value)) {
+          updatedCount += 1;
+        }
+      };
+
       const applyStringField = (field: keyof JobFormData, rawValue: unknown) => {
         if (typeof rawValue !== 'string') return;
         const normalized = rawValue.trim();
         const isOptional = OPTIONAL_STRING_FIELDS.has(field);
         if (!normalized && !isOptional) return;
-        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
-          updatedCount += 1;
-        }
+        applyFormValue(field, normalized as JobFormData[typeof field]);
       };
 
       const applyNumberField = (
@@ -1205,9 +1196,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         if (rawValue === null || rawValue === '') return;
         const normalized = normalizePositiveNumber(rawValue);
         if (normalized === null) return;
-        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
-          updatedCount += 1;
-        }
+        applyFormValue(field, normalized as JobFormData[typeof field]);
       };
 
       const applyBooleanField = (
@@ -1216,9 +1205,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       ) => {
         const normalized = normalizeBoolean(rawValue);
         if (normalized === null) return;
-        if (applyFieldUpdate(field, normalized as JobFormData[typeof field])) {
-          updatedCount += 1;
-        }
+        applyFormValue(field, normalized as JobFormData[typeof field]);
       };
 
       applyStringField('company_name', parsed.company_name);
@@ -1231,9 +1218,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       applyStringField('eligible_years', parsed.eligible_years);
       if (typeof parsed.skills === 'string' || Array.isArray(parsed.skills)) {
         const normalizedSkills = parseSkillsInput(parsed.skills as string | string[]);
-        if (applyFieldUpdate('skills', normalizedSkills.join(', '))) {
-          updatedCount += 1;
-        }
+        applyFormValue('skills', normalizedSkills.join(', '));
       }
       applyStringField('short_description', parsed.short_description);
       applyStringField('full_description', parsed.full_description);
@@ -1252,16 +1237,16 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
       if (typeof parsed.package_type === 'string') {
         const packageType = parsed.package_type.trim().toLowerCase();
-        if (packageType === 'ctc' && applyFieldUpdate('package_type', 'CTC')) updatedCount += 1;
-        if (packageType === 'stipend' && applyFieldUpdate('package_type', 'stipend')) updatedCount += 1;
-        if (packageType === 'hourly' && applyFieldUpdate('package_type', 'hourly')) updatedCount += 1;
+        if (packageType === 'ctc') applyFormValue('package_type', 'CTC');
+        if (packageType === 'stipend') applyFormValue('package_type', 'stipend');
+        if (packageType === 'hourly') applyFormValue('package_type', 'hourly');
       }
 
       if (typeof parsed.location_type === 'string') {
         const locationType = parsed.location_type.trim().toLowerCase();
-        if (locationType === 'remote' && applyFieldUpdate('location_type', 'Remote')) updatedCount += 1;
-        if (locationType === 'onsite' && applyFieldUpdate('location_type', 'Onsite')) updatedCount += 1;
-        if (locationType === 'hybrid' && applyFieldUpdate('location_type', 'Hybrid')) updatedCount += 1;
+        if (locationType === 'remote') applyFormValue('location_type', 'Remote');
+        if (locationType === 'onsite') applyFormValue('location_type', 'Onsite');
+        if (locationType === 'hybrid') applyFormValue('location_type', 'Hybrid');
       }
 
       applyBooleanField('is_active', parsed.is_active);
@@ -1275,8 +1260,32 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         return;
       }
 
+      if (!isEditMode) {
+        const validationResult = jobListingSchema.safeParse(nextValues);
+        if (!validationResult.success) {
+          const firstIssue = validationResult.error.issues[0];
+          setAiCheckSuccess(
+            `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review the form and create the job manually.`
+          );
+          setAiCheckError(
+            firstIssue?.message
+              ? `AI filled the form, but auto-create stopped: ${firstIssue.message}.`
+              : 'AI filled the form, but auto-create stopped. Review the form and save manually.'
+          );
+          return;
+        }
+
+        await persistJobListing(validationResult.data, {
+          stayOnPageAfterCreate: true,
+          successMessageTarget: 'ai',
+          focusTarget: 'ai',
+          successMessage: 'AI filled the form and created the job automatically. Paste the next details.',
+        });
+        return;
+      }
+
       setAiCheckSuccess(
-        `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and ${isEditMode ? 'update' : 'create'} the job.`
+        `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and update the job.`
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI check failed. Please retry.';
@@ -1288,7 +1297,15 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
   const onSubmit = async (data: JobFormData) => {
     try {
-      await persistJobListing(data);
+      await persistJobListing(
+        data,
+        isEditMode
+          ? undefined
+          : {
+              stayOnPageAfterCreate: true,
+              focusTarget: 'none',
+            }
+      );
     } catch {
       return;
     }
@@ -1563,23 +1580,14 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                   {isEditMode
                     ? 'Paste a Workday, Superset, or Greenhouse job link to fill this form without saving yet.'
-                    : 'Paste or type a Workday, Superset, or Greenhouse job link to auto-create the job instantly and stay on this page for the next URL.'}
+                    : 'Paste a Workday, Superset, or Greenhouse job link, then click the button to extract and create the job instantly.'}
                 </p>
                 <div className="flex flex-col lg:flex-row gap-3">
                   <input
                     ref={jobUrlInputRef}
                     type="url"
                     value={jobUrlInput}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      setJobUrlInput(nextValue);
-
-                      const trimmedNextValue = nextValue.trim();
-                      if (!trimmedNextValue || autoCreateFromUrlRef.current !== trimmedNextValue) {
-                        autoCreateFromUrlRef.current = null;
-                      }
-                    }}
-                    onPaste={handleJobUrlPaste}
+                    onChange={(event) => setJobUrlInput(event.target.value)}
                     disabled={isUrlImportBusy}
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 disabled:bg-gray-100 disabled:cursor-not-allowed dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100 dark:disabled:bg-dark-300"
                     placeholder="https://company.myworkdayjobs.com/... or https://boards.greenhouse.io/..."
@@ -1607,7 +1615,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                     ) : (
                       <>
                         <LinkIcon className="w-4 h-4" />
-                        <span>{isEditMode ? 'Extract Only' : 'Create & Stay'}</span>
+                        <span>{isEditMode ? 'Extract Only' : 'Extract & Add'}</span>
                       </>
                     )}
                   </button>
@@ -1615,7 +1623,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                 <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                   {isEditMode
                     ? 'Paste a valid URL to fill the current form only.'
-                    : 'A valid URL now extracts, creates the job listing automatically, clears the form, and keeps you on this page for the next link.'}
+                    : 'Nothing runs in the background. The job is extracted and added only when you click the button.'}
                 </p>
                 {urlExtractError && (
                   <p className="mt-3 text-sm text-red-600 dark:text-red-400">{urlExtractError}</p>
@@ -1631,9 +1639,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                   AI Job Details Check
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                  Paste raw key:value job details. AI will suggest values and auto-fill this form. Review manually before {isEditMode ? 'updating' : 'creating'} the job.
+                  {isEditMode
+                    ? 'Paste raw key:value job details. AI will suggest values and auto-fill this form before you update the job.'
+                    : 'Paste raw key:value job details. Click once to auto-fill the form and create the job when the required fields validate.'}
                 </p>
                 <textarea
+                  ref={aiKeyValueInputRef}
                   value={aiKeyValueInput}
                   onChange={(event) => setAiKeyValueInput(event.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 h-32 resize-y dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100"
@@ -1656,12 +1667,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                     {isAiChecking ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Checking...</span>
+                        <span>{isEditMode ? 'Checking...' : 'Checking & Adding...'}</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        <span>AI Check & Fill Fields</span>
+                        <span>{isEditMode ? 'AI Check & Fill' : 'AI Fill & Add'}</span>
                       </>
                     )}
                   </button>

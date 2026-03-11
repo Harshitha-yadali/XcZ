@@ -22,7 +22,6 @@ import { JobListing, JobFilters, OptimizedResume } from '../../types/jobs';
 import { jobsService } from '../../services/jobsService';
 import { JobCard } from '../jobs/JobCard';
 import { JobFilters as JobFiltersComponent } from '../jobs/JobFilters';
-import { LatestJobUpdates } from '../jobs/LatestJobUpdates';
 import { OptimizedResumePreviewModal } from '../modals/OptimizedResumePreviewModal';
 import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationModal';
 import { AutoApplyProgressModal } from '../modals/AutoApplyProgressModal';
@@ -513,11 +512,6 @@ export const JobsPage: React.FC<JobsPageProps> = ({
               <div className="text-sm text-slate-400">{stat.label}</div>
             </AnimatedCard>
           ))}
-        </div>
-
-        {/* Latest Job Updates */}
-        <div className="mb-8">
-          <LatestJobUpdates />
         </div>
 
         {/* Filters */}

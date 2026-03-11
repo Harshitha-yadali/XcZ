@@ -198,6 +198,49 @@ interface ParamJobDetailsResponse {
   job?: ParamJobResponse | null;
 }
 
+interface GreenhouseLocationResponse {
+  name?: string | null;
+}
+
+interface GreenhouseMetadataFieldResponse {
+  id?: number | null;
+  name?: string | null;
+  value?: unknown;
+  value_type?: string | null;
+}
+
+interface GreenhouseDepartmentResponse {
+  id?: number | null;
+  name?: string | null;
+  child_ids?: Array<number> | null;
+  parent_id?: number | null;
+}
+
+interface GreenhouseOfficeResponse {
+  id?: number | null;
+  name?: string | null;
+  location?: string | null;
+  child_ids?: Array<number> | null;
+  parent_id?: number | null;
+}
+
+interface GreenhouseJobResponse {
+  absolute_url?: string | null;
+  internal_job_id?: number | null;
+  location?: GreenhouseLocationResponse | null;
+  metadata?: Array<GreenhouseMetadataFieldResponse> | null;
+  id?: number | null;
+  updated_at?: string | null;
+  requisition_id?: string | null;
+  title?: string | null;
+  company_name?: string | null;
+  first_published?: string | null;
+  language?: string | null;
+  content?: string | null;
+  departments?: Array<GreenhouseDepartmentResponse> | null;
+  offices?: Array<GreenhouseOfficeResponse> | null;
+}
+
 const jsonResponse = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -214,9 +257,16 @@ const safeString = (value: unknown) => {
   return "";
 };
 
+const decodeEscapedHtmlFragment = (value: string): string => {
+  if (!value) return "";
+  if (!/&lt;\/?[a-z][^&]*&gt;/i.test(value)) return value;
+  return load(`<div id="decode-root">${value}</div>`)("#decode-root").text();
+};
+
 const htmlFragmentToText = (value: string): string => {
   if (!value) return "";
-  const $ = load(`<div id="extract-root">${value}</div>`);
+  const normalizedValue = decodeEscapedHtmlFragment(value);
+  const $ = load(`<div id="extract-root">${normalizedValue}</div>`);
   $("#extract-root br").replaceWith(" ");
   $("#extract-root p, #extract-root div, #extract-root li, #extract-root h1, #extract-root h2, #extract-root h3, #extract-root h4, #extract-root h5, #extract-root h6")
     .each((_, element) => {
@@ -227,7 +277,8 @@ const htmlFragmentToText = (value: string): string => {
 
 const htmlFragmentToList = (value: string): string[] => {
   if (!value) return [];
-  const $ = load(`<div id="extract-root">${value}</div>`);
+  const normalizedValue = decodeEscapedHtmlFragment(value);
+  const $ = load(`<div id="extract-root">${normalizedValue}</div>`);
   const listItems = $("#extract-root li")
     .map((_, element) => cleanWhitespace($(element).text()))
     .get()
@@ -372,7 +423,15 @@ const detectSourcePlatform = (jobUrl: string): string => {
   const lower = jobUrl.toLowerCase();
 
   if (lower.includes("myworkdayjobs.com") || lower.includes("workday")) return "workday";
-  if (lower.includes("boards.greenhouse.io") || lower.includes("greenhouse.io")) return "greenhouse";
+  if (
+    lower.includes("boards.greenhouse.io") ||
+    lower.includes("job-boards.greenhouse.io") ||
+    lower.includes("greenhouse.io") ||
+    lower.includes("gh_jid=") ||
+    lower.includes("gh_src=")
+  ) {
+    return "greenhouse";
+  }
   if (lower.includes("joinsuperset.com") || lower.includes("superset.com")) return "superset";
   if (lower.includes("app.param.ai")) return "paramai";
   if (
@@ -1042,8 +1101,8 @@ const inferSpireQualificationFromText = (value: string): string => {
   if (!text) return "";
 
   const explicitSnippet =
-    text.match(/qualification\s*[:\-]\s*([^.\n]{4,160})/i)?.[1] ||
-    text.match(/education\s*[:\-]\s*([^.\n]{4,160})/i)?.[1] ||
+    text.match(/qualification\s*[:-]\s*([^.\n]{4,160})/i)?.[1] ||
+    text.match(/education\s*[:-]\s*([^.\n]{4,160})/i)?.[1] ||
     "";
 
   const qualifications: string[] = [];
@@ -1104,10 +1163,10 @@ const inferCompensationFromText = (value: string): { packageAmount: string; pack
   if (!text) return { packageAmount: "", packageType: "" };
 
   const rangeLpaMatch = text.match(
-    /(?:ctc|salary|package|compensation)?[^.\n]{0,24}?(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(lpa|lakhs?\s+per\s+annum|lakhs?\b)/i
+    /(?:ctc|salary|package|compensation)?[^.\n]{0,24}?(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(?:-|–|to)\s*([\d,]+(?:\.\d+)?)\s*(lpa|lakhs?\s+per\s+annum|lakhs?\b)/i
   );
   if (rangeLpaMatch) {
-    const amount = Number.parseFloat(rangeLpaMatch[1]);
+    const amount = Number.parseFloat(rangeLpaMatch[1].replace(/,/g, ""));
     if (Number.isFinite(amount) && amount > 0) {
       return {
         packageAmount: String(Math.round(amount * 100000)),
@@ -1117,10 +1176,10 @@ const inferCompensationFromText = (value: string): { packageAmount: string; pack
   }
 
   const singleLpaMatch = text.match(
-    /(?:ctc|salary|package|compensation)?[^.\n]{0,24}?(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(lpa|lakhs?\s+per\s+annum|lakhs?\b)/i
+    /(?:ctc|salary|package|compensation)?[^.\n]{0,24}?(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(lpa|lakhs?\s+per\s+annum|lakhs?\b)/i
   );
   if (singleLpaMatch) {
-    const amount = Number.parseFloat(singleLpaMatch[1]);
+    const amount = Number.parseFloat(singleLpaMatch[1].replace(/,/g, ""));
     if (Number.isFinite(amount) && amount > 0) {
       return {
         packageAmount: String(Math.round(amount * 100000)),
@@ -1139,8 +1198,18 @@ const inferCompensationFromText = (value: string): { packageAmount: string; pack
     };
   }
 
+  const annualRangeMatch = text.match(
+    /(?:base\s+salary|salary(?:\s+range)?|package|compensation|pay\s+range)[^.\n]{0,48}?(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp)?\s*([\d,]{4,}(?:\.\d+)?)\s*(?:-|–|to)\s*(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp)?\s*([\d,]{4,}(?:\.\d+)?)(?:\s*(?:per annum|annum|annual|pa|\/year|yearly))?/i
+  );
+  if (annualRangeMatch) {
+    return {
+      packageAmount: annualRangeMatch[1].replace(/,/g, ""),
+      packageType: "CTC",
+    };
+  }
+
   const annualMatch = text.match(
-    /(?:ctc|salary|package|compensation)[^.\n]{0,24}?(?:₹|rs\.?|inr)?\s*([\d,]{5,})(?:\s*(?:per annum|annum|annual|pa|\/year))?/i
+    /(?:ctc|base\s+salary|salary(?:\s+range)?|package|compensation|pay\s+range)[^.\n]{0,48}?(?:₹|rs\.?|inr|\$|usd|€|eur|£|gbp)?\s*([\d,]{5,})(?:\s*(?:per annum|annum|annual|pa|\/year|yearly))?/i
   );
   if (annualMatch) {
     return {
@@ -1162,6 +1231,216 @@ const inferCompensationFromText = (value: string): { packageAmount: string; pack
   return { packageAmount: "", packageType: "" };
 };
 
+const findGreenhouseJobId = (jobUrl: string, html = ""): string => {
+  const queryCandidates: string[] = [];
+
+  try {
+    const parsedUrl = new URL(jobUrl);
+    queryCandidates.push(
+      parsedUrl.searchParams.get("gh_jid") || "",
+      parsedUrl.searchParams.get("job") || "",
+      parsedUrl.searchParams.get("job_id") || "",
+      parsedUrl.searchParams.get("jobid") || "",
+      parsedUrl.searchParams.get("role") || ""
+    );
+  } catch {
+    // Ignore invalid URLs here; the main request validation handles them separately.
+  }
+
+  const pathCandidates = [
+    jobUrl.match(/\/jobs\/(\d{6,})(?:[/?#-]|$)/i)?.[1] || "",
+    jobUrl.match(/\/job\/(\d{6,})(?:[/?#-]|$)/i)?.[1] || "",
+  ];
+
+  const htmlCandidates = [
+    html.match(/[?&](?:gh_jid|job(?:_id)?|role)=([0-9]{6,})/i)?.[1] || "",
+    html.match(/Grnhse\.Iframe\.load\((\d{6,})\)/i)?.[1] || "",
+  ];
+
+  return [...queryCandidates, ...pathCandidates, ...htmlCandidates]
+    .map((candidate) => cleanWhitespace(candidate))
+    .find((candidate) => /^\d{6,}$/.test(candidate)) || "";
+};
+
+const extractGreenhouseJobId = (jobUrl: string, html = ""): string => {
+  const jobId = findGreenhouseJobId(jobUrl, html);
+  if (!jobId) {
+    throw new Error("Could not find a Greenhouse job id in the URL.");
+  }
+
+  return jobId;
+};
+
+const findGreenhouseBoardToken = (jobUrl: string, html = ""): string => {
+  const candidates: string[] = [];
+
+  try {
+    const parsedUrl = new URL(jobUrl);
+    const host = parsedUrl.hostname.toLowerCase();
+    const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
+    const jobsIndex = pathSegments.findIndex((segment) => segment.toLowerCase() === "jobs");
+
+    if (host.includes("greenhouse.io")) {
+      if (jobsIndex > 0) {
+        candidates.push(pathSegments[jobsIndex - 1] || "");
+      }
+      if (pathSegments[0] && pathSegments[0].toLowerCase() !== "embed") {
+        candidates.push(pathSegments[0]);
+      }
+      candidates.push(parsedUrl.searchParams.get("for") || "");
+    }
+  } catch {
+    // Ignore invalid URLs here; the main request validation handles them separately.
+  }
+
+  const htmlCandidates = [
+    html.match(/boards-api\.greenhouse\.io\/v1\/boards\/([^/"'?&\s]+)\/jobs/i)?.[1] || "",
+    html.match(/boards\.greenhouse\.io\/embed\/job_(?:board|app)\/js\?for=([^&"' \s]+)/i)?.[1] || "",
+  ];
+
+  return [...candidates, ...htmlCandidates]
+    .map((candidate) => cleanWhitespace(candidate))
+    .find(Boolean) || "";
+};
+
+const extractGreenhouseBoardToken = (jobUrl: string, html = ""): string => {
+  const boardToken = findGreenhouseBoardToken(jobUrl, html);
+  if (!boardToken) {
+    throw new Error("Could not find a Greenhouse board token for this job page.");
+  }
+
+  return boardToken;
+};
+
+const extractGreenhouseMetadataValues = (
+  metadata: Array<GreenhouseMetadataFieldResponse> | null | undefined,
+  fieldName: string
+): string[] => {
+  return (metadata || [])
+    .filter((entry) => safeString(entry.name).toLowerCase() === fieldName.toLowerCase())
+    .flatMap((entry) => Array.isArray(entry.value)
+      ? normalizeArrayToStringArray(entry.value)
+      : safeString(entry.value)
+        ? [safeString(entry.value)]
+        : []);
+};
+
+const extractGreenhouseStructuredData = async (
+  jobUrl: string,
+  preloadedHtml?: string
+): Promise<{
+  metadata: SourceMetadata;
+  structuredHints: Record<string, unknown>;
+  textContent: string;
+  supplementalNodes: Array<Record<string, unknown>>;
+}> => {
+  const html = preloadedHtml ?? await fetchHtml(jobUrl);
+  const pageData = extractPageData(html);
+  const jobId = extractGreenhouseJobId(jobUrl, html);
+  const boardToken = extractGreenhouseBoardToken(jobUrl, html);
+  const job = await fetchJson<GreenhouseJobResponse>(
+    `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(boardToken)}/jobs/${jobId}?content=true`
+  );
+
+  const roleTitle = safeString(job.title) || pageData.metadata.title;
+  const companyName = safeString(job.company_name) || pageData.metadata.siteName || "Greenhouse";
+  const descriptionHtml = typeof job.content === "string" ? decodeEscapedHtmlFragment(job.content) : "";
+  const descriptionText = htmlFragmentToText(descriptionHtml);
+  const workingLocationValues = extractGreenhouseMetadataValues(job.metadata, "Working Location");
+  const employmentTypeValues = extractGreenhouseMetadataValues(job.metadata, "Employment Type");
+  const geoValues = extractGreenhouseMetadataValues(job.metadata, "Geo");
+  const departmentNames = normalizeArrayToStringArray(
+    (job.departments || []).map((entry) => safeString(entry.name))
+  );
+  const officeLocations = normalizeArrayToStringArray(
+    (job.offices || []).map((entry) => safeString(entry.location) || safeString(entry.name))
+  );
+  const location =
+    safeString(job.location?.name) ||
+    officeLocations.join(" | ");
+  const locationType =
+    inferLocationTypeFromText([
+      location,
+      workingLocationValues.join(", "),
+      descriptionText,
+    ].filter(Boolean).join("\n")) || (location ? "Onsite" : "");
+  const qualification = fallbackRequiredField(
+    inferSpireQualificationFromText(descriptionText),
+    "Not specified"
+  );
+  const experienceRequired = fallbackRequiredField(
+    inferExperienceFromText(`${roleTitle}\n${descriptionText}`),
+    "Not specified"
+  );
+  const requiredSkills = inferSpireSkillsFromText(`${roleTitle}\n${descriptionText}`);
+  const inferredCompensation = inferCompensationFromText(descriptionText);
+  const eligibleGraduationYears = inferEligibleYearsFromText(descriptionText);
+  const domain = fallbackRequiredField(
+    departmentNames[0] || inferSuccessFactorsDomain(roleTitle, descriptionText),
+    "General"
+  );
+  const shortDescription = (descriptionText || pageData.metadata.description).slice(0, 220);
+
+  const structuredHints = {
+    company_name: companyName,
+    company_logo_url: "",
+    role_title: roleTitle,
+    domain,
+    package_amount: inferredCompensation.packageAmount,
+    package_type: inferredCompensation.packageType,
+    location_type: locationType,
+    city: location,
+    experience_required: experienceRequired,
+    qualification,
+    eligible_graduation_years: eligibleGraduationYears,
+    required_skills: requiredSkills,
+    short_description: shortDescription,
+    full_job_description: descriptionText || shortDescription,
+    application_link: safeString(job.absolute_url) || jobUrl,
+    posted_date: safeString(job.first_published) || safeString(job.updated_at),
+    expires_at: "",
+    source_url: jobUrl,
+    source_platform: "greenhouse",
+  };
+
+  const metadata: SourceMetadata = {
+    title: roleTitle,
+    description: shortDescription,
+    siteName: companyName,
+    image: pageData.metadata.image,
+  };
+
+  const textContent = [
+    companyName,
+    roleTitle,
+    location,
+    locationType,
+    employmentTypeValues.join(", "),
+    geoValues.join(", "),
+    departmentNames.join(", "),
+    experienceRequired,
+    qualification,
+    requiredSkills.join(", "),
+    descriptionText,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, MAX_TEXT_CHARS);
+
+  const supplementalNodes = [
+    job as unknown as Record<string, unknown>,
+    {
+      board_token: boardToken,
+      job_id: jobId,
+      employment_type: employmentTypeValues,
+      working_location: workingLocationValues,
+      geo: geoValues,
+    },
+  ];
+
+  return { metadata, structuredHints, textContent, supplementalNodes };
+};
+
 const inferSpireSkillsFromText = (value: string): string[] => {
   const text = cleanWhitespace(value);
   if (!text) return [];
@@ -1173,7 +1452,7 @@ const inferSpireSkillsFromText = (value: string): string[] => {
   const phraseSources = [
     ...Array.from(
       text.matchAll(
-        /(?:skills?|competencies|skills?\s*&\s*competencies|technologies?|languages?)\s*[:\-]\s*([^.\n]{4,180})/gi
+        /(?:skills?|competencies|skills?\s*&\s*competencies|technologies?|languages?)\s*[:-]\s*([^.\n]{4,180})/gi
       )
     ).map((match) => match[1]),
     ...Array.from(
@@ -2474,7 +2753,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, error: "Admin access required." }, 403);
     }
 
-    const sourcePlatform = detectSourcePlatform(parsedUrl.toString());
+    let sourcePlatform = detectSourcePlatform(parsedUrl.toString());
     let metadata: SourceMetadata;
     let structuredHints: Record<string, unknown>;
     let textContent: string;
@@ -2486,6 +2765,12 @@ Deno.serve(async (req: Request) => {
       structuredHints = supersetData.structuredHints;
       textContent = supersetData.textContent;
       jsonLdNodes = supersetData.supplementalNodes;
+    } else if (sourcePlatform === "greenhouse") {
+      const greenhouseData = await extractGreenhouseStructuredData(parsedUrl.toString());
+      metadata = greenhouseData.metadata;
+      structuredHints = greenhouseData.structuredHints;
+      textContent = greenhouseData.textContent;
+      jsonLdNodes = greenhouseData.supplementalNodes;
     } else if (sourcePlatform === "paramai") {
       const paramData = await extractParamStructuredData(parsedUrl.toString());
       metadata = paramData.metadata;
@@ -2506,16 +2791,28 @@ Deno.serve(async (req: Request) => {
       jsonLdNodes = spireData.supplementalNodes;
     } else {
       const html = await fetchHtml(parsedUrl.toString());
-      const pageData = extractPageData(html);
-      metadata = pageData.metadata;
-      textContent = pageData.textContent;
-      jsonLdNodes = pageData.jsonLdNodes;
-      structuredHints = buildStructuredHints(
-        pageData.jobPosting,
-        metadata,
-        parsedUrl.toString(),
-        sourcePlatform
-      );
+      const embeddedGreenhouseBoard = findGreenhouseBoardToken(parsedUrl.toString(), html);
+      const embeddedGreenhouseJobId = findGreenhouseJobId(parsedUrl.toString(), html);
+
+      if (embeddedGreenhouseBoard && embeddedGreenhouseJobId) {
+        sourcePlatform = "greenhouse";
+        const greenhouseData = await extractGreenhouseStructuredData(parsedUrl.toString(), html);
+        metadata = greenhouseData.metadata;
+        structuredHints = greenhouseData.structuredHints;
+        textContent = greenhouseData.textContent;
+        jsonLdNodes = greenhouseData.supplementalNodes;
+      } else {
+        const pageData = extractPageData(html);
+        metadata = pageData.metadata;
+        textContent = pageData.textContent;
+        jsonLdNodes = pageData.jsonLdNodes;
+        structuredHints = buildStructuredHints(
+          pageData.jobPosting,
+          metadata,
+          parsedUrl.toString(),
+          sourcePlatform
+        );
+      }
     }
 
     const resolvedAiMode = resolveExtractionAiMode({
@@ -2566,6 +2863,8 @@ Deno.serve(async (req: Request) => {
     const message = error instanceof Error ? error.message : "Failed to extract the job from the URL.";
     console.error("extract-job-from-url:", message);
     const status =
+      message.includes("Could not find a Greenhouse job id") ||
+      message.includes("Could not find a Greenhouse board token") ||
       message.includes("Could not find a Tata Communications job id") ||
       message.includes("loads dynamically") ||
       message.includes("could not be found in the public API")
