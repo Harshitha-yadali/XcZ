@@ -16,6 +16,7 @@ export interface ParsedResume extends ResumeData {
 
 const MAX_PARSED_TEXT_LENGTH = 45000;
 const MAX_RETRIES = 1;
+const RESUME_PARSER_MODEL = 'stepfun/step-3.5-flash:free';
 
 const RESUME_PARSER_SYSTEM_PROMPT = `You are an enterprise-grade resume parsing and structuring engine.
 
@@ -121,11 +122,11 @@ async function extractWithGemini(text: string): Promise<any> {
   const response = await openrouter.chatWithSystem(
     RESUME_PARSER_SYSTEM_PROMPT,
     userPrompt,
-    { model: 'google/gemini-2.5-flash', temperature: 0.1 }
+    { model: RESUME_PARSER_MODEL, temperature: 0.1 }
   );
 
   if (!response) {
-    throw new Error('Empty response from Gemini');
+    throw new Error('Empty response from OpenRouter');
   }
 
   const parsed = safeParseJSON(response);
@@ -149,7 +150,7 @@ async function extractWithRetry(text: string): Promise<any> {
         const response = await openrouter.chatWithSystem(
           RESUME_PARSER_SYSTEM_PROMPT,
           retryPrompt,
-          { model: 'google/gemini-2.5-flash', temperature: 0.05 }
+          { model: RESUME_PARSER_MODEL, temperature: 0.05 }
         );
 
         const parsed = safeParseJSON(response);

@@ -176,14 +176,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     await checkAuthAndProcess(file);
   };
 
-  // Process file using EdenAI parser ONLY
+  // Process file using the OpenRouter resume parser
   const processFile = async (file: File) => {
     setIsUploading(true);
     setUploadError(null);
     setParseSuccess(false);
 
     try {
-      // Use EdenAI parser directly
+      // Use the shared OpenRouter parser directly
       const parsedResume = await parseResumeFromFile(file);
 
       // Create ExtractionResult from parsed text
@@ -207,7 +207,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         onCreditCheckPassed();
       }
     } catch (error: any) {
-      console.error('❌ EdenAI parsing failed:', error);
+      console.error('❌ Resume parsing failed:', error);
       setUploadError(
         error.message || 'Failed to parse resume. Please try again or use a different file.'
       );

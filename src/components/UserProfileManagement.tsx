@@ -41,6 +41,7 @@ import { DeviceManagement } from './security/DeviceManagement';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import { openrouter } from '../services/aiProxyService';
 import { ProfileBookingsTab } from './profile/ProfileBookingsTab';
 import { ProfileUsageTab } from './profile/ProfileUsageTab';
 import { ProfilePaymentsTab } from './profile/ProfilePaymentsTab';
@@ -87,11 +88,6 @@ const mockPaymentService = {
     return Promise.resolve({ success: true, transactionId: 'mock_tx_123' });
   },
   parseResumeWithAI: async (resumeText: string): Promise<ResumeData> => {
-    const edenApiKey = import.meta.env.VITE_EDENAI_API_KEY;
-    if (!edenApiKey) {
-      throw new Error('EdenAI API key is not configured. Please contact support.');
-    }
-
     const text = (resumeText || '').trim();
     if (!text) {
       throw new Error('Parsed resume was empty. Please upload a readable resume file.');
@@ -153,48 +149,34 @@ const mockPaymentService = {
     ];
     const prompt = promptLines.join('\n');
 
-    const response = await fetch('https://api.edenai.run/v2/text/chat', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + edenApiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        providers: 'openai',
-        text: prompt,
-        chatbot_global_action: 'You are an expert ATS resume parsing assistant.',
-        previous_history: [],
+    const rawContent = await openrouter.chatWithSystem(
+      'You are an expert ATS resume parsing assistant.',
+      prompt,
+      {
+        model: 'stepfun/step-3.5-flash:free',
         temperature: 0.1,
-        max_tokens: 4000,
-        settings: {
-          openai: 'gpt-4o-mini'
-        }
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error('Resume parsing failed (' + response.status + '): ' + errorText);
-    }
-
-    const data = await response.json();
-    let rawContent = data?.openai?.generated_text;
+      }
+    );
 
     if (!rawContent || typeof rawContent !== 'string' || !rawContent.trim()) {
       throw new Error('Resume parsing service returned an empty response.');
     }
 
-    const jsonMatch = rawContent.match(/```json\s*([\s\S]*?)```/i);
-    const cleaned = jsonMatch && jsonMatch[1]
-      ? jsonMatch[1].trim()
-      : rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-
     let parsed: any;
     try {
+      const jsonMatch = rawContent.match(/```json\s*([\s\S]*?)```/i);
+      const cleaned = jsonMatch && jsonMatch[1]
+        ? jsonMatch[1].trim()
+        : rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+
       parsed = JSON.parse(cleaned || '{}');
     } catch (error) {
-      console.error('Failed to parse JSON from resume parser:', error);
-      console.error('Resume parser raw output:', cleaned);
+      console.error('Failed to parse JSON from OpenRouter resume parser:', error);
+      console.error('OpenRouter resume parser raw output:', rawContent);
+      throw new Error('Resume parsing service returned invalid data. Please try again.');
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
       throw new Error('Resume parsing service returned invalid data. Please try again.');
     }
 
