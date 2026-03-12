@@ -75,6 +75,7 @@ const AdminSessionServiceEditor = lazy(() => import('./components/admin/AdminSes
 const AdminWebinarsPage = lazy(() => import('./components/admin/AdminWebinarsPage').then(m => ({ default: m.AdminWebinarsPage })));
 const ReferralsPage = lazy(() => import('./components/pages/ReferralsPage').then(m => ({ default: m.ReferralsPage })));
 const ReferralDetailPage = lazy(() => import('./components/pages/ReferralDetailPage').then(m => ({ default: m.ReferralDetailPage })));
+const ReferralSubmissionPage = lazy(() => import('./components/pages/ReferralSubmissionPage').then(m => ({ default: m.ReferralSubmissionPage })));
 const AdminReferralsPage = lazy(() => import('./components/admin/AdminReferralsPage').then(m => ({ default: m.AdminReferralsPage })));
 
 function App() {
@@ -203,7 +204,7 @@ function App() {
   }, [fetchSubscription, toolProcessTrigger]);
 
   const handleAddonPurchaseSuccess = useCallback(
-    async (featureId: string) => {
+    async (featureId: string, suggestionMessage?: string) => {
       console.log(`App.tsx: Add-on purchase successful for feature: ${featureId}. Triggering tool process.`);
       await refreshUserSubscription();
       console.log(`App.tsx: User subscription refreshed. Now attempting to trigger tool process.`);
@@ -222,6 +223,9 @@ function App() {
         case 'linkedin-generator':
           message = 'LinkedIn Message credits added successfully!';
           break;
+      }
+      if (suggestionMessage) {
+        message = `${message} ${suggestionMessage}`;
       }
       handleShowAlert('Purchase Complete', message, 'success');
 
@@ -545,6 +549,7 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route path="/my-bookings" element={<MyBookingsPage />} />
           <Route path="/referrals" element={<ReferralsPage onShowAuth={handleShowAuth} />} />
           <Route path="/referrals/:id" element={<ReferralDetailPage onShowAuth={handleShowAuth} />} />
+          <Route path="/referrals/:id/submit" element={<ReferralSubmissionPage onShowAuth={handleShowAuth} />} />
           <Route
             path="/admin/referrals"
             element={
@@ -873,21 +878,19 @@ const AuthButtons: React.FC<{
       <h3 className="text-sm font-semibold text-[#7A8CAA] mb-3">Account</h3>
       {isAuthenticated && user ? (
         <div className="space-y-1">
-          <div className="flex items-center space-x-3 px-4 py-3 bg-[#0c1d25] rounded-xl mb-3">
+          <button
+            type="button"
+            onClick={() => { navigate('/profile'); onClose(); }}
+            className="w-full flex items-center space-x-3 px-4 py-3 bg-[#0c1d25] rounded-xl mb-3 text-left transition-all duration-200 hover:bg-[#102735]"
+          >
             <div className="bg-gradient-to-br from-[#00E6B8] to-cyan-500 w-10 h-10 rounded-full flex items-center justify-center text-[#05131A] font-semibold">
               {user.name.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2)}
             </div>
-            <div className="overflow-hidden">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <p className="font-medium text-slate-100 truncate">{user.name}</p>
               <p className="text-xs text-[#7A8CAA] truncate">{user.email}</p>
+              <p className="mt-1 text-xs text-[#00E6B8]">Open profile details</p>
             </div>
-          </div>
-          <button
-            onClick={() => { navigate('/profile'); onClose(); }}
-            className="w-full flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-medium transition-all duration-200 text-[#7A8CAA] hover:text-[#00E6B8] hover:bg-[#0c1d25]"
-          >
-            <User className="w-5 h-5" />
-            <span>Profile Settings</span>
           </button>
           <button
             onClick={() => { navigate('/profile?tab=wallet'); onClose(); }}

@@ -29,40 +29,19 @@ export interface ReferralPricing {
   updated_at: string;
 }
 
-export interface ReferralPurchase {
+export interface ReferralSubmission {
   id: string;
   user_id: string;
   referral_listing_id: string;
-  purchase_type: 'query' | 'profile';
+  payment_transaction_id: string;
+  applicant_name: string;
+  contact_email: string;
+  resume_file_name: string;
+  resume_storage_path: string;
   amount_paid: number;
-  payment_id: string | null;
-  order_id: string | null;
-  status: 'pending' | 'success' | 'failed';
-  created_at: string;
-  referral_listings?: ReferralListing;
-}
-
-export type ReferralSlotType = 'query' | 'profile' | 'consultation';
-
-export interface ReferralConsultationSlot {
-  id: string;
-  referral_listing_id: string;
-  slot_date: string;
-  time_slot: string;
-  slot_type: ReferralSlotType;
-  status: 'available' | 'booked' | 'blocked';
-  booked_by: string | null;
-  booking_payment_id: string | null;
-  user_name: string | null;
-  user_email: string | null;
-  user_phone: string | null;
+  admin_notified_at: string | null;
+  status: 'submitted' | 'processing' | 'completed' | 'rejected';
   created_at: string;
   updated_at: string;
-}
-
-export interface ReferralSlotDisplayInfo {
-  time_slot: string;
-  label: string;
-  status: 'available' | 'booked' | 'blocked';
-  slot_id?: string;
+  referral_listings?: ReferralListing;
 }

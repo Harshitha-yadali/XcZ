@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createHmac } from "node:crypto";
+import { sendPurchaseConfirmationEmail } from "../_shared/purchaseNotifications.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +38,8 @@ const plans: PlanConfig[] = [
 const addOns = [
   { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1 },
   { id: 'resume_score_check_single_purchase', name: 'Resume Score Check (1 Use)', price: 9, type: 'score_check', quantity: 1 },
+  { id: 'guided_resume_build_single_purchase', name: 'Guided Resume Build (1 Use)', price: 29, type: 'guided_build', quantity: 1 },
+  { id: 'linkedin_messages_50_purchase', name: 'LinkedIn Messages (50 Uses)', price: 29, type: 'linkedin_messages', quantity: 50 },
 ];
 
 Deno.serve(async (req: Request) => {
@@ -223,8 +226,48 @@ Deno.serve(async (req: Request) => {
       }
     } catch (_referralError) {}
 
+    const shouldSendGenericPurchaseEmail =
+      !isWebinarPayment &&
+      paymentType !== 'session_booking' &&
+      paymentType !== 'referral_booking';
+
+    if (shouldSendGenericPurchaseEmail) {
+      try {
+        const notificationResult = await sendPurchaseConfirmationEmail({
+          supabase,
+          userId: user.id,
+          transactionId,
+          userEmail: user.email || undefined,
+          userName:
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.user_metadata?.display_name ||
+            undefined,
+        });
+
+        suggestionMessage = notificationResult.suggestionMessage;
+        if (!notificationResult.emailSent && notificationResult.error) {
+          console.error('Purchase confirmation email failed:', notificationResult.error);
+        }
+      } catch (notificationError) {
+        console.error('Unexpected purchase confirmation email error:', notificationError);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ success: true, verified: true, subscriptionId, transactionId, message: isWebinarPayment ? "Webinar payment verified successfully" : paymentType === 'referral_booking' ? "Referral booking payment verified successfully" : "Payment verified and credits granted successfully" }),
+      JSON.stringify({
+        success: true,
+        verified: true,
+        subscriptionId,
+        transactionId,
+        suggestionMessage,
+        message:
+          isWebinarPayment
+            ? "Webinar payment verified successfully"
+            : paymentType === 'referral_booking'
+              ? "Referral payment verified successfully"
+              : "Payment verified and credits granted successfully",
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );
   } catch (error: any) {

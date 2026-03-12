@@ -29,7 +29,6 @@ interface OrderRequest {
     serviceTitle?: string;
     listingId?: string;
     listingTitle?: string;
-    slotType?: 'query' | 'profile' | 'consultation';
   };
   userId?: string;
   currency?: string;
@@ -316,9 +315,9 @@ Deno.serve(async (req: Request) => {
     let appliedCoupon: string | null = null;
 
     if (isReferralBooking) {
-      if (!metadata?.listingId || !metadata?.slotType) {
+      if (!metadata?.listingId) {
         return new Response(
-          JSON.stringify({ error: 'Missing referral listing or slot type for referral booking' }),
+          JSON.stringify({ error: 'Missing referral listing for referral payment' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         );
       }
@@ -343,23 +342,23 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      if (pricingErr || !pricingRow) {
-        return new Response(
-          JSON.stringify({ error: 'Unable to fetch referral default pricing' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-        );
+      if (pricingErr) {
+        console.warn('Unable to fetch referral default pricing:', pricingErr.message);
       }
 
-      const resolvedPrice =
-        metadata.slotType === 'query'
-          ? Number(listingRow.query_price ?? pricingRow.query_price ?? 0)
-          : metadata.slotType === 'profile'
-            ? Number(listingRow.profile_price ?? pricingRow.profile_price ?? 0)
-            : Number(listingRow.slot_price ?? pricingRow.slot_price ?? 0);
+      const resolvedPrice = Number(
+        listingRow.profile_price ??
+        listingRow.query_price ??
+        listingRow.slot_price ??
+        pricingRow?.profile_price ??
+        pricingRow?.query_price ??
+        pricingRow?.slot_price ??
+        0
+      );
 
       if (!resolvedPrice || resolvedPrice <= 0) {
         return new Response(
-          JSON.stringify({ error: 'Invalid referral booking price configured' }),
+          JSON.stringify({ error: 'Invalid referral price configured' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         );
       }
@@ -441,7 +440,7 @@ Deno.serve(async (req: Request) => {
     if (isReferralBooking) {
       plan = {
         id: 'referral_booking',
-        name: metadata?.listingTitle || 'Referral Booking',
+        name: metadata?.listingTitle || 'Referral Request',
         price: originalPrice / 100,
         mrp: originalPrice / 100,
         discountPercentage: 0,
@@ -566,7 +565,6 @@ Deno.serve(async (req: Request) => {
         type: 'referral_booking',
         listingId: metadata.listingId,
         listingTitle: metadata.listingTitle,
-        slotType: metadata.slotType,
       };
     }
 
@@ -647,7 +645,6 @@ Deno.serve(async (req: Request) => {
         serviceTitle: metadata?.serviceTitle || '',
         listingId: metadata?.listingId || '',
         listingTitle: metadata?.listingTitle || '',
-        slotType: metadata?.slotType || '',
         mode: isTestMode ? 'test' : 'live',
       },
     };

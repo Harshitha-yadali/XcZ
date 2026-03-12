@@ -1,14 +1,79 @@
 import { supabase } from '../lib/supabaseClient';
+import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import type {
   ReferralListing,
   ReferralPricing,
-  ReferralPurchase,
-  ReferralConsultationSlot,
-  ReferralSlotDisplayInfo,
-  ReferralSlotType,
+  ReferralSubmission,
 } from '../types/referral';
 
 class ReferralService {
+  private async postToEdgeFunction<T>(
+    functionName: string,
+    body: Record<string, unknown>
+  ): Promise<{ data?: T; error?: string }> {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+
+    if (!accessToken) {
+      return { error: 'Session expired. Please sign in again.' };
+    }
+
+    try {
+      const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl(functionName), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const responseText = await response.text();
+      let parsedData: T | { error?: string } | null = null;
+
+      if (responseText) {
+        try {
+          parsedData = JSON.parse(responseText) as T | { error?: string };
+        } catch {
+          parsedData = null;
+        }
+      }
+
+      if (!response.ok) {
+        const parsedError =
+          parsedData &&
+          typeof parsedData === 'object' &&
+          'error' in parsedData &&
+          typeof parsedData.error === 'string'
+            ? parsedData.error
+            : `Request failed with status ${response.status}.`;
+
+        return { error: parsedError };
+      }
+
+      return { data: (parsedData as T) || undefined };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to connect to the referral service.',
+      };
+    }
+  }
+
+  getResolvedReferralPrice(listing: ReferralListing, pricing?: ReferralPricing | null): number {
+    return Number(
+      listing.profile_price ??
+      listing.query_price ??
+      listing.slot_price ??
+      pricing?.profile_price ??
+      pricing?.query_price ??
+      pricing?.slot_price ??
+      0
+    );
+  }
+
   async getActiveListings(): Promise<ReferralListing[]> {
     const { data, error } = await supabase
       .from('referral_listings')
@@ -117,239 +182,174 @@ class ReferralService {
     return true;
   }
 
-  async createPurchase(
-    userId: string,
-    listingId: string,
-    purchaseType: 'query' | 'profile',
-    amount: number
-  ): Promise<string | null> {
+  async getLatestUserSubmission(userId: string, listingId: string): Promise<ReferralSubmission | null> {
     const { data, error } = await supabase
-      .from('referral_purchases')
-      .insert({
-        user_id: userId,
-        referral_listing_id: listingId,
-        purchase_type: purchaseType,
-        amount_paid: amount,
-        status: 'pending',
-      })
-      .select('id')
-      .single();
+      .from('referral_submissions')
+      .select('*, referral_listings(*)')
+      .eq('user_id', userId)
+      .eq('referral_listing_id', listingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
-      console.error('ReferralService: Error creating purchase:', error.message);
+      console.error('ReferralService: Error fetching latest submission:', error.message);
       return null;
     }
-    return data.id;
+
+    return data as ReferralSubmission | null;
   }
 
-  async updatePurchaseStatus(
-    purchaseId: string,
-    paymentId: string,
-    orderId: string,
-    status: 'success' | 'failed'
-  ): Promise<boolean> {
-    const { error } = await supabase
-      .from('referral_purchases')
-      .update({ payment_id: paymentId, order_id: orderId, status })
-      .eq('id', purchaseId);
+  async getAllSubmissions(): Promise<ReferralSubmission[]> {
+    const { data, error } = await supabase
+      .from('referral_submissions')
+      .select('*, referral_listings(*)')
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('ReferralService: Error updating purchase:', error.message);
+      console.error('ReferralService: Error fetching submissions:', error.message);
+      return [];
+    }
+
+    return (data || []) as ReferralSubmission[];
+  }
+
+  async createSubmission(
+    submission: Omit<
+      ReferralSubmission,
+      'id' | 'admin_notified_at' | 'status' | 'created_at' | 'updated_at' | 'referral_listings' | 'amount_paid'
+    >
+  ): Promise<{ submission?: ReferralSubmission; error?: string; alreadyExists?: boolean }> {
+    const { data, error } = await this.postToEdgeFunction<{
+      success?: boolean;
+      submission?: ReferralSubmission;
+      alreadyExists?: boolean;
+      error?: string;
+    }>('create-referral-submission', {
+      listingId: submission.referral_listing_id,
+      paymentTransactionId: submission.payment_transaction_id,
+      applicantName: submission.applicant_name,
+      contactEmail: submission.contact_email,
+      resumeFileName: submission.resume_file_name,
+      resumeStoragePath: submission.resume_storage_path,
+    });
+
+    if (error || !data?.success || !data.submission) {
+      console.error(
+        'ReferralService: Error creating submission:',
+        error || data?.error || 'Unknown error',
+      );
+      return {
+        error: data?.error || error || 'Failed to save referral request.',
+      };
+    }
+
+    return {
+      submission: data.submission,
+      alreadyExists: data.alreadyExists,
+    };
+  }
+
+  async updateSubmissionStatus(
+    submissionId: string,
+    status: ReferralSubmission['status']
+  ): Promise<boolean> {
+    const { error } = await supabase
+      .from('referral_submissions')
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', submissionId);
+
+    if (error) {
+      console.error('ReferralService: Error updating submission status:', error.message);
       return false;
     }
+
     return true;
   }
 
-  async getUserPurchases(userId: string): Promise<ReferralPurchase[]> {
-    const { data, error } = await supabase
-      .from('referral_purchases')
-      .select('*, referral_listings(*)')
-      .eq('user_id', userId)
-      .eq('status', 'success')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('ReferralService: Error fetching purchases:', error.message);
-      return [];
-    }
-    return (data || []) as ReferralPurchase[];
-  }
-
-  async hasUserPurchased(userId: string, listingId: string, purchaseType: 'query' | 'profile'): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('referral_purchases')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('referral_listing_id', listingId)
-      .eq('purchase_type', purchaseType)
-      .eq('status', 'success')
-      .maybeSingle();
-
-    if (error) return false;
-    return !!data;
-  }
-
-  private getSlotDuration(slotType: ReferralSlotType): number {
-    switch (slotType) {
-      case 'profile': return 60;
-      case 'query': return 15;
-      case 'consultation': return 15;
-      default: return 15;
-    }
-  }
-
-  private formatTime(t: string): string {
-    const [h, m] = t.split(':').map(Number);
-    const suffix = h >= 12 ? 'PM' : 'AM';
-    const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
-    return `${displayH}:${String(m).padStart(2, '0')} ${suffix}`;
-  }
-
-  async getSlotsForDate(listingId: string, date: string, slotType: ReferralSlotType = 'consultation'): Promise<ReferralSlotDisplayInfo[]> {
-    const startHour = 10;
-    const startMin = 0;
-    const duration = this.getSlotDuration(slotType);
-    const cutoffMinutes = 16 * 60;
-    const now = new Date();
-    const todayStr = this.getLocalDateString(now);
-
-    const timeSlots: string[] = [];
-    let i = 0;
-    while (true) {
-      const totalMinStart = startHour * 60 + startMin + i * duration;
-      const totalMinEnd = totalMinStart + duration;
-      if (totalMinEnd > cutoffMinutes) break;
-      const sH = String(Math.floor(totalMinStart / 60)).padStart(2, '0');
-      const sM = String(totalMinStart % 60).padStart(2, '0');
-      const eH = String(Math.floor(totalMinEnd / 60)).padStart(2, '0');
-      const eM = String(totalMinEnd % 60).padStart(2, '0');
-      timeSlots.push(`${sH}:${sM}-${eH}:${eM}`);
-      i++;
-    }
-
-    const { data: existingSlots, error } = await supabase
-      .from('referral_consultation_slots')
-      .select('*')
-      .eq('referral_listing_id', listingId)
-      .eq('slot_date', date)
-      .eq('slot_type', slotType);
-
-    if (error) {
-      console.error('ReferralService: Error fetching slots:', error.message);
-      return [];
-    }
-
-    const slotMap: Record<string, ReferralConsultationSlot> = {};
-    (existingSlots || []).forEach((s: ReferralConsultationSlot) => {
-      slotMap[s.time_slot] = s;
-    });
-
-    const visibleSlots =
-      date === todayStr ? timeSlots.filter((ts) => this.isTimeSlotInFuture(ts, now)) : timeSlots;
-
-    return visibleSlots.map((ts) => {
-      const existing = slotMap[ts];
-      const [start, end] = ts.split('-');
-      return {
-        time_slot: ts,
-        label: `${this.formatTime(start)} - ${this.formatTime(end)}`,
-        status: existing?.status || 'available',
-        slot_id: existing?.id,
-      } as ReferralSlotDisplayInfo;
-    });
-  }
-
-  async bookSlot(
-    userId: string,
+  async uploadSubmissionResume(
     listingId: string,
-    date: string,
-    timeSlot: string,
-    slotType: ReferralSlotType,
-    bookingPaymentId: string | null,
-    userName: string,
-    userEmail: string,
-    userPhone?: string
-  ): Promise<{ success: boolean; slotId?: string; error?: string }> {
-    const { data: existing } = await supabase
-      .from('referral_consultation_slots')
-      .select('id')
-      .eq('referral_listing_id', listingId)
-      .eq('slot_date', date)
-      .eq('time_slot', timeSlot)
-      .eq('slot_type', slotType)
-      .eq('status', 'booked')
-      .maybeSingle();
+    paymentTransactionId: string,
+    file: File
+  ): Promise<{ success: boolean; fileName?: string; storagePath?: string; error?: string }> {
+    const { data, error } = await this.postToEdgeFunction<{
+      success?: boolean;
+      bucketId?: string;
+      storagePath?: string;
+      token?: string;
+      fileName?: string;
+      error?: string;
+    }>('create-referral-resume-upload', {
+      listingId,
+      paymentTransactionId,
+      fileName: file.name,
+      contentType: file.type || 'application/pdf',
+      fileSize: file.size,
+    });
 
-    if (existing) {
-      return { success: false, error: 'This slot is already booked.' };
+    if (error || !data?.success || !data.storagePath || !data.token || !data.bucketId) {
+      console.error(
+        'ReferralService: Error preparing referral resume upload:',
+        error || data?.error || 'Unknown error',
+      );
+      return {
+        success: false,
+        error: data?.error || error || 'Failed to prepare PDF upload. Please try again.',
+      };
     }
 
-    const { data, error } = await supabase
-      .from('referral_consultation_slots')
-      .insert({
-        referral_listing_id: listingId,
-        slot_date: date,
-        time_slot: timeSlot,
-        slot_type: slotType,
-        status: 'booked',
-        booked_by: userId,
-        booking_payment_id: bookingPaymentId,
-        user_name: userName,
-        user_email: userEmail,
-        user_phone: userPhone || null,
-      })
-      .select('id')
-      .single();
+    const uploadResult = await supabase.storage
+      .from(data.bucketId)
+      .uploadToSignedUrl(data.storagePath, data.token, file, {
+        upsert: true,
+        contentType: file.type || 'application/pdf',
+        cacheControl: '86400',
+      });
 
-    if (error) {
-      console.error('ReferralService: Error booking slot:', error.message);
-      return { success: false, error: 'Failed to book slot. Please try again.' };
+    if (uploadResult.error) {
+      console.error('ReferralService: Error uploading referral PDF:', uploadResult.error.message);
+      return { success: false, error: 'Failed to upload PDF. Please try again.' };
     }
 
-    return { success: true, slotId: data.id };
+    return {
+      success: true,
+      fileName: data.fileName || file.name,
+      storagePath: data.storagePath,
+    };
   }
 
-  async getUserSlotBookings(userId: string): Promise<ReferralConsultationSlot[]> {
-    const { data, error } = await supabase
-      .from('referral_consultation_slots')
-      .select('*')
-      .eq('booked_by', userId)
-      .eq('status', 'booked')
-      .order('slot_date', { ascending: false });
+  async sendSubmissionEmail(
+    submissionId: string
+  ): Promise<{ success: boolean; adminEmailSent?: boolean; clientEmailSent?: boolean; error?: string }> {
+    const { data, error } = await this.postToEdgeFunction<{
+      success?: boolean;
+      adminEmailSent?: boolean;
+      clientEmailSent?: boolean;
+      error?: string;
+    }>('send-referral-submission-email', {
+      submissionId,
+    });
 
-    if (error) {
-      console.error('ReferralService: Error fetching bookings:', error.message);
-      return [];
+    if (error || !data) {
+      console.error(
+        'ReferralService: Error sending referral submission email:',
+        error || 'Unknown error',
+      );
+      return {
+        success: false,
+        error: error || 'Failed to notify the admin by email.',
+      };
     }
-    return (data || []) as ReferralConsultationSlot[];
-  }
 
-  async getAllPurchases(): Promise<ReferralPurchase[]> {
-    const { data, error } = await supabase
-      .from('referral_purchases')
-      .select('*, referral_listings(*)')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('ReferralService: Error fetching all purchases:', error.message);
-      return [];
-    }
-    return (data || []) as ReferralPurchase[];
-  }
-
-  private getLocalDateString(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  private isTimeSlotInFuture(timeSlot: string, now: Date): boolean {
-    const [start] = timeSlot.split('-');
-    const [h, m] = start.split(':').map((n) => parseInt(n, 10));
-    const slotMinutes = h * 60 + (m || 0);
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    return slotMinutes > currentMinutes;
+    return {
+      success: Boolean(data.success),
+      adminEmailSent: data.adminEmailSent,
+      clientEmailSent: data.clientEmailSent,
+      error: data.error,
+    };
   }
 }
 
