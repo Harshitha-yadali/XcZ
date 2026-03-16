@@ -1,10 +1,21 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  calculateSelectedAddOnsTotal,
+  findSubscriptionPlan,
+  type PaymentPlanConfig,
+} from "../_shared/paymentCatalog.ts";
+import {
   applySessionPromo,
   findSessionPromo,
   normalizeSessionPromoCode,
 } from "../_shared/sessionPromo.ts";
+import {
+  applyPricingPlanCoupon,
+  getPricingPlanCouponPendingHoldSinceIso,
+  normalizePricingPlanCouponCode,
+  pricingPlanCouponAppliesToPlan,
+} from "../_shared/planCoupon.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,255 +45,6 @@ interface OrderRequest {
   currency?: string;
 }
 
-interface PlanConfig {
-  id: string;
-  name: string;
-  price: number;
-  mrp: number;
-  discountPercentage: number;
-  duration: string;
-  optimizations: number;
-  scoreChecks: number;
-  linkedinMessages: number;
-  guidedBuilds: number;
-  sessions: number;
-  durationInHours: number;
-  tag: string;
-  tagColor: string;
-  gradient: string;
-  icon: string;
-  features: string[];
-  popular?: boolean;
-}
-
-const plans: PlanConfig[] = [
-  {
-    id: 'career_boost',
-    name: 'Career Boost Plan',
-    price: 1999,
-    mrp: 3925,
-    discountPercentage: 49,
-    duration: 'One-time Purchase',
-    optimizations: 50,
-    scoreChecks: 25,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 1,
-    tag: 'Premium',
-    tagColor: 'text-emerald-800 bg-emerald-100',
-    gradient: 'from-emerald-500 to-cyan-500',
-    icon: 'zap',
-    features: ['50 JD-Based Resume Optimizations', '25 Resume Score Checks', '1 Resume Review Session'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'career_pro',
-    name: 'Career Pro Plan',
-    price: 2999,
-    mrp: 6850,
-    discountPercentage: 56,
-    duration: 'One-time Purchase',
-    optimizations: 100,
-    scoreChecks: 50,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 1,
-    tag: 'Most Popular',
-    tagColor: 'text-amber-800 bg-amber-100',
-    gradient: 'from-amber-500 to-orange-500',
-    icon: 'crown',
-    features: ['100 JD-Based Resume Optimizations', '50 Resume Score Checks', '1 Resume Review Session'],
-    popular: true,
-    durationInHours: 8760,
-  },
-  {
-    id: 'jd_starter',
-    name: 'JD Starter',
-    price: 89,
-    mrp: 245,
-    discountPercentage: 64,
-    duration: 'One-time Purchase',
-    optimizations: 5,
-    scoreChecks: 0,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-teal-500 to-emerald-500',
-    icon: 'target',
-    features: ['5 JD-Based Resume Optimizations'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'jd_basic',
-    name: 'JD Basic',
-    price: 169,
-    mrp: 490,
-    discountPercentage: 65,
-    duration: 'One-time Purchase',
-    optimizations: 10,
-    scoreChecks: 0,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-teal-500 to-emerald-500',
-    icon: 'target',
-    features: ['10 JD-Based Resume Optimizations'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'jd_advanced',
-    name: 'JD Advanced',
-    price: 799,
-    mrp: 2450,
-    discountPercentage: 67,
-    duration: 'One-time Purchase',
-    optimizations: 50,
-    scoreChecks: 0,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-teal-500 to-emerald-500',
-    icon: 'target',
-    features: ['50 JD-Based Resume Optimizations'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'jd_pro',
-    name: 'JD Pro',
-    price: 1499,
-    mrp: 4900,
-    discountPercentage: 69,
-    duration: 'One-time Purchase',
-    optimizations: 100,
-    scoreChecks: 0,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-teal-500 to-emerald-500',
-    icon: 'target',
-    features: ['100 JD-Based Resume Optimizations'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'score_starter',
-    name: 'Score Starter',
-    price: 39,
-    mrp: 95,
-    discountPercentage: 59,
-    duration: 'One-time Purchase',
-    optimizations: 0,
-    scoreChecks: 5,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-blue-500 to-cyan-500',
-    icon: 'check_circle',
-    features: ['5 Resume Score Checks'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'score_basic',
-    name: 'Score Basic',
-    price: 79,
-    mrp: 190,
-    discountPercentage: 58,
-    duration: 'One-time Purchase',
-    optimizations: 0,
-    scoreChecks: 10,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-blue-500 to-cyan-500',
-    icon: 'check_circle',
-    features: ['10 Resume Score Checks'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'score_advanced',
-    name: 'Score Advanced',
-    price: 349,
-    mrp: 950,
-    discountPercentage: 63,
-    duration: 'One-time Purchase',
-    optimizations: 0,
-    scoreChecks: 50,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-blue-500 to-cyan-500',
-    icon: 'check_circle',
-    features: ['50 Resume Score Checks'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'combo_starter',
-    name: 'Combo Starter',
-    price: 999,
-    mrp: 3400,
-    discountPercentage: 71,
-    duration: 'One-time Purchase',
-    optimizations: 50,
-    scoreChecks: 50,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-sky-500 to-blue-500',
-    icon: 'briefcase',
-    features: ['50 JD-Based Resume Optimizations', '50 Resume Score Checks'],
-    popular: false,
-    durationInHours: 8760,
-  },
-  {
-    id: 'combo_pro',
-    name: 'Combo Pro',
-    price: 1899,
-    mrp: 6800,
-    discountPercentage: 72,
-    duration: 'One-time Purchase',
-    optimizations: 100,
-    scoreChecks: 100,
-    linkedinMessages: 0,
-    guidedBuilds: 0,
-    sessions: 0,
-    tag: '',
-    tagColor: '',
-    gradient: 'from-sky-500 to-blue-500',
-    icon: 'briefcase',
-    features: ['100 JD-Based Resume Optimizations', '100 Resume Score Checks'],
-    popular: false,
-    durationInHours: 8760,
-  },
-];
-
-const addOns = [
-  { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1 },
-  { id: 'resume_score_check_single_purchase', name: 'Resume Score Check (1 Use)', price: 9, type: 'score_check', quantity: 1 },
-];
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -308,6 +70,8 @@ Deno.serve(async (req: Request) => {
     const isWebinarPayment = metadata?.type === 'webinar';
     const isSessionBooking = metadata?.type === 'session_booking';
     const isReferralBooking = metadata?.type === 'referral_booking';
+
+    const resolvedAddOnsTotal = calculateSelectedAddOnsTotal(selectedAddOns);
 
     let originalPrice = 0;
     let finalAmount = 0;
@@ -436,7 +200,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    let plan: PlanConfig;
+    let plan: PaymentPlanConfig;
     if (isReferralBooking) {
       plan = {
         id: 'referral_booking',
@@ -464,7 +228,7 @@ Deno.serve(async (req: Request) => {
     } else if (planId === 'addon_only_purchase' || !planId) {
       plan = { id: 'addon_only_purchase', name: 'Add-on Only Purchase', price: 0, mrp: 0, discountPercentage: 0, duration: 'One-time Purchase', optimizations: 0, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 0, tag: '', tagColor: '', gradient: '', icon: '', features: [] };
     } else {
-      const foundPlan = plans.find((p) => p.id === planId);
+      const foundPlan = findSubscriptionPlan(planId);
       if (!foundPlan) throw new Error('Invalid plan selected');
       plan = foundPlan;
     }
@@ -477,31 +241,56 @@ Deno.serve(async (req: Request) => {
     }
 
     if (couponCode && !isWebinarPayment && !isSessionBooking && !isReferralBooking) {
-      const normalizedCoupon = couponCode.toLowerCase().trim();
+      if (!planId || plan.id === 'addon_only_purchase') {
+        return new Response(JSON.stringify({ error: 'Coupons are only supported for pricing plans.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+      }
 
-      const { count: userCouponUsageCount, error: userCouponUsageError } = await supabase
-        .from('payment_transactions')
-        .select('id', { count: 'exact' })
-        .eq('user_id', user.id)
-        .ilike('coupon_code', normalizedCoupon)
-        .in('status', ['success', 'pending']);
+      const normalizedCoupon = normalizePricingPlanCouponCode(couponCode);
 
-      if (userCouponUsageError) throw new Error('Failed to verify coupon usage.');
-      if (userCouponUsageCount && userCouponUsageCount > 0) {
+      const { data: couponRow, error: couponError } = await supabase
+        .from('pricing_plan_coupons')
+        .select('code, discount_percentage, applicable_plan_ids, is_active')
+        .ilike('code', normalizedCoupon)
+        .maybeSingle();
+
+      if (couponError) {
+        throw new Error('Failed to verify coupon details.');
+      }
+
+      if (!couponRow || !couponRow.is_active || !pricingPlanCouponAppliesToPlan(couponRow, plan.id)) {
+        return new Response(JSON.stringify({ error: 'Invalid coupon code or not applicable to selected plan.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+      }
+
+      const pendingHoldSince = getPricingPlanCouponPendingHoldSinceIso();
+      const [successfulUsageResult, pendingUsageResult] = await Promise.all([
+        supabase
+          .from('payment_transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .in('purchase_type', ['plan', 'plan_with_addons'])
+          .eq('status', 'success')
+          .ilike('coupon_code', normalizedCoupon),
+        supabase
+          .from('payment_transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .in('purchase_type', ['plan', 'plan_with_addons'])
+          .eq('status', 'pending')
+          .gte('created_at', pendingHoldSince)
+          .ilike('coupon_code', normalizedCoupon),
+      ]);
+
+      if (successfulUsageResult.error || pendingUsageResult.error) {
+        throw new Error('Failed to verify coupon usage.');
+      }
+      if ((successfulUsageResult.count || 0) > 0 || (pendingUsageResult.count || 0) > 0) {
         return new Response(JSON.stringify({ error: `Coupon "${normalizedCoupon}" has already been used by this account.` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
       }
 
-      if (normalizedCoupon === 'fullsupport' && planId === 'career_pro') {
-        finalAmount = 0;
-        discountAmount = plan.price * 100;
-        appliedCoupon = 'fullsupport';
-      } else if (normalizedCoupon === 'diwali') {
-        discountAmount = Math.floor(originalPrice * 0.9);
-        finalAmount = originalPrice - discountAmount;
-        appliedCoupon = 'diwali';
-      } else {
-        return new Response(JSON.stringify({ error: 'Invalid coupon code or not applicable to selected plan.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
-      }
+      const couponTotals = applyPricingPlanCoupon(originalPrice, couponRow);
+      discountAmount = couponTotals.discountAmount;
+      finalAmount = couponTotals.finalAmount;
+      appliedCoupon = normalizePricingPlanCouponCode(couponRow.code);
     }
 
     if (!isWebinarPayment && !isSessionBooking && !isReferralBooking && walletDeduction && walletDeduction > 0) {
@@ -521,8 +310,8 @@ Deno.serve(async (req: Request) => {
       finalAmount = Math.max(0, finalAmount - walletDeduction);
     }
 
-    if (!isSessionBooking && !isReferralBooking && addOnsTotal && addOnsTotal > 0) {
-      finalAmount += addOnsTotal;
+    if (!isSessionBooking && !isReferralBooking && resolvedAddOnsTotal > 0) {
+      finalAmount += resolvedAddOnsTotal;
     }
 
     if (!isWebinarPayment && !isSessionBooking) {
@@ -634,7 +423,7 @@ Deno.serve(async (req: Request) => {
         couponCode: appliedCoupon,
         discountAmount: discountAmount,
         walletDeduction: walletDeduction || 0,
-        addOnsTotal: addOnsTotal || 0,
+        addOnsTotal: resolvedAddOnsTotal,
         transactionId: transactionId,
         selectedAddOns: JSON.stringify(selectedAddOns || {}),
         paymentType: isWebinarPayment ? 'webinar' : (isSessionBooking ? 'session_booking' : (isReferralBooking ? 'referral_booking' : 'subscription')),

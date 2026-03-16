@@ -29,10 +29,10 @@ interface PricingPageProps {
 }
 
 const CATEGORY_CONFIG: { key: PlanCategory; label: string; icon: React.ReactNode }[] = [
-  { key: 'combined', label: 'Combined Premium', icon: <Crown className="w-3.5 h-3.5" /> },
   { key: 'jd_only', label: 'JD Optimizer', icon: <Target className="w-3.5 h-3.5" /> },
   { key: 'score_only', label: 'Score Checker', icon: <TrendingUp className="w-3.5 h-3.5" /> },
   { key: 'combo', label: 'JD + Score', icon: <Layers className="w-3.5 h-3.5" /> },
+  { key: 'combined', label: 'Combined Premium', icon: <Crown className="w-3.5 h-3.5" /> },
 ];
 
 const getPlanIcon = (iconType: string) => {
@@ -52,7 +52,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({
 }) => {
   const { isAuthenticated } = useAuth();
   const { isChristmasMode } = useTheme();
-  const [activeCategory, setActiveCategory] = useState<PlanCategory>('combined');
+  const [activeCategory, setActiveCategory] = useState<PlanCategory>('jd_only');
   const [mobileSlide, setMobileSlide] = useState(0);
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);

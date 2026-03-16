@@ -34,7 +34,7 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                 <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-300 mr-2" />
                 {userSubscription ? (
                   <span>
-                    Optimizations Left:{' '}
+                    Credits Left:{' '}
                     <span className="font-bold">
                       {userSubscription.optimizationsTotal - userSubscription.optimizationsUsed}
                     </span>
@@ -71,7 +71,7 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                         <hr className="my-1 border-white/10" />
                         <div className="px-4 py-2 text-sm text-slate-200 space-y-1">
                           <div className="flex justify-between items-center">
-                            <span>Optimizations:</span>
+                            <span>Resume Credits:</span>
                             <span className="font-medium">
                               {userSubscription.optimizationsTotal -
                                 userSubscription.optimizationsUsed}{' '}
@@ -79,7 +79,7 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                             </span>
                           </div>
                           <div className="flex justify-between items-center">
-                            <span>Score Checks:</span>
+                            <span>Score Credits:</span>
                             <span className="font-medium">
                               {userSubscription.scoreChecksTotal -
                                 userSubscription.scoreChecksUsed}{' '}

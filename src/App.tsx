@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { Menu, X, Home, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle } from 'lucide-react';
+import { Menu, X, Home, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/navigation/Navigation';
@@ -40,6 +40,7 @@ const AdminJobsPage = lazy(() => import('./components/admin/AdminJobsPage').then
 const JobEditPage = lazy(() => import('./components/admin/JobEditPage').then(m => ({ default: m.JobEditPage })));
 const AdminJobUpdatesManager = lazy(() => import('./components/admin/AdminJobUpdatesManager').then(m => ({ default: m.AdminJobUpdatesManager })));
 const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
+const AdminPlanCouponsPage = lazy(() => import('./components/admin/AdminPlanCouponsPage').then(m => ({ default: m.AdminPlanCouponsPage })));
 const PortfolioBuilderPage = lazy(() => import('./components/pages/PortfolioBuilderPage').then(m => ({ default: m.PortfolioBuilderPage })));
 const MockInterviewPage = lazy(() => import('./components/pages/MockInterviewPage').then(m => ({ default: m.MockInterviewPage })));
 const ResumeBasedInterviewPage = lazy(() => import('./components/pages/ResumeBasedInterviewPage').then(m => ({ default: m.ResumeBasedInterviewPage })));
@@ -612,6 +613,14 @@ const handleDiwaliCTAClick = useCallback(() => {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/coupons"
+            element={
+              <AdminRoute>
+                <AdminPlanCouponsPage />
+              </AdminRoute>
+            }
+          />
           <Route path="/blog" element={<EnhancedBlogPage isAuthenticated={isAuthenticated} onShowAuth={() => setShowAuthModal(true)} />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/webinars" element={<WebinarsPage onShowAuth={handleShowAuth} />} />
@@ -727,6 +736,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/referrals', label: 'Referral Mgmt', icon: <Users className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/email-testing', label: 'Email Testing', icon: <Mail className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/sessions', label: 'Session Schedule', icon: <Calendar className="w-5 h-5" /> }] : []),
+                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/coupons', label: 'Plan Coupons', icon: <TicketPercent className="w-5 h-5" /> }] : []),
                       { id: '/tutorials', label: 'Tutorials', icon: <BookOpen className="w-5 h-5" /> },
                       { id: '/contact', label: 'Contact', icon: <Phone className="w-5 h-5" /> },
                       ...(isAuthenticated ? [{ id: 'wallet', label: 'Referral & Wallet', icon: <Wallet className="w-5 h-5" /> }] : []),

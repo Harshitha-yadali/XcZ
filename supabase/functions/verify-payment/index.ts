@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createHmac } from "node:crypto";
+import { findSubscriptionPlan, resolveSubscriptionEndDateIso } from "../_shared/paymentCatalog.ts";
 import { sendPurchaseConfirmationEmail } from "../_shared/purchaseNotifications.ts";
 
 const corsHeaders = {
@@ -8,32 +9,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
-
-interface PlanConfig {
-  id: string;
-  name: string;
-  price: number;
-  optimizations: number;
-  scoreChecks: number;
-  linkedinMessages: number;
-  guidedBuilds: number;
-  sessions: number;
-  durationInHours: number;
-}
-
-const plans: PlanConfig[] = [
-  { id: 'career_boost', name: 'Career Boost Plan', price: 1999, optimizations: 50, scoreChecks: 25, linkedinMessages: 0, guidedBuilds: 0, sessions: 1, durationInHours: 8760 },
-  { id: 'career_pro', name: 'Career Pro Plan', price: 2999, optimizations: 100, scoreChecks: 50, linkedinMessages: 0, guidedBuilds: 0, sessions: 1, durationInHours: 8760 },
-  { id: 'jd_starter', name: 'JD Starter', price: 89, optimizations: 5, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'jd_basic', name: 'JD Basic', price: 169, optimizations: 10, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'jd_advanced', name: 'JD Advanced', price: 799, optimizations: 50, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'jd_pro', name: 'JD Pro', price: 1499, optimizations: 100, scoreChecks: 0, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'score_starter', name: 'Score Starter', price: 39, optimizations: 0, scoreChecks: 5, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'score_basic', name: 'Score Basic', price: 79, optimizations: 0, scoreChecks: 10, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'score_advanced', name: 'Score Advanced', price: 349, optimizations: 0, scoreChecks: 50, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'combo_starter', name: 'Combo Starter', price: 999, optimizations: 50, scoreChecks: 50, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-  { id: 'combo_pro', name: 'Combo Pro', price: 1899, optimizations: 100, scoreChecks: 100, linkedinMessages: 0, guidedBuilds: 0, sessions: 0, durationInHours: 8760 },
-];
 
 const addOns = [
   { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1 },
@@ -107,6 +82,30 @@ Deno.serve(async (req: Request) => {
     }
     if (existingTx.status !== "pending") throw new Error("Transaction is not in a verifiable state.");
 
+    if (
+      couponCode &&
+      paymentType !== 'webinar' &&
+      paymentType !== 'session_booking' &&
+      paymentType !== 'referral_booking'
+    ) {
+      const { count: couponSuccessCount, error: couponSuccessError } = await supabase
+        .from("payment_transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .in("purchase_type", ["plan", "plan_with_addons"])
+        .eq("status", "success")
+        .neq("id", transactionId)
+        .ilike("coupon_code", couponCode);
+
+      if (couponSuccessError) {
+        throw new Error("Failed to verify coupon redemption state.");
+      }
+
+      if ((couponSuccessCount || 0) > 0) {
+        throw new Error(`Coupon "${couponCode}" has already been used by this account.`);
+      }
+    }
+
     if (walletDeduction > 0) {
       const { data: walletRows, error: walletBalanceError } = await supabase
         .from("wallet_transactions").select("amount").eq("user_id", user.id).eq("status", "completed");
@@ -173,15 +172,17 @@ Deno.serve(async (req: Request) => {
         await supabase.from("subscriptions").update({ status: "upgraded", updated_at: new Date().toISOString() }).eq("id", existingSubscription.id);
       }
 
-      const plan = plans.find((p) => p.id === planId);
+      const plan = findSubscriptionPlan(planId);
       if (!plan) throw new Error("Invalid plan");
+
+      const subscriptionStartDate = new Date();
 
       const { data: subscription, error: subscriptionError } = await supabase
         .from("subscriptions")
         .insert({
           user_id: user.id, plan_id: planId, status: "active",
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + plan.durationInHours * 60 * 60 * 1000).toISOString(),
+          start_date: subscriptionStartDate.toISOString(),
+          end_date: resolveSubscriptionEndDateIso(plan, subscriptionStartDate),
           optimizations_used: 0, optimizations_total: plan.optimizations,
           score_checks_used: 0, score_checks_total: plan.scoreChecks,
           linkedin_messages_used: 0, linkedin_messages_total: plan.linkedinMessages,

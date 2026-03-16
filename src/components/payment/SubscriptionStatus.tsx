@@ -3,6 +3,11 @@ import { Crown, Calendar, Zap, AlertCircle, CheckCircle, RefreshCw } from 'lucid
 import { Subscription } from '../../types/payment';
 import { paymentService } from '../../services/paymentService';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  formatSubscriptionEndDate,
+  getSubscriptionDaysRemaining,
+  isLifetimeSubscriptionEndDate,
+} from '../../utils/subscriptionLifetime';
 
 interface SubscriptionStatusProps {
   onUpgrade: () => void;
@@ -31,22 +36,6 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  const getDaysRemaining = (endDate: string) => {
-    const end = new Date(endDate);
-    const now = new Date();
-    const diffTime = end.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
   };
 
   const getUsagePercentage = () => {
@@ -108,23 +97,11 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
   }
 
   const remaining = subscription.optimizationsTotal - subscription.optimizationsUsed;
-  const daysLeft = getDaysRemaining(subscription.endDate);
+  const isLifetimePlan = isLifetimeSubscriptionEndDate(subscription.endDate);
+  const daysLeft = getSubscriptionDaysRemaining(subscription.endDate);
   const usagePercentage = getUsagePercentage();
-
-  // --- NEW LOGIC FOR DISPLAYING DAYS REMAINING ---
-  const fullPlanDetails = paymentService.getPlanById(subscription.planId);
-  let displayDaysRemaining: string | number;
-
-  if (fullPlanDetails?.id === 'lifetime') {
-    displayDaysRemaining = 'Infinite';
-  } else if (daysLeft === 0) {
-    // If daysLeft is 0, but it's not a lifetime plan, display 30 days (assuming monthly cycle reset)
-    // You might want to refine this logic based on your specific plan cycles
-    displayDaysRemaining = '30';
-  } else {
-    displayDaysRemaining = daysLeft;
-  }
-  // --- END NEW LOGIC ---
+  const displayDaysRemaining = isLifetimePlan ? 'Lifetime' : daysLeft;
+  const remainingLabel = isLifetimePlan ? 'Access' : 'Days Remaining';
 
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
@@ -154,13 +131,13 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
       {/* Usage Stats */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          {/* Optimizations Left */}
+          {/* Credits Left */}
           <div className="text-center">
             <div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
               <Zap className="w-6 h-6 text-blue-600" />
             </div>
             <div className="text-2xl font-bold text-gray-900">{remaining}</div>
-            <div className="text-sm text-gray-600">Optimizations Left</div>
+            <div className="text-sm text-gray-600">Credits Left</div>
           </div>
 
           {/* Days Remaining */}
@@ -168,8 +145,8 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
             <div className="bg-purple-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
               <Calendar className="w-6 h-6 text-purple-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">{displayDaysRemaining}</div> {/* Renders the new display value */}
-            <div className="text-sm text-gray-600">Days Remaining</div>
+            <div className="text-2xl font-bold text-gray-900">{displayDaysRemaining}</div>
+            <div className="text-sm text-gray-600">{remainingLabel}</div>
           </div>
 
           {/* Usage Percentage */}
@@ -205,11 +182,11 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-600">Start Date:</span>
-              <span className="ml-2 font-medium">{formatDate(subscription.startDate)}</span>
+              <span className="ml-2 font-medium">{formatSubscriptionEndDate(subscription.startDate)}</span>
             </div>
             <div>
               <span className="text-gray-600">End Date:</span>
-              <span className="ml-2 font-medium">{formatDate(subscription.endDate)}</span>
+              <span className="ml-2 font-medium">{formatSubscriptionEndDate(subscription.endDate)}</span>
             </div>
             {subscription.couponUsed && (
               <div className="md:col-span-2">
@@ -256,9 +233,9 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
             <div className="flex items-start">
               <AlertCircle className="w-5 h-5 text-orange-600 mr-3 mt-0.5" />
               <div>
-                <div className="font-medium text-orange-800">Running Low on Optimizations</div>
+                <div className="font-medium text-orange-800">Running Low on Credits</div>
                 <div className="text-orange-700 text-sm mt-1">
-                  You have only {remaining} optimization{remaining !== 1 ? 's' : ''} left. Consider upgrading your plan to continue optimizing your resume.
+                  You have only {remaining} credit{remaining !== 1 ? 's' : ''} left. Consider upgrading your plan to continue optimizing your resume.
                 </div>
               </div>
             </div>

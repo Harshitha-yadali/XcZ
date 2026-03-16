@@ -1209,7 +1209,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                 <button className="inline-flex items-center space-x-2 px-6 py-3 rounded-full transition-all duration-200 font-semibold text-sm bg-gradient-to-r from-neon-purple-500 to-neon-blue-600 text-white shadow-md hover:shadow-neon-purple focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neon-cyan-500 max-w-[300px] mx-auto justify-center dark:shadow-neon-purple">
                   <span>
                     {userSubscription
-                      ? `Optimizations Left: ${userSubscription.optimizationsTotal - userSubscription.optimizationsUsed}`
+                      ? `Credits Left: ${userSubscription.optimizationsTotal - userSubscription.optimizationsUsed}`
                       : 'No Active Plan'}
                   </span>
                 </button>

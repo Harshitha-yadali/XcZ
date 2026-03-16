@@ -195,7 +195,7 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
       const usageResult = await paymentService.useScoreCheck(user.id);
       if (!usageResult.success) {
         console.error('Failed to deduct score check credit:', usageResult.error);
-        onShowAlert('Credits Exhausted', 'No score check credits available. Please upgrade.', 'error', 'Upgrade Plan', () => onShowSubscriptionPlans('score-checker'));
+        onShowAlert('Credits Exhausted', 'No score credits available. Please upgrade.', 'error', 'Upgrade Plan', () => onShowSubscriptionPlans('score-checker'));
         setIsAnalyzing(false);
         setLoadingStep('');
         return;
@@ -386,17 +386,17 @@ if (hasScoreCheckCredits) {
   let message = "";
   if (subscriptionCredits <= 0 && addOnCredits <= 0) {
     if (currentSubscription) {
-      message = `You have used all your Resume Score Checks from ${planName}.`;
+      message = `You have used all your Resume Score Credits from ${planName}.`;
     } else {
-      message = "You don't have any active plan or add-on credits for Resume Score Checks.";
+      message = "You don't have any active plan or add-on credits for Resume Score Credits.";
     }
     message += " Please purchase credits or upgrade your plan to continue.";
   } else {
-    message = "Your Resume Score Check credits are exhausted. Please purchase more credits.";
+    message = "Your Resume Score Credits are exhausted. Please purchase more credits.";
   }
 
   onShowAlert(
-    "Resume Score Check Credits Exhausted",
+    "Resume Score Credits Exhausted",
     message,
     "warning",
     "Get Credits",
@@ -619,12 +619,12 @@ if (hasScoreCheckCredits) {
           </div>
 
           <div className="relative flex-grow py-8">
-            {/* Score Checks Left Badge */}
+            {/* Score Credits Left Badge */}
             {isAuthenticated && userSubscription && (
               <div className="relative text-center mb-6 z-10">
                 <button className="inline-flex items-center space-x-2 px-6 py-3 rounded-full transition-all duration-200 font-semibold text-sm bg-gradient-to-r from-emerald-500 to-cyan-600 text-white shadow-md hover:shadow-emerald-500/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 max-w-[300px] mx-auto justify-center">
                   <span>
-                    Score Checks Left: {userSubscription.scoreChecksTotal - userSubscription.scoreChecksUsed}
+                    Score Credits Left: {userSubscription.scoreChecksTotal - userSubscription.scoreChecksUsed}
                   </span>
                 </button>
               </div>

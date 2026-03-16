@@ -1,6 +1,7 @@
 // src/services/paymentService.ts
 import { supabase } from '../lib/supabaseClient';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import { LIFETIME_PLAN_END_DATE_ISO } from '../utils/subscriptionLifetime';
 
 // ---------- Types ----------
 export type { PlanCategory } from '../types/payment';
@@ -39,6 +40,12 @@ export interface RazorpayResponse {
   razorpay_signature: string;
 }
 
+interface PurchaseProcessResult {
+  success: boolean;
+  error?: string;
+  suggestionMessage?: string;
+}
+
 export interface Subscription {
   id: string;
   userId: string;
@@ -60,6 +67,12 @@ export interface Subscription {
 
 // Credit types map 1:1 with addon_types.type_key and with our internal useCredit API
 type CreditType = 'optimization' | 'score_check' | 'linkedin_messages' | 'guided_build';
+const OUTDATED_PRICING_PLAN_COUPON_FUNCTIONS_LOG_MESSAGE =
+  'Pricing plan coupon support is incomplete on the server. Apply migration 20260312160000_add_pricing_plan_coupons.sql and deploy the latest validate-coupon, create-order, and create-free-subscription functions in Supabase.';
+const TEMPORARY_PRICING_PLAN_COUPON_MESSAGE =
+  "Coupon system isn't fully configured right now. Please contact support or try again later.";
+const EXPIRED_SESSION_MESSAGE =
+  'Your session has expired. Please sign in again.';
 
 // ---------- Service ----------
 class PaymentService {
@@ -72,7 +85,7 @@ class PaymentService {
       price: 1999,
       mrp: 3925,
       discountPercentage: Math.round((1 - 1999 / 3925) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 50,
       scoreChecks: 25,
       linkedinMessages: 0,
@@ -89,7 +102,7 @@ class PaymentService {
         '1 Resume Review Session',
       ],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'career_pro',
@@ -97,7 +110,7 @@ class PaymentService {
       price: 2999,
       mrp: 6850,
       discountPercentage: Math.round((1 - 2999 / 6850) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 100,
       scoreChecks: 50,
       linkedinMessages: 0,
@@ -114,7 +127,7 @@ class PaymentService {
         '1 Resume Review Session',
       ],
       popular: true,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     // JD-BASED OPTIMIZER ONLY
     {
@@ -123,7 +136,7 @@ class PaymentService {
       price: 89,
       mrp: 245,
       discountPercentage: Math.round((1 - 89 / 245) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 5,
       scoreChecks: 0,
       linkedinMessages: 0,
@@ -136,7 +149,7 @@ class PaymentService {
       icon: 'target',
       features: ['5 JD-Based Resume Optimizations'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'jd_basic',
@@ -144,7 +157,7 @@ class PaymentService {
       price: 169,
       mrp: 490,
       discountPercentage: Math.round((1 - 169 / 490) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 10,
       scoreChecks: 0,
       linkedinMessages: 0,
@@ -157,7 +170,7 @@ class PaymentService {
       icon: 'target',
       features: ['10 JD-Based Resume Optimizations'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'jd_advanced',
@@ -165,7 +178,7 @@ class PaymentService {
       price: 799,
       mrp: 2450,
       discountPercentage: Math.round((1 - 799 / 2450) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 50,
       scoreChecks: 0,
       linkedinMessages: 0,
@@ -178,7 +191,7 @@ class PaymentService {
       icon: 'target',
       features: ['50 JD-Based Resume Optimizations'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'jd_pro',
@@ -186,7 +199,7 @@ class PaymentService {
       price: 1499,
       mrp: 4900,
       discountPercentage: Math.round((1 - 1499 / 4900) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 100,
       scoreChecks: 0,
       linkedinMessages: 0,
@@ -199,7 +212,7 @@ class PaymentService {
       icon: 'target',
       features: ['100 JD-Based Resume Optimizations'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     // RESUME SCORE CHECKER ONLY
     {
@@ -208,7 +221,7 @@ class PaymentService {
       price: 39,
       mrp: 95,
       discountPercentage: Math.round((1 - 39 / 95) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 0,
       scoreChecks: 5,
       linkedinMessages: 0,
@@ -221,7 +234,7 @@ class PaymentService {
       icon: 'check_circle',
       features: ['5 Resume Score Checks'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'score_basic',
@@ -229,7 +242,7 @@ class PaymentService {
       price: 79,
       mrp: 190,
       discountPercentage: Math.round((1 - 79 / 190) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 0,
       scoreChecks: 10,
       linkedinMessages: 0,
@@ -242,7 +255,7 @@ class PaymentService {
       icon: 'check_circle',
       features: ['10 Resume Score Checks'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'score_advanced',
@@ -250,7 +263,7 @@ class PaymentService {
       price: 349,
       mrp: 950,
       discountPercentage: Math.round((1 - 349 / 950) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 0,
       scoreChecks: 50,
       linkedinMessages: 0,
@@ -263,7 +276,7 @@ class PaymentService {
       icon: 'check_circle',
       features: ['50 Resume Score Checks'],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     // JD + RESUME SCORE (NO SESSION)
     {
@@ -272,7 +285,7 @@ class PaymentService {
       price: 999,
       mrp: 3400,
       discountPercentage: Math.round((1 - 999 / 3400) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 50,
       scoreChecks: 50,
       linkedinMessages: 0,
@@ -288,7 +301,7 @@ class PaymentService {
         '50 Resume Score Checks',
       ],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
     {
       id: 'combo_pro',
@@ -296,7 +309,7 @@ class PaymentService {
       price: 1899,
       mrp: 6800,
       discountPercentage: Math.round((1 - 1899 / 6800) * 100),
-      duration: 'One-time Purchase',
+      duration: 'Lifetime Access',
       optimizations: 100,
       scoreChecks: 100,
       linkedinMessages: 0,
@@ -312,7 +325,7 @@ class PaymentService {
         '100 Resume Score Checks',
       ],
       popular: false,
-      durationInHours: 8760,
+      durationInHours: 0,
     },
   ];
 
@@ -321,6 +334,8 @@ class PaymentService {
     // Purchasable singles
     { id: 'jd_optimization_single_purchase',   name: 'JD-Based Optimization (1 Use)',     price: 19,  type: 'optimization',      quantity: 1 },
     { id: 'resume_score_check_single_purchase',  name: 'Resume Score Check (1 Use)',      price: 9,   type: 'score_check',       quantity: 1 },
+    { id: 'guided_resume_build_single_purchase', name: 'Guided Resume Build (1 Use)',     price: 29,  type: 'guided_build',      quantity: 1 },
+    { id: 'linkedin_messages_50_purchase',       name: 'LinkedIn Messages (50 Uses)',     price: 29,  type: 'linkedin_messages', quantity: 50 },
   ];
 
   // ---------- Catalog helpers ----------
@@ -339,6 +354,42 @@ class PaymentService {
   getAddOnById(id: string): any | undefined {
     // Match by the requested add-on id; the previous self-comparison always returned the first add-on
     return this.addOns.find((a) => a.id === id);
+  }
+
+  private getPostPurchaseSuggestion(
+    planId: string,
+    selectedAddOns?: { [key: string]: number }
+  ): string {
+    const plan = planId !== 'addon_only_purchase' ? this.getPlanById(planId) : undefined;
+    const capabilities = new Set<string>();
+
+    if (plan?.optimizations) capabilities.add('optimization');
+    if (plan?.scoreChecks) capabilities.add('score_check');
+    if (plan?.guidedBuilds) capabilities.add('guided_build');
+    if (plan?.linkedinMessages) capabilities.add('linkedin_messages');
+
+    for (const addOnId of Object.keys(selectedAddOns || {})) {
+      const addOn = this.getAddOnById(addOnId);
+      if (addOn?.type) capabilities.add(addOn.type);
+    }
+
+    if (capabilities.has('optimization') && capabilities.has('score_check')) {
+      return 'Suggested next step: open Resume Optimizer, tailor your resume to a target JD, then validate the updated version in Score Checker.';
+    }
+    if (capabilities.has('optimization')) {
+      return 'Suggested next step: open Resume Optimizer and run your first JD-based optimization.';
+    }
+    if (capabilities.has('score_check')) {
+      return 'Suggested next step: open Score Checker and run your first resume analysis.';
+    }
+    if (capabilities.has('guided_build')) {
+      return 'Suggested next step: open Guided Builder and start your guided resume build.';
+    }
+    if (capabilities.has('linkedin_messages')) {
+      return 'Suggested next step: open LinkedIn Generator and create your first outreach message.';
+    }
+
+    return 'Suggested next step: open your dashboard and start using your new access right away.';
   }
 
   // ---------- Core subscription fetch (combined with add-ons) ----------
@@ -468,7 +519,7 @@ class PaymentService {
         planId: latestPlanId || 'addon_only',
         status: latestStatus,
         startDate: latestStartDate || new Date().toISOString(),
-        endDate: latestEndDate || new Date(8640000000000000).toISOString(),
+        endDate: latestEndDate || LIFETIME_PLAN_END_DATE_ISO,
         paymentId: latestPaymentId,
         couponUsed: latestCouponUsed,
 
@@ -487,7 +538,7 @@ class PaymentService {
 
       if ((subscriptions?.length ?? 0) === 0 && hasAnyCredits) {
         currentSubscription.status = 'active';
-        currentSubscription.endDate = new Date(8640000000000000).toISOString();
+        currentSubscription.endDate = LIFETIME_PLAN_END_DATE_ISO;
       }
 
       console.log('PaymentService: Final combined subscription and add-on credits object:', currentSubscription);
@@ -803,23 +854,93 @@ class PaymentService {
   }
 
   // ---------- Coupon helpers ----------
-  private async validateCouponServer(couponCode: string, userId: string, accessToken: string) {
+  private async getVerifiedAccessToken(preferredAccessToken?: string): Promise<string> {
+    const validateToken = async (token?: string | null): Promise<string | null> => {
+      if (!token) {
+        return null;
+      }
+
+      const { data, error } = await supabase.auth.getUser(token);
+      if (error || !data?.user) {
+        console.warn('PaymentService: Access token validation failed.', error?.message || 'User not found.');
+        return null;
+      }
+
+      return token;
+    };
+
+    const preferredToken = await validateToken(preferredAccessToken);
+    if (preferredToken) {
+      return preferredToken;
+    }
+
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.warn('PaymentService: Failed to read current session.', sessionError.message);
+    }
+
+    const currentSessionToken = await validateToken(session?.access_token);
+    if (currentSessionToken) {
+      return currentSessionToken;
+    }
+
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshData.session?.access_token) {
+      console.error('PaymentService: Session refresh failed for authenticated request.', refreshError?.message || 'Missing refreshed session.');
+      throw new Error(EXPIRED_SESSION_MESSAGE);
+    }
+
+    const refreshedToken = await validateToken(refreshData.session.access_token);
+    if (refreshedToken) {
+      return refreshedToken;
+    }
+
+    throw new Error(EXPIRED_SESSION_MESSAGE);
+  }
+
+  private async validateCouponServer(
+    couponCode: string,
+    planId: string,
+    userId: string,
+    accessToken: string
+  ) {
     try {
       const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('validate-coupon'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ couponCode, userId }),
+        body: JSON.stringify({ couponCode, userId, planId, purchaseType: 'subscription' }),
       });
 
       const result = await response.json();
       if (!response.ok) {
         console.error('Error from validate-coupon Edge Function:', result.message || response.statusText);
-        return { isValid: false, message: result.message || 'Failed to validate coupon on server.' };
+        return {
+          isValid: false,
+          message: result.message || 'Failed to validate coupon on server.',
+          couponApplied: null,
+          discountPercentage: 0,
+          discountAmount: 0,
+          finalAmount: 0,
+        };
       }
-      return result as { isValid: boolean; message: string };
+      return result as {
+        isValid: boolean;
+        message: string;
+        couponApplied?: string | null;
+        discountPercentage?: number;
+        discountAmount?: number;
+        finalAmount?: number;
+      };
     } catch (error: any) {
       console.error('Network error during coupon validation:', error.message);
-      return { isValid: false, message: 'Network error during coupon validation. Please try again.' };
+      return {
+        isValid: false,
+        message: 'Network error during coupon validation. Please try again.',
+        couponApplied: null,
+        discountPercentage: 0,
+        discountAmount: 0,
+        finalAmount: 0,
+      };
     }
   }
 
@@ -834,74 +955,91 @@ class PaymentService {
     }
 
     if (userId) {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) {
-        return { couponApplied: null, discountAmount: 0, finalAmount: 0, error: 'Authentication required for coupon validation', isValid: false, message: 'Authentication required for coupon validation' };
+      let accessToken: string;
+      try {
+        accessToken = await this.getVerifiedAccessToken();
+      } catch (error: any) {
+        const message = error?.message || EXPIRED_SESSION_MESSAGE;
+        return { couponApplied: null, discountAmount: 0, finalAmount: 0, error: message, isValid: false, message };
       }
-      const serverValidation = await this.validateCouponServer(couponCode, userId, session.access_token);
+
+      const serverValidation = await this.validateCouponServer(couponCode, planId, userId, accessToken);
       if (!serverValidation.isValid) {
         return { couponApplied: null, discountAmount: 0, finalAmount: 0, error: serverValidation.message, isValid: false, message: serverValidation.message };
       }
-    }
 
-    let originalPrice = (plan?.price || 0) * 100;
-    if (planId === 'addon_only_purchase') originalPrice = 0;
+      const originalPrice = (plan?.price || 0) * 100;
+      const rawDiscountPercentage = Number(serverValidation.discountPercentage);
+      const rawDiscountAmount = Number(serverValidation.discountAmount);
+      const rawFinalAmount = Number(serverValidation.finalAmount);
+      const hasCompleteServerTotals =
+        Number.isFinite(rawDiscountPercentage) &&
+        Number.isFinite(rawDiscountAmount) &&
+        Number.isFinite(rawFinalAmount);
 
-    let discountAmount = 0;
-    let finalAmount = originalPrice;
-    let message = 'Coupon applied successfully!';
-    const normalizedCoupon = couponCode.toLowerCase().trim();
+      if (!hasCompleteServerTotals) {
+        console.warn(OUTDATED_PRICING_PLAN_COUPON_FUNCTIONS_LOG_MESSAGE, {
+          couponCode: couponCode.trim().toUpperCase(),
+          planId,
+          serverValidation,
+        });
+        return {
+          couponApplied: null,
+          discountAmount: 0,
+          finalAmount: originalPrice,
+          error: TEMPORARY_PRICING_PLAN_COUPON_MESSAGE,
+          isValid: false,
+          message: TEMPORARY_PRICING_PLAN_COUPON_MESSAGE,
+        };
+      }
 
-    // Disable DIWALI coupon (expired/inactive)
-    if (normalizedCoupon === 'diwali') {
+      const discountPercentage = Math.max(0, Math.min(100, Math.round(rawDiscountPercentage)));
+      const discountAmount = Math.max(0, Math.min(originalPrice, Math.round(rawDiscountAmount)));
+      const finalAmount = Math.max(0, Math.min(originalPrice, Math.round(rawFinalAmount)));
+
+      if (discountPercentage === 0 && discountAmount === 0 && finalAmount === originalPrice) {
+        console.warn(OUTDATED_PRICING_PLAN_COUPON_FUNCTIONS_LOG_MESSAGE, {
+          couponCode: couponCode.trim().toUpperCase(),
+          planId,
+          serverValidation,
+        });
+        return {
+          couponApplied: null,
+          discountAmount: 0,
+          finalAmount: originalPrice,
+          error: TEMPORARY_PRICING_PLAN_COUPON_MESSAGE,
+          isValid: false,
+          message: TEMPORARY_PRICING_PLAN_COUPON_MESSAGE,
+        };
+      }
+
       return {
-        couponApplied: null,
-        discountAmount: 0,
-        finalAmount: originalPrice,
-        error: 'Coupon expired or inactive',
-        isValid: false,
-        message: 'Coupon expired or inactive',
+        couponApplied: serverValidation.couponApplied || couponCode.trim().toUpperCase(),
+        discountAmount,
+        finalAmount,
+        isValid: true,
+        message: serverValidation.message,
       };
     }
 
-    if (normalizedCoupon === 'fullsupport' && planId === 'career_pro_max') {
-      discountAmount = originalPrice;
-      finalAmount = 0;
-    } else if (normalizedCoupon === 'first100' && planId === 'lite_check') {
-      discountAmount = originalPrice;
-      finalAmount = 0;
-    } else if (normalizedCoupon === 'first500' && planId === 'lite_check') {
-      discountAmount = Math.floor(originalPrice * 0.98);
-      finalAmount = originalPrice - discountAmount;
-    } else if (normalizedCoupon === 'worthyone' && planId === 'career_pro_max') {
-      discountAmount = Math.floor(originalPrice * 0.5);
-      finalAmount = originalPrice - discountAmount;
-    } else if (normalizedCoupon === 'vnkr50%' && planId === 'career_pro_max') {
-      discountAmount = Math.floor(originalPrice * 0.5); // 50% off
-      finalAmount = originalPrice - discountAmount;
-      message = 'Vinayaka Chavithi Offer applied! 50% off!';
-    } else if (normalizedCoupon === 'vnk50' && planId === 'career_pro_max') {
-      discountAmount = Math.floor(originalPrice * 0.5); // 50% off
-      finalAmount = originalPrice - discountAmount;
-      message = 'VNK50 coupon applied! 50% off!';
-    } else if (normalizedCoupon === 'full100' && planId === 'leader_plan') {
-      discountAmount = originalPrice; // 100% discount
-      finalAmount = 0;
-      message = 'FULL100 coupon applied! 100% off!';
-    } else if (normalizedCoupon === 'primoboost' && planId === 'kickstart_plan') {
-      discountAmount = Math.floor(originalPrice * 0.5); // 50% off
-      finalAmount = originalPrice - discountAmount;
-      message = 'PRIMOBOOST coupon applied! 50% off!';
-    } else if (normalizedCoupon === 'diwali') {
-  // DIWALI coupon works on ALL plans with 90% discount
-  discountAmount = Math.floor(originalPrice * 0.9); // 90% off
-  finalAmount = originalPrice - discountAmount;
-  message = '🎉 DIWALI SPECIAL: 90% OFF Applied! Limited time offer!';
-}  else {
-      return { couponApplied: null, discountAmount: 0, finalAmount: originalPrice, error: 'Invalid coupon code or not applicable to selected plan', isValid: false, message: 'Invalid coupon code or not applicable to selected plan' };
-    }
+    return { couponApplied: null, discountAmount: 0, finalAmount: 0, error: 'Authentication required for coupon validation', isValid: false, message: 'Authentication required for coupon validation' };
+  }
 
-    return { couponApplied: normalizedCoupon, discountAmount, finalAmount, isValid: true, message };
+  private async cancelPendingTransaction(transactionId: string, accessToken: string): Promise<void> {
+    try {
+      const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('cancel-payment-transaction'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ transactionId }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        console.error('PaymentService: Failed to cancel pending transaction:', result.error || response.statusText);
+      }
+    } catch (error: any) {
+      console.error('PaymentService: Error cancelling pending transaction:', error.message);
+    }
   }
 
   // ---------- Payment / free subscription flows ----------
@@ -914,12 +1052,14 @@ class PaymentService {
     walletDeduction?: number,
     addOnsTotal?: number,
     selectedAddOns?: { [key: string]: number }
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<PurchaseProcessResult> {
     try {
+      const verifiedAccessToken = await this.getVerifiedAccessToken(accessToken);
+
       console.log('PaymentService: Calling create-order Edge Function...');
       const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('create-order'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifiedAccessToken}` },
         body: JSON.stringify({
           planId: paymentData.planId,
           amount: paymentData.amount, // paise
@@ -948,13 +1088,13 @@ class PaymentService {
           order_id: orderId,
           handler: async (rzpRes: any) => {
             try {
-              console.log('PaymentService: Calling verify-payment Edge Function...');
-              const verifyResponse = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('verify-payment'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-                body: JSON.stringify({
-                  razorpay_order_id: rzpRes.razorpay_order_id,
-                  razorpay_payment_id: rzpRes.razorpay_payment_id,
+                console.log('PaymentService: Calling verify-payment Edge Function...');
+                const verifyResponse = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('verify-payment'), {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifiedAccessToken}` },
+                  body: JSON.stringify({
+                    razorpay_order_id: rzpRes.razorpay_order_id,
+                    razorpay_payment_id: rzpRes.razorpay_payment_id,
                   razorpay_signature: rzpRes.razorpay_signature,
                   transactionId,
                 }),
@@ -962,7 +1102,12 @@ class PaymentService {
 
               const verifyResult = await verifyResponse.json();
               if (verifyResponse.ok && verifyResult.success) {
-                resolve({ success: true });
+                resolve({
+                  success: true,
+                  suggestionMessage:
+                    verifyResult.suggestionMessage ||
+                    this.getPostPurchaseSuggestion(paymentData.planId, selectedAddOns),
+                });
               } else {
                 console.error('PaymentService: Error from verify-payment:', verifyResult.error || verifyResponse.statusText);
                 resolve({ success: false, error: verifyResult.error || 'Payment verification failed.' });
@@ -975,8 +1120,9 @@ class PaymentService {
           prefill: { name: userName, email: userEmail },
           theme: { color: '#4F46E5' },
           modal: {
-            ondismiss: () => {
+            ondismiss: async () => {
               console.log('PaymentService: Payment modal dismissed.');
+              await this.cancelPendingTransaction(transactionId, verifiedAccessToken);
               resolve({ success: false, error: 'Payment cancelled by user.' });
             },
           },
@@ -999,177 +1145,41 @@ class PaymentService {
     selectedAddOns?: { [key: string]: number },
     originalPlanAmount?: number, // paise
     walletDeduction?: number     // paise
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<PurchaseProcessResult> {
     try {
       console.log('PaymentService: Processing free subscription...');
+      const verifiedAccessToken = await this.getVerifiedAccessToken();
 
-      const plan = this.getPlanById(planId);
-      if (!plan && planId !== 'addon_only_purchase') {
-        throw new Error('Invalid plan selected for free subscription.');
+      const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('create-free-subscription'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifiedAccessToken}` },
+        body: JSON.stringify({
+          planId,
+          userId,
+          couponCode,
+          selectedAddOns,
+          walletDeduction,
+          addOnsTotal,
+          originalPlanAmount,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result?.success) {
+        return {
+          success: false,
+          error: result?.error || 'Failed to activate free subscription.',
+        };
       }
 
-      if (plan && (typeof plan.durationInHours !== 'number' || !isFinite(plan.durationInHours))) {
-        console.error('PaymentService: Invalid durationInHours detected for plan:', plan);
-        throw new Error('Invalid plan duration configuration. Please contact support.');
-      }
-
-      // Record transaction (success for free)
-      const { data: transaction, error: transactionError } = await supabase
-        .from('payment_transactions')
-        .insert({
-          user_id: userId,
-          plan_id: planId === 'addon_only_purchase' ? null : planId,
-          status: 'success',
-          amount: originalPlanAmount || 0,
-          currency: 'INR',
-          coupon_code: couponCode,
-          discount_amount: originalPlanAmount || 0,
-          final_amount: 0,
-          purchase_type: planId === 'addon_only_purchase'
-            ? 'addon_only'
-            : (Object.keys(selectedAddOns || {}).length > 0 ? 'plan_with_addons' : 'plan'),
-          wallet_deduction_amount: walletDeduction || 0,
-          payment_id: 'FREE_PLAN_ACTIVATION',
-          order_id: 'FREE_PLAN_ORDER',
-        })
-        .select('id')
-        .single();
-
-      if (transactionError) {
-        console.error('PaymentService: Error inserting free transaction:', transactionError.message, transactionError.details);
-        throw new Error('Failed to record free plan activation.');
-      }
-      const transactionId = transaction.id;
-
-      // Add-ons issuance
-      if (selectedAddOns && Object.keys(selectedAddOns).length > 0) {
-        console.log(`[${new Date().toISOString()}] - Processing add-on credits for user: ${userId}`);
-        for (const addOnKey of Object.keys(selectedAddOns)) {
-          const quantity = Number(selectedAddOns[addOnKey] ?? 0);
-          if (!quantity) continue;
-
-          const addOnCfg = this.getAddOnById(addOnKey);
-          if (!addOnCfg) {
-            console.error(`[${new Date().toISOString()}] - Add-on with ID ${addOnKey} not found in configuration. Skipping.`);
-            continue;
-          }
-
-          const { data: addonType, error: addonTypeError } = await supabase
-            .from('addon_types')
-            .select('id')
-            .eq('type_key', addOnCfg.type)
-            .single();
-
-          let addonTypeId = addonType?.id;
-
-          // If addon_type doesn't exist, create it
-          if (addonTypeError || !addonType) {
-            console.log(`[${new Date().toISOString()}] - addon_type not found for ${addOnCfg.type}, creating it...`);
-            const { data: newAddonType, error: createError } = await supabase
-              .from('addon_types')
-              .insert({
-                name: addOnCfg.name,
-                type_key: addOnCfg.type,
-                unit_price: addOnCfg.price * 100,
-                description: `${addOnCfg.name} credit`,
-              })
-              .select('id')
-              .single();
-
-            if (createError) {
-              console.error(`[${new Date().toISOString()}] - Error creating addon_type for ${addOnCfg.type}:`, createError?.message, createError?.details);
-              continue;
-            }
-            addonTypeId = newAddonType?.id;
-            console.log(`[${new Date().toISOString()}] - Created addon_type with ID: ${addonTypeId} for key: ${addOnCfg.type}`);
-          }
-
-          if (!addonTypeId) {
-            console.error(`[${new Date().toISOString()}] - No addon_type ID available for ${addOnCfg.type}. Skipping.`);
-            continue;
-          }
-
-          const { error: creditInsertError } = await supabase
-            .from('user_addon_credits')
-            .insert({
-              user_id: userId,
-              addon_type_id: addonTypeId,
-              quantity_purchased: quantity,
-              quantity_remaining: quantity,
-              payment_transaction_id: transactionId,
-            });
-
-          if (creditInsertError) {
-            console.error(`[${new Date().toISOString()}] - Error inserting add-on credits for ${addOnCfg.type}:`, creditInsertError.message, creditInsertError.details);
-          }
-        }
-      }
-
-      // Plan subscription issuance (if not addon-only)
-      if (planId && planId !== 'addon_only_purchase' && plan) {
-        const { data: subscription, error: subscriptionError } = await supabase
-          .from('subscriptions')
-          .insert({
-            user_id: userId,
-            plan_id: planId,
-            status: 'active',
-            start_date: new Date().toISOString(),
-            end_date: new Date(Date.now() + plan.durationInHours * 60 * 60 * 1000).toISOString(),
-            optimizations_used: 0,
-            optimizations_total: plan.optimizations,
-            score_checks_used: 0,
-            score_checks_total: plan.scoreChecks,
-            linkedin_messages_used: 0,
-            linkedin_messages_total: plan.linkedinMessages,
-            guided_builds_used: 0,
-            guided_builds_total: plan.guidedBuilds,
-            payment_id: 'FREE_PLAN_ACTIVATION',
-            coupon_used: couponCode,
-          })
-          .select()
-          .single();
-
-        if (subscriptionError) {
-          console.error('PaymentService: Subscription creation error for free plan:', subscriptionError.message, subscriptionError.details);
-          throw new Error('Failed to create subscription for free plan.');
-        }
-
-        const { error: updateSubscriptionIdError } = await supabase
-          .from('payment_transactions')
-          .update({ subscription_id: subscription.id })
-          .eq('id', transactionId);
-
-        if (updateSubscriptionIdError) {
-          console.error('Error updating payment transaction with subscription_id for free plan:', updateSubscriptionIdError.message, updateSubscriptionIdError.details);
-        }
-      }
-
-      // Wallet deduction record (if any)
-      if (walletDeduction && walletDeduction > 0) {
-        const { error: walletError } = await supabase
-          .from('wallet_transactions')
-          .insert({
-            user_id: userId,
-            type: 'purchase_use',
-            amount: -(walletDeduction / 100), // Convert paise to Rupees
-            status: 'completed',
-            transaction_ref: `free_plan_deduction_${transactionId}`,
-            redeem_details: {
-              plan_id: planId,
-              original_amount: (originalPlanAmount ?? 0) / 100,
-              addons_purchased: selectedAddOns,
-            },
-          });
-
-        if (walletError) {
-          console.error(`[${new Date().toISOString()}] - Wallet deduction recording error for free plan:`, walletError.message, walletError.details);
-        }
-      }
-
-      return { success: true };
+      return {
+        success: true,
+        suggestionMessage:
+          result?.suggestionMessage || this.getPostPurchaseSuggestion(planId, selectedAddOns),
+      };
     } catch (error: any) {
       console.error('PaymentService: Unexpected error in processFreeSubscription:', error.message);
-      throw error;
+      return { success: false, error: error.message || 'Failed to activate free subscription.' };
     }
   }
 

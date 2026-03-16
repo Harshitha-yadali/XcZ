@@ -16,6 +16,11 @@ import { optimizationHistoryService } from '../../services/optimizationHistorySe
 import { Subscription } from '../../types/payment';
 import { OptimizationSession } from '../../types/optimization';
 import { useNavigate } from 'react-router-dom';
+import {
+  formatSubscriptionEndDate,
+  getSubscriptionDaysRemaining,
+  isLifetimeSubscriptionEndDate,
+} from '../../utils/subscriptionLifetime';
 
 export const ProfileUsageTab: React.FC = () => {
   const { user } = useAuth();
@@ -159,22 +164,16 @@ export const ProfileUsageTab: React.FC = () => {
     );
   };
 
-  const getDaysRemaining = () => {
-    const end = new Date(subscription.endDate);
-    const now = new Date();
-    return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-  };
-
   const creditTypes = [
     {
-      label: 'Resume Optimizations',
+      label: 'Resume Credits',
       used: subscription.optimizationsUsed,
       total: subscription.optimizationsTotal,
       icon: <Zap className="w-5 h-5" />,
       color: '#00E6B8',
     },
     {
-      label: 'Score Checks',
+      label: 'Score Credits',
       used: subscription.scoreChecksUsed,
       total: subscription.scoreChecksTotal,
       icon: <Target className="w-5 h-5" />,
@@ -196,7 +195,10 @@ export const ProfileUsageTab: React.FC = () => {
     },
   ];
 
-  const daysLeft = getDaysRemaining();
+  const isLifetimePlan = isLifetimeSubscriptionEndDate(subscription.endDate);
+  const daysLeft = getSubscriptionDaysRemaining(subscription.endDate);
+  const expiryLabel = isLifetimePlan ? 'Lifetime access' : `${daysLeft} days remaining`;
+  const expiryDateLabel = formatSubscriptionEndDate(subscription.endDate);
 
   return (
     <div className="space-y-6">
@@ -211,7 +213,7 @@ export const ProfileUsageTab: React.FC = () => {
                 {subscription.planId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
               </h3>
               <p className="text-xs text-slate-500">
-                {subscription.status === 'active' ? 'Active' : 'Expired'} &middot; {daysLeft} days remaining
+                {subscription.status === 'active' ? 'Active' : 'Expired'} &middot; {expiryLabel}
               </p>
             </div>
           </div>
@@ -226,7 +228,7 @@ export const ProfileUsageTab: React.FC = () => {
 
         <div className="flex items-center gap-6 text-xs text-slate-500">
           <span>Started: {new Date(subscription.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-          <span>Expires: {new Date(subscription.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          <span>Expires: {expiryDateLabel}</span>
         </div>
       </div>
 

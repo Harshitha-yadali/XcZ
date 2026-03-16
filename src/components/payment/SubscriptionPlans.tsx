@@ -40,10 +40,10 @@ type AppliedCoupon = {
 };
 
 const CATEGORY_CONFIG: { key: PlanCategory; label: string; icon: React.ReactNode }[] = [
-  { key: 'combined', label: 'Combined Premium', icon: <Crown className="w-3.5 h-3.5" /> },
   { key: 'jd_only', label: 'JD Optimizer', icon: <Target className="w-3.5 h-3.5" /> },
   { key: 'score_only', label: 'Score Checker', icon: <TrendingUp className="w-3.5 h-3.5" /> },
   { key: 'combo', label: 'JD + Score', icon: <Layers className="w-3.5 h-3.5" /> },
+  { key: 'combined', label: 'Combined Premium', icon: <Crown className="w-3.5 h-3.5" /> },
 ];
 
 const getPlanIcon = (iconType: string) => {
@@ -57,6 +57,42 @@ const getPlanIcon = (iconType: string) => {
   }
 };
 
+const isTemporaryCouponIssue = (message: string) => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("can't be applied right now") ||
+    normalized.includes('temporarily unavailable') ||
+    normalized.includes("isn't fully configured right now") ||
+    normalized.includes('not fully configured')
+  );
+};
+
+const joinHumanList = (items: string[]) => {
+  if (items.length <= 1) {
+    return items[0] || '';
+  }
+
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+};
+
+const getPlanActivationMessage = (
+  plan: ReturnType<typeof paymentService.getPlanById> | undefined,
+  suggestionMessage?: string,
+) => {
+  const planFeatures = plan?.features?.filter(Boolean) || [];
+  const addedMessage = planFeatures.length
+    ? `Added to your account: ${joinHumanList(planFeatures)}.`
+    : 'Your plan benefits have been added to your account.';
+  const lifetimeMessage = plan?.durationInHours === 0 ? ' Access is lifetime.' : '';
+  const suggestionSuffix = suggestionMessage ? ` ${suggestionMessage}` : '';
+
+  return `Your plan has been activated successfully. ${addedMessage}${lifetimeMessage}${suggestionSuffix}`;
+};
+
 export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   isOpen,
   onNavigateBack,
@@ -64,7 +100,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   onShowAlert,
 }) => {
   const { user } = useAuth();
-  const [activeCategory, setActiveCategory] = useState<PlanCategory>('combined');
+  const [activeCategory, setActiveCategory] = useState<PlanCategory>('jd_only');
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [couponCode, setCouponCode] = useState('');
@@ -103,7 +139,9 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
       const completed = (transactions || []).filter((t: any) => t.status === 'completed');
       const balance = completed.reduce((sum: number, tr: any) => sum + parseFloat(tr.amount), 0) * 100;
       setWalletBalance(Math.max(0, balance));
-    } catch {} finally {
+    } catch {
+      setWalletBalance(0);
+    } finally {
       setLoadingWallet(false);
     }
   };
@@ -128,7 +166,11 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
     } else {
       setCouponError(result.message);
       setAppliedCoupon(null);
-      onShowAlert('Coupon Error', result.message, 'warning');
+      onShowAlert(
+        isTemporaryCouponIssue(result.message) ? 'Coupon Unavailable' : 'Coupon Error',
+        result.message,
+        isTemporaryCouponIssue(result.message) ? 'info' : 'warning',
+      );
     }
   };
 
@@ -139,6 +181,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   };
 
   const selectedPlanData = paymentService.getPlanById(selectedPlan || '');
+  const hasTemporaryCouponIssue = isTemporaryCouponIssue(couponError);
 
   let planPrice = (selectedPlanData?.price || 0) * 100;
   if (appliedCoupon) planPrice = appliedCoupon.finalAmount;
@@ -160,12 +203,28 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
       const accessToken = session.access_token;
       if (grandTotal === 0) {
         const result = await paymentService.processFreeSubscription(selectedPlan, user.id, appliedCoupon ? appliedCoupon.code : undefined, 0, {}, selectedPlanData.price * 100, walletDeduction);
-        if (result.success) { await fetchWalletBalance(); onSubscriptionSuccess(); onShowAlert('Subscription Activated!', 'Your plan has been activated successfully.', 'success'); }
+        if (result.success) {
+          await fetchWalletBalance();
+          onSubscriptionSuccess();
+          onShowAlert(
+            'Credits Added!',
+            getPlanActivationMessage(selectedPlanData, result.suggestionMessage),
+            'success'
+          );
+        }
         else { onShowAlert('Activation Failed', result.error || 'Failed to activate plan.', 'error'); }
       } else {
         const paymentData = { planId: selectedPlan, amount: grandTotal, currency: 'INR' };
         const result = await paymentService.processPayment(paymentData, user.email, user.name, accessToken, appliedCoupon ? appliedCoupon.code : undefined, walletDeduction, 0, {});
-        if (result.success) { await fetchWalletBalance(); onSubscriptionSuccess(); onShowAlert('Payment Successful!', 'Your subscription has been activated.', 'success'); }
+        if (result.success) {
+          await fetchWalletBalance();
+          onSubscriptionSuccess();
+          onShowAlert(
+            'Payment Successful!',
+            getPlanActivationMessage(selectedPlanData, result.suggestionMessage),
+            'success'
+          );
+        }
         else {
           if (result.error?.includes('Payment cancelled by user')) onShowAlert('Payment Cancelled', 'You have cancelled the payment.', 'info');
           else onShowAlert('Payment Failed', result.error || 'Payment processing failed.', 'error');
@@ -449,7 +508,12 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
                   <button onClick={handleRemoveCoupon} className="px-5 py-2.5 bg-white/[0.08] text-slate-200 rounded-lg font-medium text-sm hover:bg-white/[0.12]">Remove</button>
                 )}
               </div>
-              {couponError && <p className="text-red-400 text-sm mt-2 flex items-center"><AlertCircle className="w-4 h-4 mr-1" />{couponError}</p>}
+              {couponError && (
+                <p className={`text-sm mt-2 flex items-center ${hasTemporaryCouponIssue ? 'text-amber-300' : 'text-red-400'}`}>
+                  <AlertCircle className="w-4 h-4 mr-1" />
+                  {couponError}
+                </p>
+              )}
               {appliedCoupon && (
                 <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-lg p-3 mt-3">
                   <p className="text-emerald-300 font-semibold flex items-center text-sm"><CheckCircle className="w-4 h-4 mr-2" />Coupon "{appliedCoupon.code.toUpperCase()}" applied!</p>

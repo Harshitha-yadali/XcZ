@@ -10,6 +10,7 @@ import { ScheduledSyncManager } from '../components/admin/ScheduledSyncManager';
 import { SyncHistoryGraph } from '../components/admin/SyncHistoryGraph';
 import { AdminFetchJobsTestPanel } from '../components/admin/AdminFetchJobsTestPanel';
 import { JobSyncPanel } from '../components/admin/JobSyncPanel';
+import { AdminPlanCouponsManager } from '../components/admin/AdminPlanCouponsManager';
 
 const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'questions' | 'materials' | 'payments' | 'fetch-jobs' | 'job-sync' | 'apify-config' | 'sync-logs' | 'apify-json' | 'job-updates' | 'scheduled-syncs' | 'sync-history'>('questions');
@@ -729,62 +730,7 @@ const AdminPage: React.FC = () => {
         {activeTab === 'payments' && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-gray-900">Payment Settings</h2>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Base Price Settings</h3>
-              <div className="flex items-center space-x-4">
-                <label className="text-sm font-medium text-gray-700">Default Base Price:</label>
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">₹</span>
-                  <input
-                    type="number"
-                    value={paymentSettings.basePrice}
-                    onChange={(e) => handleUpdateBasePrice(Number(e.target.value))}
-                    disabled={loading}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                  />
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-2">
-                This is the default price for new coding questions. Individual questions can have custom prices.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Active Coupon Codes</h3>
-                <button
-                  onClick={() => setShowCouponForm(true)}
-                  disabled={loading}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add Coupon</span>
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {paymentSettings.activeCoupons.map((coupon, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <Tag className="h-4 w-4 text-gray-500" />
-                      <span className="font-mono font-medium">{coupon.code}</span>
-                      <span className="text-green-600 font-medium">{coupon.discount}% OFF</span>
-                      {coupon.description && (
-                        <span className="text-gray-500 text-sm">- {coupon.description}</span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDeleteCoupon(index)}
-                      disabled={loading}
-                      className="p-1 text-red-600 hover:bg-red-100 rounded transition-colors disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <AdminPlanCouponsManager />
           </div>
         )}
 
