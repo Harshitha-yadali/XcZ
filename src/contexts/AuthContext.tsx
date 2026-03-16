@@ -39,30 +39,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isLoading: true, // Start as loading
   });
 
-  const [sessionRefreshTimer, setSessionRefreshTimer] = useState<NodeJS.Timeout | null>(null);
-
-  const scheduleSessionRefresh = () => {
-    // Only schedule if authenticated
-    if (!authState.isAuthenticated) {
-      console.log('AuthContext: Not authenticated, not scheduling session refresh.');
-      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer); // Ensure any existing timer is cleared
-      return;
-    }
-
-    if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer);
-    const timer = setTimeout(async () => {
-      try {
-        console.log('AuthContext: Attempting scheduled session refresh...');
-        await refreshSession();
-        scheduleSessionRefresh(); // Schedule next refresh only if successful
-      } catch (error) {
-        console.error('AuthContext: Scheduled session refresh failed:', error);
-        // If refresh fails, do not reschedule here. The onAuthStateChange listener will handle SIGNED_OUT.
-      }
-    }, 45 * 60 * 1000); // 45 minutes
-    setSessionRefreshTimer(timer);
-  };
-
   const refreshSession = async () => {
     try {
       const { data, error } = await supabase.auth.refreshSession();
@@ -178,8 +154,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 isLoading: false,
               }));
             }, 0); // Defer with setTimeout(0)
-
-            scheduleSessionRefresh();
           } catch (error) {
             console.error('AuthContext: Error getting user after sign in:', error);
             setAuthState({
@@ -195,7 +169,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             isAuthenticated: false,
             isLoading: false,
           });
-          if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer);
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
           console.log('AuthContext: ✅ Token refreshed automatically.');
           // No need to fetch current user again here, as the session is just refreshed
@@ -203,7 +176,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             ...prev,
             isLoading: false,
           }));
-          scheduleSessionRefresh(); // Reschedule the timer after an automatic token refresh
         } else if (event === 'USER_UPDATED' && session?.user) {
           console.log('AuthContext: USER_UPDATED event. Revalidating user session...');
           revalidateUserSession(); // Revalidate to get updated user profile
@@ -213,9 +185,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return () => {
       mounted = false;
-      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer);
       subscription.unsubscribe();
-      console.log('AuthContext: AuthProvider unmounted. Cleaned up timers and subscriptions.');
+      console.log('AuthContext: AuthProvider unmounted. Cleaned up subscriptions.');
     };
   }, []); // Empty dependency array ensures this effect runs only once on mount
 
@@ -279,7 +250,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isAuthenticated: false,
         isLoading: false, // Ensure isLoading is false after logout attempt
       });
-      if (sessionRefreshTimer) clearTimeout(sessionRefreshTimer);
       console.log('AuthContext: Logout process finished.');
     }
   };
@@ -303,7 +273,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isAuthenticated: true,
         isLoading: false,
       });
-      scheduleSessionRefresh(); // Schedule session refresh for the new session
     }
   };
 

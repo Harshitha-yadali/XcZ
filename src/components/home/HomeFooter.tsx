@@ -18,6 +18,13 @@ const quickLinks = [
   { label: 'Pricing', path: '/pricing' },
 ];
 
+const legalLinks = [
+  { label: 'FAQ', path: '/faq' },
+  { label: 'Privacy Policy', path: '/privacy-policy' },
+  { label: 'Terms & Conditions', path: '/terms-and-conditions' },
+  { label: 'Contact', path: '/contact' },
+];
+
 export const HomeFooter: React.FC = () => {
   const navigate = useNavigate();
 
@@ -87,6 +94,19 @@ export const HomeFooter: React.FC = () => {
           <p className="text-xs text-slate-500">
             &copy; {new Date().getFullYear()} PrimoBoost AI. All rights reserved.
           </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500">
+            {legalLinks.map((link, index) => (
+              <React.Fragment key={link.path}>
+                {index > 0 && <span className="text-slate-700">|</span>}
+                <button
+                  onClick={() => navigate(link.path)}
+                  className="text-slate-400 transition-colors hover:text-emerald-400"
+                >
+                  {link.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
         </div>
       </div>
     </footer>

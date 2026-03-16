@@ -135,7 +135,7 @@ export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
             },
             {
               title: 'Upload email + PDF',
-              description: 'After payment, submit your contact email and PDF resume so the admin can process it.',
+              description: 'After payment, submit your contact email and PDF resume so our team can process it.',
               icon: <UploadCloud className="w-5 h-5" />,
             },
           ].map((step) => (

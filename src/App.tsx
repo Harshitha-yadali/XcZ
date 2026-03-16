@@ -21,6 +21,9 @@ const ResumeScoreChecker = lazy(() => import('./components/ResumeScoreChecker').
 const LinkedInMessageGenerator = lazy(() => import('./components/LinkedInMessageGenerator').then(m => ({ default: m.LinkedInMessageGenerator })));
 const AboutUs = lazy(() => import('./components/pages/AboutUs').then(m => ({ default: m.AboutUs })));
 const Contact = lazy(() => import('./components/pages/Contact').then(m => ({ default: m.Contact })));
+const FaqPage = lazy(() => import('./components/pages/FaqPage').then(m => ({ default: m.FaqPage })));
+const PrivacyPolicyPage = lazy(() => import('./components/pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
+const TermsAndConditionsPage = lazy(() => import('./components/pages/TermsAndConditionsPage').then(m => ({ default: m.TermsAndConditionsPage })));
 const Tutorials = lazy(() => import('./components/pages/Tutorials').then(m => ({ default: m.Tutorials })));
 const UserProfileManagement = lazy(() => import('./components/UserProfileManagement').then(m => ({ default: m.UserProfileManagement })));
 const SubscriptionPlans = lazy(() => import('./components/payment/SubscriptionPlans').then(m => ({ default: m.SubscriptionPlans })));
@@ -513,6 +516,9 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route path="/smart-interview" element={<SmartInterviewPage isAuthenticated={isAuthenticated} onShowAuth={handleShowAuth} />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/faq" element={<FaqPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
           <Route path="/tutorials" element={<Tutorials />} />
           <Route path="/all-tools" element={<ToolsAndPagesNavigation {...commonPageProps} />} />
           <Route path="/pricing" element={
