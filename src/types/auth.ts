@@ -34,15 +34,15 @@ export interface AuthState {
 
 export interface LoginCredentials {
   email: string;
-  password: string;
 }
 
 export interface SignupCredentials {
-  name: string;
   email: string;
-  password: string;
-  confirmPassword: string;
-  referralCode?: string;
+}
+
+export interface EmailOtpCredentials {
+  email: string;
+  otp: string;
 }
 
 export interface ForgotPasswordData {

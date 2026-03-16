@@ -1,7 +1,6 @@
 // src/components/navigation/Navigation.tsx
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Home,
   Info,
   Phone,
   BookOpen,
@@ -19,6 +18,7 @@ import {
   Gamepad2,
   CalendarCheck,
   Video,
+  TicketPercent,
 } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
@@ -67,7 +67,6 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
   }, []);
 
   const navigationItems = [
-    { id: "/", label: "Home", icon: <Home className="w-4 h-4" /> },
     { id: "/jobs", label: "Latest Jobs", icon: <Briefcase className="w-4 h-4" /> },
     { id: "/tutorials", label: "Tutorials", icon: <BookOpen className="w-4 h-4" /> },
   ];
@@ -110,6 +109,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
     { id: "/admin/email-testing", label: "Email Testing", icon: <Mail className="w-4 h-4" /> },
     { id: "/admin/users", label: "Manage Users", icon: <Users className="w-4 h-4" /> },
     { id: "/admin/sessions", label: "Session Schedule", icon: <Sparkles className="w-4 h-4" /> },
+    { id: "/admin/coupons", label: "Plan Coupons", icon: <TicketPercent className="w-4 h-4" /> },
     { id: "/admin/referrals", label: "Referral Mgmt", icon: <Shield className="w-4 h-4" /> },
   ];
 

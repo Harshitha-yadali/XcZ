@@ -1,6 +1,6 @@
 // src/components/auth/AuthModal.tsx
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, Sparkles } from 'lucide-react';
+import { X, CheckCircle } from 'lucide-react';
 import { LoginForm } from './LoginForm';
 import { SignupForm } from './SignupForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
@@ -25,10 +25,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onProfileFillRequest = () => {},
   onPromptDismissed = () => {}
 }) => {
+  const logoImage =
+    'https://res.cloudinary.com/dlkovvlud/image/upload/w_1000,c_fill,ar_1:1,g_auto,r_max,bo_5px_solid_red,b_rgb:262c35/v1751536902/a-modern-logo-design-featuring-primoboos_XhhkS8E_Q5iOwxbAXB4CqQ_HnpCsJn4S1yrhb826jmMDw_nmycqj.jpg';
   const { user, isAuthenticated } = useAuth();
   const { isChristmasMode } = useTheme();
   const [currentView, setCurrentView] = useState<AuthView>(initialView);
-  const [signupEmail, setSignupEmail] = useState<string>('');
 
   useEffect(() => {
     if (!isOpen && currentView === 'postSignupPrompt') {
@@ -94,8 +95,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const getSubtitle = () => {
     switch (currentView) {
-      case 'login': return 'Sign in to optimize your resume with AI';
-      case 'signup': return 'Create your account and start optimizing';
+      case 'login': return 'Sign in with a 6-digit code sent to your email';
+      case 'signup': return 'Create your account with a 6-digit code sent to your email';
       case 'forgot-password': return "We'll help you reset your password";
       case 'success': return 'Everything is set up perfectly!';
       case 'postSignupPrompt': return 'Your account is ready!';
@@ -143,13 +144,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
 
           <div className="text-center pr-8">
-            {/* Icon */}
-            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-lg ${
-              isChristmasMode
-                ? 'bg-gradient-to-br from-red-500 via-emerald-500 to-green-600 shadow-green-500/30'
-                : 'bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-emerald-500/30'
+            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl mx-auto mb-3 sm:mb-4 shadow-lg overflow-hidden border ${
+              isChristmasMode ? 'border-green-500/30' : 'border-emerald-500/30'
             }`}>
-              <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
+              <img
+                src={logoImage}
+                alt="PrimoBoost AI Logo"
+                className="w-full h-full object-cover"
+              />
             </div>
             
             {/* Title */}
@@ -167,21 +169,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {currentView === 'login' && (
             <LoginForm
               onSwitchToSignup={() => setCurrentView('signup')}
-              onForgotPassword={() => setCurrentView('forgot-password')}
             />
           )}
 
           {currentView === 'signup' && (
             <SignupForm
               onSwitchToLogin={() => setCurrentView('login')}
-              onSignupSuccess={(needsVerification: boolean, email: string) => {
-                setSignupEmail(email);
-                if (needsVerification) {
-                  setCurrentView('success');
-                } else {
-                  setCurrentView('postSignupPrompt');
-                }
-              }}
             />
           )}
 
@@ -204,16 +197,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }`} />
               </div>
               <h2 className="text-lg sm:text-2xl font-bold text-white mb-3">All Set!</h2>
-              {signupEmail ? (
-                <p className="text-sm sm:text-base text-slate-300 leading-relaxed px-4">
-                  A verification email has been sent to <br />
-                  <strong className="text-white">{signupEmail}</strong>
-                </p>
-              ) : (
-                <p className="text-sm sm:text-base text-slate-300 leading-relaxed px-4">
-                  Password reset email sent. Check your inbox!
-                </p>
-              )}
+              <p className="text-sm sm:text-base text-slate-300 leading-relaxed px-4">
+                Password reset email sent. Check your inbox.
+              </p>
               <button
                 onClick={() => onClose()}
                 className="w-full mt-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 px-4 rounded-xl text-sm transition-colors border border-slate-700"
@@ -236,8 +222,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
               <h2 className="text-lg sm:text-2xl font-bold text-white mb-3">Welcome!</h2>
               <p className="text-sm sm:text-base text-slate-300 leading-relaxed px-4 mb-6">
-                Your account for <strong className="text-white">{signupEmail}</strong> has been created successfully!
-                Would you like to complete your profile now?
+                Your account has been created successfully. Would you like to complete your profile now?
               </p>
               <div className="flex flex-col sm:flex-row gap-3 px-4">
                 <button

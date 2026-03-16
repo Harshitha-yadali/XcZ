@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { AuthModal } from './auth/AuthModal';
 import { DeviceManagement } from './security/DeviceManagement';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
   children?: React.ReactNode;
@@ -93,7 +93,11 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="container-responsive">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
-            <div className="flex items-center space-x-2 sm:space-x-3">
+            <Link
+              to="/"
+              aria-label="Go to home"
+              className="flex items-center space-x-2 sm:space-x-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-lg">
                 <img
                   src="https://res.cloudinary.com/dlkovvlud/image/upload/w_1000,c_fill,ar_1:1,g_auto,r_max,bo_5px_solid_red,b_rgb:262c35/v1751536902/a-modern-logo-design-featuring-primoboos_XhhkS8E_Q5iOwxbAXB4CqQ_HnpCsJn4S1yrhb826jmMDw_nmycqj.jpg"
@@ -107,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="xs:hidden">
                 <h1 className="text-base font-bold text-white">PrimoBoost AI</h1>
               </div>
-            </div>
+            </Link>
 
             {/* Desktop Navigation and Auth */}
             <div className="hidden lg:flex items-center space-x-4">

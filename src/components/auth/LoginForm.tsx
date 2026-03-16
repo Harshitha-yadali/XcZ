@@ -2,33 +2,34 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle, CheckCircle, Loader2, ArrowRight } from 'lucide-react';
+import { Mail, LogIn, AlertCircle, CheckCircle, Loader2, ArrowRight, KeyRound } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { LoginCredentials } from '../../types/auth';
+import { EmailOtpCredentials, LoginCredentials } from '../../types/auth';
 
 const loginSchema = z.object({
-  email: z.string().min(1, 'Email is required').email('Please enter a valid Gmail address'),
-  password: z.string().min(1, 'Password is required'),
+  email: z.string().min(1, 'Email is required').email('Please enter a valid email address'),
 });
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
-  onForgotPassword: () => void;
-  onClose?: () => void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgotPassword, onClose }) => {
-  const { login } = useAuth();
+export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
+  const { login, verifyEmailOtp } = useAuth();
   const { isChristmasMode } = useTheme();
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginCredentials>({
     resolver: zodResolver(loginSchema),
@@ -37,27 +38,55 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
   const onSubmit = async (data: LoginCredentials) => {
     setIsLoading(true);
     setError(null);
+    setOtpError(null);
     setIsSuccess(false);
 
     try {
-      await login(data);
-      setIsSuccess(true);
+      if (!otpSent) {
+        await login(data);
+        setSentEmail(data.email.trim().toLowerCase());
+        setOtpSent(true);
+        setOtp('');
+      } else {
+        const otpPayload: EmailOtpCredentials = {
+          email: sentEmail || data.email,
+          otp,
+        };
+        await verifyEmailOtp(otpPayload);
+        setIsSuccess(true);
+      }
     } catch (err) {
-      let errorMessage = 'Sign in failed. Please try again.';
-      
+      let errorMessage = otpSent ? 'Code verification failed. Please try again.' : 'Could not send the sign-in email. Please try again.';
+
       if (err instanceof Error) {
-        if (err.message.includes('Invalid login credentials') || err.message.includes('Invalid email or password')) {
-          errorMessage = 'Invalid email or password. Please check your credentials.';
-        } else if (err.message.includes('Email not confirmed')) {
-          errorMessage = 'Please verify your email address before signing in.';
-        } else if (err.message.includes('Too many requests')) {
-          errorMessage = 'Too many attempts. Please wait a moment and try again.';
+        if (err.message.includes('6-digit OTP') || err.message.includes('Invalid OTP') || err.message.includes('expired')) {
+          setOtpError(err.message);
+          errorMessage = '';
         } else {
           errorMessage = err.message;
         }
       }
-      
-      setError(errorMessage);
+
+      if (errorMessage) {
+        setError(errorMessage);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    const email = sentEmail || getValues('email');
+    if (!email) return;
+
+    setIsLoading(true);
+    setError(null);
+    setOtpError(null);
+
+    try {
+      await login({ email });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -73,8 +102,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
         }`}>
           <CheckCircle className={`w-8 h-8 ${isChristmasMode ? 'text-green-400' : 'text-emerald-400'}`} />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2">Welcome Back!</h2>
-        <p className="text-slate-400">You have been signed in successfully.</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Code Verified!</h2>
+        <p className="text-slate-400">Signing you in now.</p>
       </div>
     );
   }
@@ -87,25 +116,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
             <AlertCircle className="w-5 h-5 text-red-400 mr-3 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-red-300 text-sm font-medium">{error}</p>
-              {error.includes('Invalid email or password') && (
-                <button 
-                  type="button"
-                  onClick={onForgotPassword}
-                  className="text-red-400 text-xs mt-1 underline hover:no-underline"
-                >
-                  Forgot your password?
-                </button>
-              )}
             </div>
           </div>
         </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {/* Email Input */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">
-            Gmail Address
+            Email Address
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -114,13 +133,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
             <input
               {...register('email')}
               type="email"
-              placeholder="your.email@gmail.com"
+              placeholder="your.email@example.com"
+              disabled={otpSent}
               className={`w-full pl-12 pr-4 py-3.5 rounded-xl transition-all duration-200 text-white placeholder-slate-500 ${
-                errors.email 
-                  ? 'border-2 border-red-500/50 bg-red-500/10 focus:border-red-500 focus:ring-2 focus:ring-red-500/20' 
+                errors.email
+                  ? 'border-2 border-red-500/50 bg-red-500/10 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
                   : `border-2 border-slate-700 bg-slate-800/50 focus:bg-slate-800 hover:border-slate-600 ${
-                      isChristmasMode 
-                        ? 'focus:border-green-500 focus:ring-2 focus:ring-green-500/20' 
+                      isChristmasMode
+                        ? 'focus:border-green-500 focus:ring-2 focus:ring-green-500/20'
                         : 'focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
                     }`
               }`}
@@ -134,59 +154,86 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
           )}
         </div>
 
-        {/* Password Input */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Password
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-slate-500" />
+        {otpSent && (
+          <div className={`p-4 rounded-xl border ${
+            isChristmasMode
+              ? 'bg-green-500/10 border-green-500/30'
+              : 'bg-emerald-500/10 border-emerald-500/30'
+          }`}>
+            <p className="text-sm text-slate-200">
+              We sent a 6-digit sign-in code to <strong className="text-white">{sentEmail}</strong>.
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              Enter the 6-digit code below to continue.
+            </p>
+          </div>
+        )}
+
+        {otpSent && (
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              6-Digit Code
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <KeyRound className="h-5 w-5 text-slate-500" />
+              </div>
+              <input
+                value={otp}
+                onChange={(event) => {
+                  setOtp(event.target.value.replace(/\D/g, '').slice(0, 6));
+                  setOtpError(null);
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Enter 6-digit code"
+                className={`w-full pl-12 pr-4 py-3.5 rounded-xl transition-all duration-200 text-white placeholder-slate-500 ${
+                  otpError
+                    ? 'border-2 border-red-500/50 bg-red-500/10 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                    : `border-2 border-slate-700 bg-slate-800/50 focus:bg-slate-800 hover:border-slate-600 ${
+                        isChristmasMode
+                          ? 'focus:border-green-500 focus:ring-2 focus:ring-green-500/20'
+                          : 'focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                      }`
+                }`}
+              />
             </div>
-            <input
-              {...register('password')}
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Enter your password"
-              className={`w-full pl-12 pr-12 py-3.5 rounded-xl transition-all duration-200 text-white placeholder-slate-500 ${
-                errors.password 
-                  ? 'border-2 border-red-500/50 bg-red-500/10 focus:border-red-500 focus:ring-2 focus:ring-red-500/20' 
-                  : `border-2 border-slate-700 bg-slate-800/50 focus:bg-slate-800 hover:border-slate-600 ${
-                      isChristmasMode 
-                        ? 'focus:border-green-500 focus:ring-2 focus:ring-green-500/20' 
-                        : 'focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
-                    }`
-              }`}
-            />
+            {otpError && (
+              <p className="mt-2 text-sm text-red-400 flex items-center">
+                <AlertCircle className="w-4 h-4 mr-1" />
+                {otpError}
+              </p>
+            )}
+          </div>
+        )}
+
+        {otpSent && (
+          <div className="flex items-center justify-between gap-3 text-sm">
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+              onClick={() => {
+                setOtpSent(false);
+                setOtp('');
+                setOtpError(null);
+                setError(null);
+              }}
+              className="text-slate-400 hover:text-slate-200 transition-colors"
             >
-              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              Change email
+            </button>
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              disabled={isLoading}
+              className={`font-medium transition-colors ${
+                isChristmasMode ? 'text-green-400 hover:text-green-300' : 'text-emerald-400 hover:text-emerald-300'
+              }`}
+            >
+              Resend Email
             </button>
           </div>
-          {errors.password && (
-            <p className="mt-2 text-sm text-red-400 flex items-center">
-              <AlertCircle className="w-4 h-4 mr-1" />
-              {errors.password.message}
-            </p>
-          )}
-        </div>
+        )}
 
-        {/* Forgot Password Link */}
-        <div className="text-right">
-          <button
-            type="button"
-            onClick={onForgotPassword}
-            className={`text-sm font-medium transition-colors hover:underline ${
-              isChristmasMode ? 'text-green-400 hover:text-green-300' : 'text-emerald-400 hover:text-emerald-300'
-            }`}
-          >
-            Forgot your password?
-          </button>
-        </div>
-
-        {/* Submit Button */}
         <button
           type="submit"
           disabled={isLoading}
@@ -201,27 +248,26 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup, onForgot
           {isLoading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Signing In...</span>
+              <span>{otpSent ? 'Verifying Code...' : 'Sending Email...'}</span>
             </>
           ) : (
             <>
               <LogIn className="w-5 h-5" />
-              <span>Sign In</span>
+              <span>{otpSent ? 'Verify 6-Digit Code' : 'Send Sign-In Email'}</span>
               <ArrowRight className="w-4 h-4" />
             </>
           )}
         </button>
       </form>
 
-      {/* Switch to Signup */}
       <div className={`text-center pt-5 border-t ${
         isChristmasMode ? 'border-green-500/20' : 'border-emerald-500/20'
       }`}>
         <p className="text-slate-400 text-sm">
           Don't have an account yet?{' '}
-          <button 
-            type="button" 
-            onClick={onSwitchToSignup} 
+          <button
+            type="button"
+            onClick={onSwitchToSignup}
             className={`font-semibold transition-colors ${
               isChristmasMode ? 'text-green-400 hover:text-green-300' : 'text-emerald-400 hover:text-emerald-300'
             }`}

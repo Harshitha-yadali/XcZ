@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { Menu, X, Home, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent } from 'lucide-react';
+import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/navigation/Navigation';
@@ -699,12 +699,19 @@ const handleDiwaliCTAClick = useCallback(() => {
             <div className="fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-[#05131A] shadow-2xl overflow-y-auto safe-area border-l border-[#0c1d25]">
               <div className="flex flex-col space-y-4 p-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2 sm:space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigate('/');
+                      setShowMobileMenu(false);
+                    }}
+                    className="flex items-center space-x-2 sm:space-x-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
                     <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-lg">
                       <img src={logoImage} alt="PrimoBoost AI Logo" className="w-full h-full object-cover" />
                     </div>
                     <h1 className="text-lg sm:text-xl font-bold text-slate-100">PrimoBoost AI</h1>
-                  </div>
+                  </button>
                   <button
                     onClick={() => setShowMobileMenu(false)}
                     aria-label="Close menu"
@@ -717,7 +724,6 @@ const handleDiwaliCTAClick = useCallback(() => {
                 <div className="border-t border-[#0c1d25] pt-4">
                   <nav className="flex flex-col space-y-1">
                     {[
-                      { id: '/', label: 'Home', icon: <Home className="w-5 h-5" /> },
                       { id: '/about', label: 'About Us', icon: <Info className="w-5 h-5" /> },
                       { id: '/blog', label: 'Blog', icon: <BookOpen className="w-5 h-5" /> },
                       { id: '/webinars', label: 'Webinars', icon: <Sparkles className="w-5 h-5" /> },

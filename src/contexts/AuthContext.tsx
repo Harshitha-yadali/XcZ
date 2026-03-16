@@ -1,12 +1,13 @@
 // src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthState, LoginCredentials, SignupCredentials, ForgotPasswordData } from '../types/auth';
+import { User, AuthState, LoginCredentials, SignupCredentials, ForgotPasswordData, EmailOtpCredentials } from '../types/auth';
 import { authService } from '../services/authService';
 import { supabase } from '../lib/supabaseClient';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   signup: (credentials: SignupCredentials) => Promise<{ needsVerification: boolean; email: string }>;
+  verifyEmailOtp: (credentials: EmailOtpCredentials) => Promise<void>;
   logout: () => Promise<void>;
   forgotPassword: (data: ForgotPasswordData) => Promise<void>;
   resetPassword: (newPassword: string) => Promise<void>;
@@ -220,11 +221,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (credentials: LoginCredentials) => {
     try {
-      console.log('AuthContext: Calling authService.login...');
-      // authService.login will handle Supabase signInWithPassword
+      console.log('AuthContext: Requesting email OTP for login...');
       await authService.login(credentials);
-      console.log('AuthContext: authService.login completed.');
-      // The onAuthStateChange listener will pick up the SIGNED_IN event and update state
+      console.log('AuthContext: Login OTP request completed.');
     } catch (error) {
       console.error('AuthContext: Login failed:', error);
       setAuthState(prev => ({ ...prev, isLoading: false })); // Ensure loading is off on error
@@ -245,6 +244,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('AuthContext: Signup failed:', error);
       setAuthState(prev => ({ ...prev, isLoading: false })); // Ensure loading is off on error
+      throw error;
+    }
+  };
+
+  const verifyEmailOtp = async (credentials: EmailOtpCredentials) => {
+    try {
+      console.log('AuthContext: Verifying email OTP...');
+      await authService.verifyEmailOtp(credentials);
+      await revalidateUserSession();
+      console.log('AuthContext: Email OTP verified.');
+    } catch (error) {
+      console.error('AuthContext: Email OTP verification failed:', error);
+      setAuthState(prev => ({ ...prev, isLoading: false }));
       throw error;
     }
   };
@@ -316,6 +328,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ...authState,
     login,
     signup,
+    verifyEmailOtp,
     logout,
     forgotPassword,
     resetPassword,

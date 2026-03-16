@@ -1,13 +1,21 @@
 // src/services/authService.ts
-import { User, LoginCredentials, SignupCredentials, ForgotPasswordData } from '../types/auth';
+import { User, LoginCredentials, SignupCredentials, EmailOtpCredentials } from '../types/auth';
 import { supabase } from '../lib/supabaseClient';
 import { deviceTrackingService } from './deviceTrackingService';
-import { paymentService } from './paymentService'; // This line is essential
 
 class AuthService {
   // Add a static variable to track the last time device activity was logged
   private static lastDeviceActivityLog: number = 0;
   private static readonly DEVICE_ACTIVITY_LOG_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  private normalizeEmail(email: string): string {
+    return (email || '').trim().toLowerCase();
+  }
+
+  private getFallbackName(email: string): string {
+    const localPart = this.normalizeEmail(email).split('@')[0] || 'User';
+    return localPart.replace(/[._-]+/g, ' ').trim() || 'User';
+  }
 
   // MODIFIED: Updated isValidGmail to validate any email address
   private isValidEmail(email: string): boolean {
@@ -20,165 +28,189 @@ class AuthService {
     return isValid;
   }
 
-  private validatePasswordStrength(password: string): { isValid: boolean; message?: string } {
-    if (password.length < 8) return { isValid: false, message: 'Password must be at least 8 characters long' };
-    if (!/(?=.*[a-z])/.test(password)) return { isValid: false, message: 'Password must contain at least one lowercase letter' };
-    if (!/(?=.*[A-Z])/.test(password)) return { isValid: false, message: 'Password must contain at least one uppercase letter' };
-    if (!/(?=.*\d)/.test(password)) return { isValid: false, message: 'Password must contain at least one number' };
-    if (!/(?=.*[@$!%*?&])/.test(password)) return { isValid: false, message: 'Password must contain at least one special character (@$!%*?&)' };
-    return { isValid: true };
-  }
+  private async sendEmailOtp(email: string, shouldCreateUser: boolean): Promise<string> {
+    const normalizedEmail = this.normalizeEmail(email);
 
-  async login(credentials: LoginCredentials): Promise<User> {
-    console.log('AuthService: Starting login for email:', credentials.email);
-    // MODIFIED: Call isValidEmail instead of isValidGmail
-    if (!this.isValidEmail(credentials.email)) throw new Error('Please enter a valid email address.');
+    if (!normalizedEmail) throw new Error('Email address is required.');
+    if (!this.isValidEmail(normalizedEmail)) throw new Error('Please enter a valid email address.');
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: credentials.email,
-      password: credentials.password
+    const { error } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser,
+        emailRedirectTo: window.location.origin,
+        ...(shouldCreateUser
+          ? {
+              data: {
+                full_name: this.getFallbackName(normalizedEmail),
+              },
+            }
+          : {}),
+      },
     });
 
     if (error) {
-      console.error('AuthService: Supabase signInWithPassword error:', error);
+      console.error('AuthService: signInWithOtp error:', error);
+      if (!shouldCreateUser && (error.message.includes('User not found') || error.message.includes('Signups not allowed for otp'))) {
+        throw new Error('No account found with this email. Please sign up first.');
+      }
+      if (error.message.includes('rate limit') || error.message.includes('Too many requests')) {
+        throw new Error('Too many OTP requests. Please wait a moment and try again.');
+      }
       throw new Error(error.message);
     }
-    if (!data.user) {
-      console.error('AuthService: signInWithPassword returned no user data.');
-      throw new Error('Login failed. Please try again.');
-    }
-    console.log('AuthService: User signed in with Supabase. User ID:', data.user.id);
 
-    // Register device and create session for tracking
-    try {
-      console.log('AuthService: Attempting device registration and session creation...');
-      const deviceId = await deviceTrackingService.registerDevice(data.user.id);
-      if (deviceId && data.session) {
-        await deviceTrackingService.logActivity(data.user.id, 'login', {
-          loginMethod: 'email_password',
-          success: true
-        }, deviceId);
-        AuthService.lastDeviceActivityLog = Date.now(); // Update last log time
-        console.log('AuthService: Device and session tracking successful.');
-      } else {
-        console.warn('AuthService: Device ID or session not available for tracking.');
-      }
-    } catch (deviceError) {
-      console.warn('AuthService: Device tracking failed during login:', deviceError);
-      // Don't fail login if device tracking fails
-    }
+    return normalizedEmail;
+  }
 
-    const isAdmin = data.user.email === 'primoboostai@gmail.com';
-const profileRole = data.user.user_metadata?.role || (isAdmin ? 'admin' : 'client');
-
-    const userResult: User = {
-      id: data.user.id,
-      name: data.user.email?.split('@')[0] || 'User',
-      email: data.user.email!,
-      isVerified: data.user.email_confirmed_at !== null,
-      createdAt: data.user.created_at || new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-    role: profileRole as 'admin' | 'client',
-
-    };
-    console.log('AuthService: Login process completed. Returning minimal user data.');
-    return userResult;
+  async login(credentials: LoginCredentials): Promise<void> {
+    console.log('AuthService: Starting OTP login for email:', credentials.email);
+    await this.sendEmailOtp(credentials.email, false);
+    console.log('AuthService: Login OTP sent successfully.');
   }
 
   async signup(credentials: SignupCredentials): Promise<{ needsVerification: boolean; email: string }> {
-    console.log('AuthService: Starting signup for email:', credentials.email);
-    if (!credentials.name.trim()) throw new Error('Full name is required');
-    if (credentials.name.trim().length < 2) throw new Error('Name must be at least 2 characters long');
-    if (!/^[a-zA-Z\s]+$/.test(credentials.name.trim())) throw new Error('Name can only contain letters and spaces');
-    if (!credentials.email) throw new Error('Email address is required');
-    // MODIFIED: Call isValidEmail instead of isValidGmail
-    if (!this.isValidEmail(credentials.email)) throw new Error('Please enter a valid email address.');
+    console.log('AuthService: Starting OTP signup for email:', credentials.email);
+    const email = await this.sendEmailOtp(credentials.email, true);
+    console.log('AuthService: Signup OTP sent successfully.');
+    return {
+      needsVerification: true,
+      email,
+    };
+  }
 
-    const passwordValidation = this.validatePasswordStrength(credentials.password);
-    if (!passwordValidation.isValid) throw new Error(passwordValidation.message!);
-    if (credentials.password !== credentials.confirmPassword) throw new Error('Passwords do not match');
-
-    console.log('AuthService: Calling supabase.auth.signUp() for email:', credentials.email);
-
-    const { data, error } = await supabase.auth.signUp({
-      email: credentials.email,
-      password: credentials.password,
-      options: {
-        data: {
-          full_name: credentials.name,
-        },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      }
-    });
-
-    if (error) {
-      console.error('AuthService: Supabase signUp error:', error);
-      throw new Error(error.message);
-    }
-    if (!data.user) {
-      console.error('AuthService: signUp returned no user data.');
-      throw new Error('Signup failed. Please try again.');
-    }
-    console.log('AuthService: User signed up with Supabase. User ID:', data.user.id);
-
-    // Create user profile in user_profiles table
-    console.log('AuthService: Creating user profile in user_profiles table...');
-    const { error: profileError } = await supabase
+  private async ensureUserProfileForOtpUser(userId: string, email: string): Promise<{ created: boolean; displayName: string }> {
+    const fallbackName = this.getFallbackName(email);
+    const { data: existingProfile, error: fetchError } = await supabase
       .from('user_profiles')
-      .insert({
-        id: data.user.id,
-        full_name: credentials.name,
-        email_address: credentials.email,
+      .select('id, full_name, email_address')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('AuthService: Error checking user profile:', fetchError);
+      throw new Error(fetchError.message);
+    }
+
+    if (!existingProfile) {
+      const { error: insertError } = await supabase.from('user_profiles').insert({
+        id: userId,
+        full_name: fallbackName,
+        email_address: email,
         role: 'client',
         has_seen_profile_prompt: false,
-        resumes_created_count: 0
+        resumes_created_count: 0,
       });
 
-    if (profileError) {
-      console.error('AuthService: Error creating user profile in user_profiles:', profileError);
-      // Don't throw - user account is created, profile creation can be retried
-    } else {
-      console.log('AuthService: User profile created successfully in user_profiles.');
+      if (insertError) {
+        console.error('AuthService: Error creating OTP user profile:', insertError);
+        throw new Error(insertError.message);
+      }
+
+      return { created: true, displayName: fallbackName };
     }
 
-    // Handle referral if present
-    if (credentials.referralCode && credentials.referralCode.trim() !== '') {
-      try {
-        console.log('AuthService: Processing referral code:', credentials.referralCode);
-        await paymentService.processReferral(data.user.id, credentials.referralCode);
-        console.log('AuthService: Referral processed successfully.');
-      } catch (referralError) {
-        console.warn('AuthService: Failed to process referral:', referralError);
-        // Don't throw - signup is successful even if referral fails
+    const updates: Record<string, string> = {};
+    if (!existingProfile.full_name) updates.full_name = fallbackName;
+    if (!existingProfile.email_address) updates.email_address = email;
+
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await supabase
+        .from('user_profiles')
+        .update(updates)
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('AuthService: Error updating OTP user profile:', updateError);
+        throw new Error(updateError.message);
       }
     }
 
-    // Send welcome email
+    return {
+      created: false,
+      displayName: existingProfile.full_name || fallbackName,
+    };
+  }
+
+  private async sendWelcomeEmail(userId: string, recipientEmail: string, recipientName: string): Promise<void> {
     try {
-      console.log('AuthService: Sending welcome email to:', credentials.email);
-      const { error: emailError } = await supabase.functions.invoke('send-welcome-email', {
+      const { error } = await supabase.functions.invoke('send-welcome-email', {
         body: {
-          userId: data.user.id,
-          recipientEmail: credentials.email,
-          recipientName: credentials.name
-        }
+          userId,
+          recipientEmail,
+          recipientName,
+        },
       });
 
-      if (emailError) {
-        console.error('AuthService: Welcome email failed:', emailError);
-      } else {
-        console.log('AuthService: Welcome email sent successfully.');
+      if (error) {
+        console.error('AuthService: Welcome email failed:', error);
       }
     } catch (emailError) {
       console.warn('AuthService: Failed to send welcome email:', emailError);
-      // Don't throw - signup is successful even if email fails
+    }
+  }
+
+  async verifyEmailOtp(credentials: EmailOtpCredentials): Promise<User> {
+    const email = this.normalizeEmail(credentials.email);
+    const otp = (credentials.otp || '').trim();
+
+    if (!email) throw new Error('Email address is required.');
+    if (!this.isValidEmail(email)) throw new Error('Please enter a valid email address.');
+    if (!/^\d{6}$/.test(otp)) {
+      throw new Error('Enter the 6-digit code sent to your email.');
     }
 
-    console.log('AuthService: Signup process completed.');
-    return {
-      needsVerification: true,
-      email: credentials.email
-    };
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: 'email',
+    });
+
+    if (error) {
+      console.error('AuthService: verifyOtp error:', error);
+      if (error.message.includes('Token has expired')) {
+        throw new Error('This OTP has expired. Please request a new one.');
+      }
+      if (error.message.includes('Invalid token')) {
+        throw new Error('Invalid OTP. Please check the code and try again.');
+      }
+      throw new Error(error.message);
+    }
+
+    if (!data.user) {
+      throw new Error('OTP verification failed. Please try again.');
+    }
+
+    const { created, displayName } = await this.ensureUserProfileForOtpUser(data.user.id, email);
+
+    if (created) {
+      await this.sendWelcomeEmail(data.user.id, email, displayName);
+    }
+
+    try {
+      const deviceId = await deviceTrackingService.registerDevice(data.user.id);
+      if (deviceId && data.session) {
+        await deviceTrackingService.logActivity(
+          data.user.id,
+          'login',
+          {
+            loginMethod: 'email_otp',
+            success: true
+          },
+          deviceId
+        );
+        AuthService.lastDeviceActivityLog = Date.now();
+      }
+    } catch (deviceError) {
+      console.warn('AuthService: Device tracking failed during OTP verification:', deviceError);
+    }
+
+    const user = await this.getCurrentUser();
+    if (!user) {
+      throw new Error('OTP verified, but we could not load your account. Please try again.');
+    }
+
+    return user;
   }
 
   public async fetchUserProfile(userId: string): Promise<{
