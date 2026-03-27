@@ -41,8 +41,12 @@ import { openrouter } from '../../services/aiProxyService';
 import { jobExtractionService, type ExtractedJobFromUrl } from '../../services/jobExtractionService';
 import { supabase } from '../../lib/supabaseClient';
 
+const MAX_SUPPORTED_DB_INTEGER = 2147483647;
+const RUPEES_PER_LAKH = 100000;
+const RUPEES_PER_THOUSAND = 1000;
+
 // Helper to truly make optional number inputs tolerant of empty string/NaN from form
-const optionalPositiveNumber = (message: string) =>
+const optionalPositiveNumber = (message: string, tooLargeMessage: string) =>
   z.preprocess(
     (val) => {
       if (val === '' || val === null || typeof val === 'undefined') return undefined;
@@ -52,7 +56,7 @@ const optionalPositiveNumber = (message: string) =>
       if (typeof val === 'string' && val.trim() === '') return undefined;
       return val;
     },
-    z.number().positive(message).optional()
+    z.number().positive(message).max(MAX_SUPPORTED_DB_INTEGER, tooLargeMessage).optional()
   );
 
 const parseSkillsInput = (value: string | string[] | null | undefined): string[] => {
@@ -114,7 +118,7 @@ const jobListingSchema = z.object({
   company_name: z.string().min(1, 'Company name is required'),
   company_logo_url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
   role_title: z.string().min(1, 'Role title is required'),
-  package_amount: optionalPositiveNumber('Package amount must be positive'),
+  package_amount: optionalPositiveNumber('Package amount must be positive', 'Package amount is too large'),
   package_type: z.enum(['CTC', 'stipend', 'hourly']).optional(),
   domain: z.string().min(1, 'Domain is required'),
   location_type: z.enum(['Remote', 'Onsite', 'Hybrid']),
@@ -134,7 +138,7 @@ const jobListingSchema = z.object({
   referral_email: z.string().email('Must be a valid email').optional().or(z.literal('')),
   referral_code: z.string().optional(),
   referral_link: z.string().url('Must be a valid URL').optional().or(z.literal('')),
-  referral_bonus_amount: optionalPositiveNumber('Bonus amount must be positive'),
+  referral_bonus_amount: optionalPositiveNumber('Bonus amount must be positive', 'Bonus amount is too large'),
   referral_terms: z.string().optional(),
 
   // Test pattern fields
@@ -143,13 +147,32 @@ const jobListingSchema = z.object({
   has_aptitude_test: z.boolean().default(false),
   has_technical_interview: z.boolean().default(false),
   has_hr_interview: z.boolean().default(false),
-  test_duration_minutes: optionalPositiveNumber('Duration must be positive'),
+  test_duration_minutes: optionalPositiveNumber('Duration must be positive', 'Duration is too large'),
 });
 
 type JobFormData = z.infer<typeof jobListingSchema>;
 
 type AiJobFieldValue = string | number | boolean | null | undefined;
-type AiJobFieldMap = Partial<Record<keyof JobFormData, AiJobFieldValue>>;
+type AiJobFieldMap = Partial<Record<keyof JobFormData, AiJobFieldValue>> & {
+  description?: AiJobFieldValue;
+  job_description?: AiJobFieldValue;
+  full_job_description?: AiJobFieldValue;
+  jd?: AiJobFieldValue;
+  job_details?: AiJobFieldValue;
+  summary?: AiJobFieldValue;
+  job_summary?: AiJobFieldValue;
+  required_skills?: AiJobFieldValue;
+  skills_required?: AiJobFieldValue;
+  company?: AiJobFieldValue;
+  role?: AiJobFieldValue;
+  title?: AiJobFieldValue;
+  city?: AiJobFieldValue;
+  work_mode?: AiJobFieldValue;
+  experience?: AiJobFieldValue;
+  education?: AiJobFieldValue;
+  apply_link?: AiJobFieldValue;
+  job_url?: AiJobFieldValue;
+};
 
 const AI_ALLOWED_JOB_FIELDS: Array<keyof JobFormData> = [
   'company_name',
@@ -237,13 +260,34 @@ const normalizeBoolean = (value: unknown): boolean | null => {
 };
 
 const normalizePositiveNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const rounded = Math.round(value);
+    return rounded <= MAX_SUPPORTED_DB_INTEGER ? rounded : null;
+  }
   if (typeof value !== 'string') return null;
-  const sanitized = value.replace(/[^0-9.]/g, '');
-  if (!sanitized) return null;
-  const parsed = Number.parseFloat(sanitized);
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const numericMatches = Array.from(normalized.matchAll(/\d[\d,]*(?:\.\d+)?/g));
+  if (numericMatches.length === 0) return null;
+
+  const firstRawValue = numericMatches[0]?.[0]?.replace(/,/g, '') || '';
+  const parsed = Number.parseFloat(firstRawValue);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return parsed;
+
+  const hasLakhHint = /\b(lpa|lakhs?|lacs?)\b/i.test(normalized);
+  const hasThousandHint = /\bthousand\b/i.test(normalized) || /\d[\d,]*(?:\.\d+)?\s*k\b/i.test(normalized);
+
+  let resolvedValue = parsed;
+  if (hasLakhHint && parsed < 1000) {
+    resolvedValue = parsed * RUPEES_PER_LAKH;
+  } else if (hasThousandHint && parsed < 100000) {
+    resolvedValue = parsed * RUPEES_PER_THOUSAND;
+  }
+
+  const rounded = Math.round(resolvedValue);
+  return rounded <= MAX_SUPPORTED_DB_INTEGER ? rounded : null;
 };
 
 const normalizeExtractedPackageType = (value: unknown): JobFormData['package_type'] | undefined => {
@@ -286,7 +330,10 @@ const normalizeExtractedLocationType = (
 
 const normalizeExtractedText = (value: unknown): string => {
   if (typeof value !== 'string') return '';
-  return value.replace(/\s+/g, ' ').trim();
+  return value
+    .replace(/\.?contentreference\[[^\]]+\]\{[^}]+\}/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const normalizeExtractedSkills = (value: unknown): string => {
@@ -329,6 +376,159 @@ const normalizeExpiryForSave = (value: string | null | undefined): string | unde
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 };
 
+const buildShortDescriptionFromText = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= 220) return normalized;
+
+  const truncated = normalized.slice(0, 220);
+  const sentenceBoundary = Math.max(
+    truncated.lastIndexOf('. '),
+    truncated.lastIndexOf('! '),
+    truncated.lastIndexOf('? ')
+  );
+
+  if (sentenceBoundary >= 80) {
+    return truncated.slice(0, sentenceBoundary + 1).trim();
+  }
+
+  const wordBoundary = truncated.lastIndexOf(' ');
+  if (wordBoundary >= 80) {
+    return truncated.slice(0, wordBoundary).trim();
+  }
+
+  return truncated.trim();
+};
+
+const normalizeAdminInputKey = (rawKey: string): string => {
+  const normalized = rawKey
+    .trim()
+    .replace(/^["'{\s]+|["'}\s]+$/g, '')
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+  switch (normalized) {
+    case 'application_deadline':
+    case 'deadline':
+    case 'apply_by':
+    case 'last_date_to_apply':
+      return 'expires_at';
+    case 'job_description':
+    case 'jd_text':
+      return 'job_description';
+    case 'apply_url':
+      return 'application_link';
+    default:
+      return normalized;
+  }
+};
+
+const cleanAdminInputValue = (rawValue: string): string =>
+  rawValue
+    .trim()
+    .replace(/^[",']+|[",']+$/g, '')
+    .replace(/,\s*$/, '')
+    .replace(/\s*}\s*$/, '')
+    .replace(/\.?contentreference\[[^\]]+\]\{[^}]+\}/gi, ' ')
+    .trim();
+
+const parseAdminKeyValueInput = (input: string): Record<string, string> => {
+  const parsed: Record<string, string> = {};
+  let currentKey: string | null = null;
+
+  input.split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^\s*[{"']?\s*([a-z][a-z0-9_ -]{0,60})\s*["']?\s*:\s*(.*)$/i);
+    if (match) {
+      currentKey = normalizeAdminInputKey(match[1]);
+      parsed[currentKey] = cleanAdminInputValue(match[2]);
+      return;
+    }
+
+    if (!currentKey) return;
+
+    const nextLine = cleanAdminInputValue(line);
+    if (!nextLine) {
+      parsed[currentKey] = parsed[currentKey]
+        ? `${parsed[currentKey]}\n`
+        : '';
+      return;
+    }
+
+    parsed[currentKey] = parsed[currentKey]
+      ? `${parsed[currentKey]}\n${nextLine}`
+      : nextLine;
+  });
+
+  return Object.fromEntries(
+    Object.entries(parsed)
+      .map(([key, value]) => [key, value.replace(/\n{3,}/g, '\n\n').trim()])
+      .filter(([, value]) => Boolean(value))
+  );
+};
+
+const pickFirstNonEmptyText = (...values: unknown[]): string => {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const normalized = value.trim();
+    if (normalized) return normalized;
+  }
+
+  return '';
+};
+
+const isLikelyRawJobDescription = (input: string, parsedInput: Record<string, string>): boolean => {
+  if (!input.trim()) return false;
+  if (Object.keys(parsedInput).length === 0) return input.trim().length >= 80;
+
+  const nonDescriptionKeys = Object.keys(parsedInput).filter((key) =>
+    !['application_link', 'apply_link', 'job_url', 'expires_at'].includes(key)
+  );
+  if (nonDescriptionKeys.length === 0) {
+    const sanitizedInput = normalizeExtractedText(input);
+    return sanitizedInput.length >= 80;
+  }
+
+  return false;
+};
+
+const extractFullDescriptionCandidate = (
+  input: string,
+  parsedInput: Record<string, string>,
+  aiFields?: AiJobFieldMap
+): string => {
+  return pickFirstNonEmptyText(
+    aiFields?.full_description,
+    aiFields?.description,
+    aiFields?.job_description,
+    aiFields?.full_job_description,
+    aiFields?.jd,
+    aiFields?.job_details,
+    parsedInput.full_description,
+    parsedInput.description,
+    parsedInput.job_description,
+    parsedInput.full_job_description,
+    parsedInput.jd,
+    parsedInput.job_details,
+    isLikelyRawJobDescription(input, parsedInput) ? input : ''
+  );
+};
+
+const extractShortDescriptionCandidate = (
+  parsedInput: Record<string, string>,
+  aiFields?: AiJobFieldMap
+): string => {
+  return pickFirstNonEmptyText(
+    aiFields?.short_description,
+    aiFields?.summary,
+    aiFields?.job_summary,
+    parsedInput.short_description,
+    parsedInput.summary,
+    parsedInput.job_summary
+  );
+};
+
 const buildExtractedShortDescription = (job: ExtractedJobFromUrl): string => {
   const shortDescription = normalizeExtractedText(job.short_description);
   if (shortDescription) return shortDescription;
@@ -336,7 +536,7 @@ const buildExtractedShortDescription = (job: ExtractedJobFromUrl): string => {
   const fullDescription = normalizeExtractedText(job.full_job_description);
   if (!fullDescription) return '';
 
-  return fullDescription.slice(0, 220).trim();
+  return buildShortDescriptionFromText(fullDescription);
 };
 
 const buildExtractedFullDescription = (job: ExtractedJobFromUrl): string => {
@@ -690,6 +890,10 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         const eligibleYearsValue = Array.isArray(data.eligible_years)
           ? data.eligible_years.join(', ')
           : (data.eligible_years || '');
+        const resolvedFullDescription =
+          data.full_description || data.description || data.original_description || '';
+        const resolvedShortDescription =
+          data.short_description || buildShortDescriptionFromText(resolvedFullDescription);
 
         reset({
           company_name: data.company_name || '',
@@ -705,8 +909,8 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
           eligible_years: eligibleYearsValue,
           expires_at: normalizeDateInputValue(data.expires_at),
           skills: parseSkillsInput(data.skills).join(', '),
-          short_description: data.short_description || '',
-          full_description: data.full_description || '',
+          short_description: resolvedShortDescription,
+          full_description: resolvedFullDescription,
           application_link: data.application_link || '',
           is_active: data.is_active ?? true,
           referral_person_name: data.referral_person_name || '',
@@ -1132,7 +1336,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
   const handleAiCheckAndFill = async () => {
     const trimmedInput = aiKeyValueInput.trim();
     if (!trimmedInput) {
-      setAiCheckError('Add key:value details first, then run AI check.');
+      setAiCheckError('Add job details or a job description first, then run AI fill.');
       setAiCheckSuccess(null);
       return;
     }
@@ -1146,19 +1350,21 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     try {
       const currentFormValues = getValues();
       const nextValues: JobFormData = { ...currentFormValues };
+      const parsedAdminInput = parseAdminKeyValueInput(trimmedInput);
       const systemPrompt = [
-        'You are an assistant that converts admin notes into job form values.',
+        'You are an assistant that converts admin job notes or a pasted job description into job form values.',
         'Return only a valid JSON object with keys from the allowed list.',
         `Allowed keys: ${AI_ALLOWED_JOB_FIELDS.join(', ')}.`,
         'Do not return markdown, explanation, or extra keys.',
         'Use location_type exactly as Remote, Onsite, or Hybrid.',
         'Use package_type exactly as CTC, stipend, or hourly.',
         'Use boolean values for checkbox fields.',
+        'If the input contains a job description, map it into full_description and create short_description when possible.',
         'If a value is unknown, omit that key.',
       ].join(' ');
 
       const userPrompt = [
-        'Admin key:value input:',
+        'Admin input (may be key:value notes or a raw job description):',
         trimmedInput,
         '',
         'Current form values (useful context):',
@@ -1208,22 +1414,30 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         applyFormValue(field, normalized as JobFormData[typeof field]);
       };
 
-      applyStringField('company_name', parsed.company_name);
+      applyStringField('company_name', pickFirstNonEmptyText(parsed.company_name, parsed.company, parsedAdminInput.company_name, parsedAdminInput.company));
       applyStringField('company_logo_url', parsed.company_logo_url);
-      applyStringField('role_title', parsed.role_title);
+      applyStringField('role_title', pickFirstNonEmptyText(parsed.role_title, parsed.role, parsed.title, parsedAdminInput.role_title, parsedAdminInput.role, parsedAdminInput.title));
       applyStringField('domain', parsed.domain);
-      applyStringField('location_city', parsed.location_city);
-      applyStringField('experience_required', parsed.experience_required);
-      applyStringField('qualification', parsed.qualification);
+      applyStringField('location_city', pickFirstNonEmptyText(parsed.location_city, parsed.city, parsedAdminInput.location_city, parsedAdminInput.city));
+      applyStringField('experience_required', pickFirstNonEmptyText(parsed.experience_required, parsed.experience, parsedAdminInput.experience_required, parsedAdminInput.experience));
+      applyStringField('qualification', pickFirstNonEmptyText(parsed.qualification, parsed.education, parsedAdminInput.qualification, parsedAdminInput.education));
       applyStringField('eligible_years', parsed.eligible_years);
-      if (typeof parsed.skills === 'string' || Array.isArray(parsed.skills)) {
-        const normalizedSkills = parseSkillsInput(parsed.skills as string | string[]);
+      const resolvedSkills = parsed.skills ?? parsed.required_skills ?? parsed.skills_required ?? parsedAdminInput.skills ?? parsedAdminInput.required_skills ?? parsedAdminInput.skills_required;
+      if (typeof resolvedSkills === 'string' || Array.isArray(resolvedSkills)) {
+        const normalizedSkills = parseSkillsInput(resolvedSkills as string | string[]);
         applyFormValue('skills', normalizedSkills.join(', '));
       }
-      applyStringField('short_description', parsed.short_description);
-      applyStringField('full_description', parsed.full_description);
-      applyStringField('application_link', parsed.application_link);
-      applyStringField('expires_at', normalizeDateInputValue(parsed.expires_at));
+      const resolvedFullDescription = extractFullDescriptionCandidate(trimmedInput, parsedAdminInput, parsed);
+      const resolvedShortDescription =
+        extractShortDescriptionCandidate(parsedAdminInput, parsed) ||
+        buildShortDescriptionFromText(resolvedFullDescription);
+      applyStringField('short_description', resolvedShortDescription);
+      applyStringField('full_description', resolvedFullDescription);
+      applyStringField('application_link', pickFirstNonEmptyText(parsed.application_link, parsed.apply_link, parsed.job_url, parsedAdminInput.application_link, parsedAdminInput.apply_link, parsedAdminInput.job_url));
+      applyStringField('expires_at', normalizeDateInputValue(pickFirstNonEmptyText(
+        typeof parsed.expires_at === 'string' ? parsed.expires_at : '',
+        parsedAdminInput.expires_at
+      )));
       applyStringField('referral_person_name', parsed.referral_person_name);
       applyStringField('referral_email', parsed.referral_email);
       applyStringField('referral_code', parsed.referral_code);
@@ -1247,6 +1461,22 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         if (locationType === 'remote') applyFormValue('location_type', 'Remote');
         if (locationType === 'onsite') applyFormValue('location_type', 'Onsite');
         if (locationType === 'hybrid') applyFormValue('location_type', 'Hybrid');
+      } else {
+        const locationModeHint = pickFirstNonEmptyText(
+          typeof parsed.work_mode === 'string' ? parsed.work_mode : '',
+          parsedAdminInput.location_type,
+          parsedAdminInput.work_mode
+        );
+        const locationCityHint = pickFirstNonEmptyText(
+          typeof parsed.location_city === 'string' ? parsed.location_city : '',
+          typeof parsed.city === 'string' ? parsed.city : '',
+          parsedAdminInput.location_city,
+          parsedAdminInput.city
+        );
+        if (locationModeHint || locationCityHint) {
+          const normalizedLocationType = normalizeExtractedLocationType(locationModeHint, locationCityHint);
+          applyFormValue('location_type', normalizedLocationType);
+        }
       }
 
       applyBooleanField('is_active', parsed.is_active);
@@ -1256,7 +1486,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       applyBooleanField('has_hr_interview', parsed.has_hr_interview);
 
       if (updatedCount === 0) {
-        setAiCheckError('AI returned no usable updates. Try clearer key:value input.');
+        setAiCheckError('AI returned no usable updates. Try clearer job details or paste the JD directly.');
         return;
       }
 
@@ -1640,19 +1870,19 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                   {isEditMode
-                    ? 'Paste raw key:value job details. AI will suggest values and auto-fill this form before you update the job.'
-                    : 'Paste raw key:value job details. Click once to auto-fill the form and create the job when the required fields validate.'}
+                    ? 'Paste raw key:value job details or the full job description. AI will map the description into the form before you update the job.'
+                    : 'Paste raw key:value job details or the full job description. AI will auto-fill the form and create the job when the required fields validate.'}
                 </p>
                 <textarea
                   ref={aiKeyValueInputRef}
                   value={aiKeyValueInput}
                   onChange={(event) => setAiKeyValueInput(event.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 h-32 resize-y dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100"
-                  placeholder={`company_name: Acme Labs\nrole_title: Backend Engineer\ndomain: SDE\nlocation_type: Hybrid\nlocation_city: Bengaluru\nexperience_required: 2-4 years\nqualification: B.Tech CSE\nexpires_at: 2026-03-31\nshort_description: ...\nfull_description: ...\napplication_link: https://company.com/jobs/123`}
+                  placeholder={`company_name: Acme Labs\nrole_title: Backend Engineer\ndomain: SDE\nlocation_type: Hybrid\nlocation_city: Bengaluru\nexperience_required: 2-4 years\nqualification: B.Tech CSE\nexpires_at: 2026-03-31\njob_description: We are hiring a backend engineer...\napplication_link: https://company.com/jobs/123\n\nOr paste the full JD directly here.`}
                 />
                 <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Tip: include salary, description, tests, and referral keys too.
+                    Tip: `description`, `job_description`, and a raw pasted JD all map into the job detail fields.
                   </p>
                   <button
                     type="button"

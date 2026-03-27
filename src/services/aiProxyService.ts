@@ -1,8 +1,8 @@
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 
 const PROXY_URL = getSupabaseEdgeFunctionUrl('ai-proxy');
-const DEFAULT_OPENROUTER_MODEL = 'stepfun/step-3.5-flash:free';
-const OPENROUTER_MODEL_FALLBACKS = [DEFAULT_OPENROUTER_MODEL] as const;
+const DEFAULT_OPENROUTER_MODEL = 'google/gemma-3n-e4b-it:free';
+const OPENROUTER_MODEL_FALLBACKS = [DEFAULT_OPENROUTER_MODEL, 'google/gemma-3n-e4b-it'] as const;
 
 const callProxy = async (service: string, action: string, params: Record<string, unknown> = {}) => {
   const isAbsoluteUrl = /^https?:\/\//i.test(PROXY_URL);
@@ -61,7 +61,12 @@ const isRateLimitLikeError = (error: unknown) => {
 };
 
 const getModelsToTry = (requestedModel?: string) => {
-  if (requestedModel && requestedModel.trim()) return [requestedModel.trim()];
+  const normalizedRequestedModel = requestedModel?.trim();
+  if (normalizedRequestedModel) {
+    return normalizedRequestedModel === DEFAULT_OPENROUTER_MODEL
+      ? [...OPENROUTER_MODEL_FALLBACKS]
+      : [normalizedRequestedModel];
+  }
   return [...OPENROUTER_MODEL_FALLBACKS];
 };
 

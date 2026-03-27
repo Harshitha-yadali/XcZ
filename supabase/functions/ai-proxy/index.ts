@@ -40,7 +40,7 @@ async function handleOpenRouter(action: string, params: any) {
 
   switch (action) {
     case "chat": {
-      const { prompt, model = "stepfun/step-3.5-flash:free", temperature = 0.3, maxTokens = 4000 } = params;
+      const { prompt, model = "google/gemma-3n-e4b-it:free", temperature = 0.3, maxTokens = 4000 } = params;
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -58,7 +58,7 @@ async function handleOpenRouter(action: string, params: any) {
     }
 
     case "chat_with_system": {
-      const { systemPrompt, userPrompt, model = "stepfun/step-3.5-flash:free", temperature = 0.3 } = params;
+      const { systemPrompt, userPrompt, model = "google/gemma-3n-e4b-it:free", temperature = 0.3 } = params;
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {

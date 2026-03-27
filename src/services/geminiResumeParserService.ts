@@ -16,7 +16,7 @@ export interface ParsedResume extends ResumeData {
 
 const MAX_PARSED_TEXT_LENGTH = 45000;
 const MAX_RETRIES = 1;
-const RESUME_PARSER_MODEL = 'stepfun/step-3.5-flash:free';
+const RESUME_PARSER_MODEL = 'google/gemma-3n-e4b-it:free';
 
 const RESUME_PARSER_SYSTEM_PROMPT = `You are an enterprise-grade resume parsing and structuring engine.
 

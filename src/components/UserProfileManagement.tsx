@@ -153,7 +153,7 @@ const mockPaymentService = {
       'You are an expert ATS resume parsing assistant.',
       prompt,
       {
-        model: 'stepfun/step-3.5-flash:free',
+        model: 'google/gemma-3n-e4b-it:free',
         temperature: 0.1,
       }
     );
