@@ -11,6 +11,7 @@ interface MobileNavBarProps {
 export const MobileNavBar: React.FC<MobileNavBarProps> = ({ currentPage, onPageChange }) => {
   const { isAuthenticated, user } = useAuth();
   const isAdmin = isAuthenticated && (user?.role === 'admin' || user?.email === 'primoboostai@gmail.com');
+  const isReferralAdmin = isAuthenticated && (user?.role === 'referral_admin' || user?.email === 'primoreferral@gmail.com');
   
   // Check if Christmas mode is active (December)
   const [isChristmasMode] = useState(() => {
@@ -29,6 +30,7 @@ export const MobileNavBar: React.FC<MobileNavBarProps> = ({ currentPage, onPageC
     ...(isAuthenticated ? [{ id: '/profile?tab=wallet', label: 'Wallet', icon: <Wallet className="w-5 h-5" /> }] : []),
     ...(isAuthenticated ? [{ id: '/jobs/applications', label: 'Applications', icon: <FileText className="w-5 h-5" /> }] : []),
     ...(isAdmin ? [{ id: '/admin/email-testing', label: 'Email', icon: <Mail className="w-5 h-5" /> }] : []),
+    ...((isReferralAdmin && !isAdmin) ? [{ id: '/admin/referrals', label: 'Referrals', icon: <FileText className="w-5 h-5" /> }] : []),
     { id: 'menu', label: 'Menu', icon: <Menu className="w-5 h-5" /> }
   ];
 

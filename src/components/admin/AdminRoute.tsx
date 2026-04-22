@@ -6,9 +6,10 @@ import { AlertTriangle, User } from 'lucide-react';
 
 interface AdminRouteProps {
   children: React.ReactNode;
+  requiredRoles?: Array<'admin' | 'referral_admin'>;
 }
 
-export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
+export const AdminRoute: React.FC<AdminRouteProps> = ({ children, requiredRoles = ['admin'] }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
@@ -26,10 +27,12 @@ export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
-  // Check both role field and email for backward compatibility
   const isAdmin = user?.role === 'admin' || user?.email === 'primoboostai@gmail.com';
+  const isReferralAdmin = user?.role === 'referral_admin' || user?.email === 'primoreferral@gmail.com';
+  const hasAccess = (requiredRoles.includes('admin') && isAdmin) ||
+    (requiredRoles.includes('referral_admin') && (isAdmin || isReferralAdmin));
 
-  if (!isAdmin) {
+  if (!hasAccess) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center dark:from-dark-50 dark:to-dark-200">
         <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center max-w-md w-full mx-4 dark:bg-dark-100 dark:border-dark-300">

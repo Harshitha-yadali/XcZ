@@ -560,7 +560,7 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route
             path="/admin/referrals"
             element={
-              <AdminRoute>
+              <AdminRoute requiredRoles={['admin', 'referral_admin']}>
                 <AdminReferralsPage />
               </AdminRoute>
             }
@@ -745,7 +745,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/job-updates', label: 'Job Updates', icon: <MessageCircle className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/webinars', label: 'Webinar Management', icon: <Video className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/blog', label: 'Blog Management', icon: <FileText className="w-5 h-5" /> }] : []),
-                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/referrals', label: 'Referral Mgmt', icon: <Users className="w-5 h-5" /> }] : []),
+                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/referrals', label: 'Referral Mgmt', icon: <Users className="w-5 h-5" /> }] : (user?.role === 'referral_admin' || user?.email === 'primoreferral@gmail.com') ? [{ id: '/admin/referrals', label: 'Referral Mgmt', icon: <Users className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/email-testing', label: 'Email Testing', icon: <Mail className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/sessions', label: 'Session Schedule', icon: <Calendar className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/coupons', label: 'Plan Coupons', icon: <TicketPercent className="w-5 h-5" /> }] : []),

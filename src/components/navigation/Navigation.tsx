@@ -114,6 +114,8 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
   ];
 
   const isAdmin = isAuthenticated && (user?.role === "admin" || user?.email === "primoboostai@gmail.com");
+  const isReferralAdmin = isAuthenticated && (user?.role === "referral_admin" || user?.email === "primoreferral@gmail.com");
+  const visibleAdminItems = isAdmin ? adminItems : isReferralAdmin ? adminItems.filter(i => i.id === "/admin/referrals") : [];
 
   return (
     <nav className="hidden lg:flex items-center space-x-6">
@@ -209,7 +211,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
       </div>
 
       {/* Admin Dropdown */}
-      {isAdmin && (
+      {(isAdmin || isReferralAdmin) && visibleAdminItems.length > 0 && (
         <div className="relative" ref={adminRef}>
           <button
             onClick={() => {
@@ -231,7 +233,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
           {showAdminDropdown && (
             <div className="absolute top-full right-0 mt-2 w-56 bg-slate-900/95 rounded-xl shadow-2xl border border-red-500/30 py-2 z-[100] backdrop-blur-xl overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-b from-red-500/5 to-transparent pointer-events-none" />
-              {adminItems.map((item) => (
+              {visibleAdminItems.map((item) => (
                 <Link
                   key={item.id}
                   to={item.id}

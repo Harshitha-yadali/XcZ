@@ -313,7 +313,8 @@ class AuthService {
       console.log('AuthService: User profile fetched for getCurrentUser. Profile:', profile ? profile.full_name : 'none');
 
       const isAdmin = session.user.email === 'primoboostai@gmail.com';
-const profileRole = profile?.role || (isAdmin ? 'admin' : 'client');
+      const isReferralAdmin = session.user.email === 'primoreferral@gmail.com';
+      const profileRole = profile?.role || (isAdmin ? 'admin' : isReferralAdmin ? 'referral_admin' : 'client');
 
       const userResult: User = {
         id: session.user.id,
@@ -329,7 +330,7 @@ const profileRole = profile?.role || (isAdmin ? 'admin' : 'client');
         lastLogin: new Date().toISOString(),
         hasSeenProfilePrompt: profile?.has_seen_profile_prompt || false,
         resumesCreatedCount: profile?.resumes_created_count || 0,
-        role: profileRole as 'admin' | 'client',
+        role: profileRole as 'admin' | 'referral_admin' | 'client',
         resumeHeadline: profile?.resume_headline || undefined,
         currentLocation: profile?.current_location || undefined,
         educationDetails: profile?.education_details || undefined,
@@ -503,7 +504,8 @@ async forgotPassword(email: string): Promise<void> {
     }
 
     const isAdmin = session.user.email === 'primoboostai@gmail.com';
-const profileRole = profile?.role || (isAdmin ? 'admin' : 'client');
+    const isReferralAdmin = session.user.email === 'primoreferral@gmail.com';
+    const profileRole = profile?.role || (isAdmin ? 'admin' : isReferralAdmin ? 'referral_admin' : 'client');
 
     const userResult: User = {
       id: session.user.id,
@@ -519,7 +521,7 @@ const profileRole = profile?.role || (isAdmin ? 'admin' : 'client');
       lastLogin: new Date().toISOString(),
       hasSeenProfilePrompt: profile.has_seen_profile_prompt || false,
       resumesCreatedCount: profile.resumes_created_count || 0,
-      role: profileRole as 'admin' | 'client',
+      role: profileRole as 'admin' | 'referral_admin' | 'client',
       resumeHeadline: profile.resume_headline || undefined,
       currentLocation: profile.current_location || undefined,
       educationDetails: profile.education_details || undefined,
