@@ -1,5 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
+import { useSEO } from "../../hooks/useSEO";
 import {
   Users,
   Target,
@@ -60,6 +61,13 @@ const itemVariants = {
 export const AboutUs: React.FC = () => {
   const navigate = useNavigate();
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
+
+  useSEO({
+    title: 'About Us',
+    description: 'Learn about PrimoBoost AI — the AI-powered resume optimization platform trusted by 50,000+ professionals to land more interviews.',
+    canonical: '/about',
+    ogType: 'website',
+  });
 
   const stats = [
     { number: "50,000+", label: "Resumes Optimized", icon: <TrendingUp className="w-5 h-5" />, microcopy: "Trusted by professionals worldwide" },

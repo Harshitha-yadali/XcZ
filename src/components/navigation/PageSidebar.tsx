@@ -104,8 +104,8 @@ export const PageSidebar: React.FC<PageSidebarProps> = () => {
     const active = isActive(item.path);
 
     return (
-      <div 
-        key={item.id} 
+      <div
+        key={item.id}
         ref={(el) => (itemRefs.current[item.id] = el)}
         className="relative"
         onMouseEnter={() => !isExpanded && setHoveredItem(item.id)}
@@ -113,16 +113,24 @@ export const PageSidebar: React.FC<PageSidebarProps> = () => {
       >
         <motion.button
           onClick={() => handleNavigation(item.path)}
-          className={`w-full flex items-center ${isExpanded ? 'justify-start gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-all duration-200 ${
+          className={`relative w-full flex items-center ${isExpanded ? 'justify-start gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors duration-150 ${
             active
-              ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8]'
-              : 'text-[#7A8CAA] hover:text-[#00E6B8] hover:bg-[rgba(0,230,184,0.15)]'
+              ? 'text-[#00E6B8]'
+              : 'text-[#7A8CAA] hover:text-[#00E6B8]'
           }`}
-          whileTap={{ scale: 0.95 }}
+          whileTap={{ scale: 0.93 }}
         >
-          <span className="flex-shrink-0">{item.icon}</span>
+          {active && (
+            <motion.div
+              layoutId="sidebar-active-pill"
+              className="absolute inset-0 rounded-lg bg-[rgba(0,230,184,0.14)]"
+              initial={false}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            />
+          )}
+          <span className="relative flex-shrink-0">{item.icon}</span>
           {isExpanded && (
-            <span className="text-sm font-medium text-slate-200 transition-opacity duration-200">
+            <span className="relative text-sm font-medium text-slate-200 transition-opacity duration-200">
               {item.label}
             </span>
           )}
@@ -138,9 +146,10 @@ export const PageSidebar: React.FC<PageSidebarProps> = () => {
   return (
     <>
       <motion.aside
-        initial={{ width: 64 }}
-        animate={{ width: isExpanded ? 232 : 64 }}
-        className="fixed left-0 top-14 sm:top-16 bottom-0 z-30 hidden md:flex flex-col bg-[#05131A] backdrop-blur-sm border-r border-[#0c1d25] transition-[width]"
+        initial={{ x: -64, opacity: 0 }}
+        animate={{ x: 0, opacity: 1, width: isExpanded ? 232 : 64 }}
+        transition={{ type: 'spring', stiffness: 280, damping: 28, opacity: { duration: 0.3 } }}
+        className="fixed left-0 top-14 sm:top-16 bottom-0 z-30 hidden md:flex flex-col bg-[#05131A] backdrop-blur-sm border-r border-[#0c1d25]"
       >
         {/* Tools Section */}
         <div className="flex-1 overflow-y-auto px-2 pt-3">

@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion, useInView } from 'framer-motion';
+import React, { useEffect, useRef } from 'react';
+import { motion, useInView, animate } from 'framer-motion';
 import { TrendingUp, FileText, Star, Calendar } from 'lucide-react';
 import { Card } from '../common/Card';
 
@@ -7,17 +7,40 @@ const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.2 },
+    transition: { staggerChildren: 0.12, delayChildren: 0.1 },
   },
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, y: 24, scale: 0.96 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: 'easeOut' as const },
+    scale: 1,
+    transition: { duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] as const },
   },
+};
+
+const CountUp: React.FC<{
+  to: number;
+  format: (v: number) => string;
+  isInView: boolean;
+}> = ({ to, format, isInView }) => {
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!isInView || !spanRef.current) return;
+    const controls = animate(0, to, {
+      duration: 2,
+      ease: [0.25, 0.46, 0.45, 0.94],
+      onUpdate(v) {
+        if (spanRef.current) spanRef.current.textContent = format(v);
+      },
+    });
+    return () => controls.stop();
+  }, [isInView, to, format]);
+
+  return <span ref={spanRef}>{format(0)}</span>;
 };
 
 interface StatsSectionProps {
@@ -35,7 +58,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
 
   const stats = [
     {
-      number: scoreChecksCompleted.toLocaleString(),
+      rawValue: scoreChecksCompleted,
+      format: (v: number) => Math.round(v).toLocaleString(),
       label: 'Resume Score Checks',
       icon: <TrendingUp className="w-5 h-5" />,
       microcopy: 'Completed by members to optimize their resumes',
@@ -44,7 +68,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
       accentText: 'text-emerald-400',
     },
     {
-      number: globalResumesCreated.toLocaleString(),
+      rawValue: globalResumesCreated,
+      format: (v: number) => Math.round(v).toLocaleString(),
       label: 'Resumes Created',
       icon: <FileText className="w-5 h-5" />,
       microcopy: 'Trusted by thousands of job seekers worldwide',
@@ -53,7 +78,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
       accentText: 'text-sky-400',
     },
     {
-      number: '95%',
+      rawValue: 95,
+      format: (v: number) => `${Math.round(v)}%`,
       label: 'Success Rate',
       icon: <TrendingUp className="w-5 h-5" />,
       microcopy: 'Achieved by our AI-driven approach',
@@ -62,7 +88,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
       accentText: 'text-emerald-400',
     },
     {
-      number: '200+',
+      rawValue: 200,
+      format: (v: number) => `${Math.round(v)}+`,
       label: 'Sessions Completed',
       icon: <Calendar className="w-5 h-5" />,
       microcopy: '1:1 expert sessions with career guidance',
@@ -71,7 +98,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
       accentText: 'text-teal-400',
     },
     {
-      number: '4.9/5',
+      rawValue: 4.9,
+      format: (v: number) => `${v.toFixed(1)}/5`,
       label: 'User Rating',
       icon: <Star className="w-5 h-5" />,
       microcopy: 'From satisfied professionals worldwide',
@@ -94,8 +122,8 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
             <motion.div
               key={stat.label}
               variants={itemVariants}
-              whileHover={{ y: -4, scale: 1.01 }}
-              transition={{ type: 'spring', stiffness: 300 }}
+              whileHover={{ y: -5, scale: 1.02 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 24 }}
             >
               <Card
                 padding="lg"
@@ -103,15 +131,16 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
               >
                 <motion.div
                   className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-b ${stat.accentBg} ${stat.accentRing} border flex-shrink-0`}
-                  whileHover={{ scale: 1.05 }}
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  transition={{ type: 'spring', stiffness: 300 }}
                 >
                   {React.cloneElement(stat.icon, {
                     className: `w-4 h-4 sm:w-5 sm:h-5 ${stat.accentText}`,
                   })}
                 </motion.div>
                 <div className="space-y-0.5 sm:space-y-1 min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold text-white leading-tight truncate">
-                    {stat.number}
+                  <div className="text-xl sm:text-2xl font-bold text-white leading-tight tabular-nums">
+                    <CountUp to={stat.rawValue} format={stat.format} isInView={isStatsInView} />
                   </div>
                   <div className="text-xs sm:text-sm font-medium text-[#C4CFDE] leading-snug">
                     {stat.label}

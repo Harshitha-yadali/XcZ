@@ -1,5 +1,6 @@
 // src/components/pages/Tutorials.tsx
 import React, { useState } from 'react';
+import { useSEO } from '../../hooks/useSEO';
 import { motion } from 'framer-motion';
 import {
   Play,
@@ -38,6 +39,13 @@ const itemVariants = {
 export const Tutorials: React.FC = () => {
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
   const [selectedCategory, setSelectedCategory] = useState('all');
+
+  useSEO({
+    title: 'Tutorials & Guides',
+    description: 'Step-by-step tutorials on resume optimization, ATS scoring, job matching, and interview prep with PrimoBoost AI.',
+    canonical: '/tutorials',
+    ogType: 'website',
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [isVideoModalOpen, setIsVideoModal] = useState(false);
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');

@@ -7,6 +7,7 @@ import { AuthModal } from './components/auth/AuthModal';
 import { paymentService } from './services/paymentService';
 import { AlertModal } from './components/AlertModal';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { OfferOverlay } from './components/OfferOverlay';
 import { DiwaliOfferBanner } from './components/DiwaliOfferBanner';
 import { SnowEffect, SantaSleigh } from './components/ui/ChristmasTheme';
@@ -66,6 +67,7 @@ const CompanyGamePage = lazy(() => import('./components/pages/CompanyGamePage').
 const AccenturePathFinderPage = lazy(() => import('./components/pages/AccenturePathFinderPage').then(m => ({ default: m.AccenturePathFinderPage })));
 const CognitivePathFinderPage = lazy(() => import('./components/pages/CognitivePathFinderPage').then(m => ({ default: m.CognitivePathFinderPage })));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const NotFoundPage = lazy(() => import('./components/pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const KeyFinderPage = lazy(() => import('./components/pages/KeyFinderPage').then(m => ({ default: m.KeyFinderPage })));
 const BubbleSelectionPage = lazy(() => import('./components/pages/BubbleSelectionPage').then(m => ({ default: m.BubbleSelectionPage })));
 const SpatialReasoningDemoPage = lazy(() => import('./pages/SpatialReasoningDemoPage').then(m => ({ default: m.SpatialReasoningDemoPage })));
@@ -484,6 +486,14 @@ const handleDiwaliCTAClick = useCallback(() => {
 
         <ErrorBoundary>
         <Suspense fallback={<SuspenseFallback />}>
+        <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={location.pathname}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
         <Routes>
           <Route path="/" element={<><HomePage {...commonPageProps} /><Suspense fallback={null}><FloatingChatbot /></Suspense></>} />
           <Route
@@ -695,7 +705,10 @@ const handleDiwaliCTAClick = useCallback(() => {
               </AdminRoute>
             }
           />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </motion.div>
+        </AnimatePresence>
         </Suspense>
         </ErrorBoundary>
 

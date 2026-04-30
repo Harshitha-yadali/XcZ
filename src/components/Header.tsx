@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { AuthModal } from './auth/AuthModal';
 import { DeviceManagement } from './security/DeviceManagement';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 
 interface HeaderProps {
   children?: React.ReactNode;
@@ -28,6 +29,15 @@ export const Header: React.FC<HeaderProps> = ({
   const [showDeviceManagement, setShowDeviceManagement] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const { scrollY } = useScroll();
+  const headerBg = useTransform(scrollY, [0, 60], ['rgba(15,23,42,0.85)', 'rgba(15,23,42,0.98)']);
+  const headerShadow = useTransform(
+    scrollY,
+    [0, 60],
+    ['0 0 0 0 transparent', '0 4px 32px rgba(0,0,0,0.35)']
+  );
+  const borderOpacity = useTransform(scrollY, [0, 60], [0.3, 0.6]);
 
   // Add this console.log statement to inspect the isAuthenticated value
   console.log('Header: isAuthenticated =', isAuthenticated);
@@ -89,7 +99,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="bg-slate-900/95 backdrop-blur-xl shadow-lg border-b border-slate-800/50 sticky top-0 z-50">
+      <motion.header
+        style={{ backgroundColor: headerBg, boxShadow: headerShadow }}
+        className="backdrop-blur-xl border-b border-slate-800/50 sticky top-0 z-50"
+      >
         <div className="container-responsive">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
@@ -162,26 +175,34 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
 
                   {/* User Dropdown Menu */}
-                  {showUserMenu && (
-                    <div className="absolute right-0 top-full mt-2 w-56 bg-slate-900 rounded-xl shadow-xl border border-slate-700/50 py-2 z-50 overflow-hidden backdrop-blur-xl">
-                      <div className="px-4 py-3 border-b border-slate-700/50 bg-slate-800/50">
-                        <p className="text-sm font-semibold text-slate-100 truncate">{user.name}</p>
-                        <p className="text-xs text-slate-400 truncate">{user.email}</p>
-                      </div>
-                      <button
-                        onClick={handleLogout}
-                        disabled={isLoggingOut}
-                        className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center space-x-3 disabled:opacity-50 min-h-touch"
+                  <AnimatePresence>
+                    {showUserMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                        transition={{ duration: 0.18, ease: [0.25, 0.46, 0.45, 0.94] }}
+                        className="absolute right-0 top-full mt-2 w-56 bg-slate-900 rounded-xl shadow-xl border border-slate-700/50 py-2 z-50 overflow-hidden backdrop-blur-xl"
                       >
-                        {isLoggingOut ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <LogOut className="w-4 h-4" />
-                        )}
-                        <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span>
-                      </button>
-                    </div>
-                  )}
+                        <div className="px-4 py-3 border-b border-slate-700/50 bg-slate-800/50">
+                          <p className="text-sm font-semibold text-slate-100 truncate">{user.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                        </div>
+                        <button
+                          onClick={handleLogout}
+                          disabled={isLoggingOut}
+                          className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center space-x-3 disabled:opacity-50 min-h-touch"
+                        >
+                          {isLoggingOut ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <LogOut className="w-4 h-4" />
+                          )}
+                          <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               ) : (
                 <button
@@ -222,7 +243,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       {/* Auth Modal */}
       <AuthModal

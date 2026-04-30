@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useSEO } from '../../hooks/useSEO';
 import {
   Trophy,
   Star,
@@ -31,6 +32,13 @@ export const GamingAptitudePage: React.FC<GamingAptitudePageProps> = ({
   const navigate = useNavigate();
   const { user } = useAuth();
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
+
+  useSEO({
+    title: 'Gaming Aptitude Tests',
+    description: 'Practice company-specific aptitude and reasoning tests in a gamified format. Improve your chances for top company placements.',
+    canonical: '/gaming',
+    ogType: 'website',
+  });
 
   const [, setCompanies] = useState<CompanyWithProgress[]>([]);
   const [loading, setLoading] = useState(true);

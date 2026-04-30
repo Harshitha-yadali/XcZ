@@ -27,12 +27,22 @@ const containerVariants = {
 };
 
 const cardVariants = {
-  hidden: { opacity: 0, y: 24 },
+  hidden: { opacity: 0, y: 28, scale: 0.97 },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: 'easeOut' as const },
+    scale: 1,
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] as const },
   },
+};
+
+const accentGlowMap: Record<string, string> = {
+  emerald: '0 20px 45px -8px rgba(16,185,129,0.28)',
+  cyan: '0 20px 45px -8px rgba(6,182,212,0.28)',
+  amber: '0 20px 45px -8px rgba(245,158,11,0.28)',
+  teal: '0 20px 45px -8px rgba(20,184,166,0.28)',
+  sky: '0 20px 45px -8px rgba(14,165,233,0.28)',
+  rose: '0 20px 45px -8px rgba(244,63,94,0.28)',
 };
 
 interface ServiceCard {
@@ -173,15 +183,25 @@ export const ServicesShowcase: React.FC<ServicesShowcaseProps> = ({
     <motion.div
       key={card.id}
       variants={cardVariants}
-      whileHover={{ y: -6, scale: 1.01 }}
+      whileHover={{ y: -7, scale: 1.015, boxShadow: accentGlowMap[card.accent] ?? accentGlowMap.emerald }}
       whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
       className="group cursor-pointer"
       onClick={() => handleCardClick(card)}
     >
       <div
-        className={`relative h-full rounded-2xl p-6 bg-[#0D1B2A]/80 border ${card.borderColor} backdrop-blur-sm transition-all duration-300 overflow-hidden`}
+        className={`relative h-full rounded-2xl p-6 bg-[#0D1B2A]/80 border ${card.borderColor} backdrop-blur-sm transition-colors duration-300 overflow-hidden`}
       >
-        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        {/* shimmer sweep on hover */}
+        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none overflow-hidden rounded-2xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent" />
+          <motion.div
+            className="absolute top-0 left-0 h-full w-1/3 bg-gradient-to-r from-transparent via-white/[0.06] to-transparent skew-x-12"
+            initial={{ x: '-100%' }}
+            whileInView={{ x: '350%' }}
+            transition={{ duration: 0.7, ease: 'easeInOut' }}
+          />
+        </div>
 
         {card.tag && (
           <div className="absolute -top-px right-6">

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle, ExternalLink, AlertTriangle, Info } from 'lucide-react';
+import { useSEO } from '../../hooks/useSEO';
 import { useTheme } from '../../contexts/ThemeContext';
 import { portfolioService } from '../../services/portfolioService';
 import { UserType, TemplateId, TEMPLATE_CONFIGS } from '../../types/portfolio';
@@ -18,6 +19,13 @@ export const PortfolioBuilderPage: React.FC<PortfolioBuilderPageProps> = ({
   onShowAuth,
 }) => {
   const { isChristmasMode, colors } = useTheme();
+
+  useSEO({
+    title: 'Portfolio Builder',
+    description: 'Build a professional portfolio website from your resume in minutes. AI-powered portfolio generation for freshers and experienced professionals.',
+    canonical: '/portfolio-builder',
+    ogType: 'website',
+  });
   const [step, setStep] = useState<'upload' | 'type' | 'template' | 'processing' | 'success'>('type');
   const [userType, setUserType] = useState<UserType>('fresher');
   const [targetRole, setTargetRole] = useState('');

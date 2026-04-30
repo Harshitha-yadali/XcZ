@@ -68,12 +68,20 @@ export const AITechSection: React.FC = () => {
               whileHover={{ y: -6, scale: 1.02 }}
               className="text-center rounded-2xl sm:rounded-3xl p-5 sm:p-6 backdrop-blur-sm bg-white/5 border border-white/10 shadow-xl hover:shadow-2xl hover:border-white/20 transition-all duration-300"
             >
-              <div className="relative mx-auto mb-4 sm:mb-5">
-                <div
+              <div className="relative mx-auto mb-4 sm:mb-5 flex items-center justify-center">
+                <motion.div
                   className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto flex items-center justify-center ${card.bg}`}
+                  whileHover={{ scale: 1.12 }}
+                  transition={{ type: 'spring', stiffness: 280 }}
                 >
+                  {/* pulse ring */}
+                  <motion.div
+                    className="absolute inset-0 rounded-full border border-current opacity-30"
+                    animate={{ scale: [1, 1.35, 1], opacity: [0.3, 0, 0.3] }}
+                    transition={{ duration: 2.5, repeat: Infinity, delay: i * 0.4, ease: 'easeOut' }}
+                  />
                   {card.icon}
-                </div>
+                </motion.div>
               </div>
               <h4 className={`font-semibold mb-2 text-base sm:text-lg ${card.titleClass}`}>
                 {card.title}

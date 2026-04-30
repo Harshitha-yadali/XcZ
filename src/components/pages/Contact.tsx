@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { useSEO } from '../../hooks/useSEO';
 import { DarkPageWrapper, ChristmasTree, GiftBox } from '../ui';
 import { Card } from '../common/Card';
 import { PageSidebar } from '../navigation/PageSidebar';
@@ -31,6 +32,13 @@ const itemVariants = {
 
 export const Contact: React.FC = () => {
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
+
+  useSEO({
+    title: 'Contact Us',
+    description: 'Get in touch with the PrimoBoost AI team. We\'re here to help with resume optimization, ATS scoring, and career growth.',
+    canonical: '/contact',
+    ogType: 'website',
+  });
 
   const contactInfo = [
     {
