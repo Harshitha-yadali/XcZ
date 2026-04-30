@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -12,8 +12,13 @@ import {
   Download,
   Video,
   ExternalLink,
+  Upload,
+  FileText,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { sessionBookingService } from '../../services/sessionBookingService';
+import { useAuth } from '../../contexts/AuthContext';
 import type { BookingResult } from '../../types/session';
 
 interface SessionBookingSuccessProps {
@@ -23,6 +28,8 @@ interface SessionBookingSuccessProps {
   meetLink?: string;
 }
 
+type UploadState = 'idle' | 'uploading' | 'done' | 'error';
+
 export const SessionBookingSuccess: React.FC<SessionBookingSuccessProps> = ({
   bookingResult,
   selectedDate,
@@ -30,7 +37,61 @@ export const SessionBookingSuccess: React.FC<SessionBookingSuccessProps> = ({
   meetLink,
 }) => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const slotLabel = sessionBookingService.getSlotLabel(selectedSlot);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFileSelect = async (file: File) => {
+    if (!bookingResult.booking_id || !user) return;
+    if (!['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)) {
+      setUploadError('Please upload a PDF or Word document.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File must be under 10 MB.');
+      return;
+    }
+
+    setUploadState('uploading');
+    setUploadError(null);
+
+    const uploadResult = await sessionBookingService.uploadPreparationResume(
+      bookingResult.booking_id,
+      user.id,
+      file
+    );
+
+    if (!uploadResult.success) {
+      setUploadState('error');
+      setUploadError(uploadResult.error || 'Upload failed. Please try again.');
+      return;
+    }
+
+    await sessionBookingService.savePreparationDetails(bookingResult.booking_id, {
+      preparationNotes: '',
+      resumeFileName: uploadResult.fileName || file.name,
+      resumeStoragePath: uploadResult.storagePath || '',
+    });
+
+    setUploadedFileName(uploadResult.fileName || file.name);
+    setUploadState('done');
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileSelect(file);
+  };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -170,6 +231,78 @@ export const SessionBookingSuccess: React.FC<SessionBookingSuccessProps> = ({
             {bookingResult.bonus_credits} JD Optimization Credits have been added to your
             account!
           </p>
+        </motion.div>
+      )}
+
+      {/* Resume Upload */}
+      {bookingResult.booking_id && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.75 }}
+          className="mb-6"
+        >
+          <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+            <p className="text-white font-semibold text-sm mb-1 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              Upload Your Resume
+            </p>
+            <p className="text-slate-400 text-xs mb-3">
+              Share your resume so the mentor can review it before your session.
+            </p>
+
+            {uploadState === 'done' ? (
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2.5">
+                <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span className="text-emerald-300 text-xs font-medium truncate">{uploadedFileName}</span>
+                <button
+                  onClick={() => { setUploadState('idle'); setUploadedFileName(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                  className="ml-auto text-slate-400 hover:text-white text-xs underline flex-shrink-0"
+                >
+                  Replace
+                </button>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`relative border-2 border-dashed rounded-xl transition-colors ${
+                  isDragging ? 'border-emerald-400 bg-emerald-500/10' : 'border-slate-600 hover:border-emerald-500/60'
+                }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={handleInputChange}
+                  disabled={uploadState === 'uploading'}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                  style={{ touchAction: 'manipulation' }}
+                />
+                <div className="flex items-center gap-3 px-4 py-3 pointer-events-none">
+                  {uploadState === 'uploading' ? (
+                    <Loader2 className="w-5 h-5 text-emerald-400 animate-spin flex-shrink-0" />
+                  ) : (
+                    <Upload className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                  )}
+                  <div className="text-left">
+                    <p className="text-slate-300 text-sm font-medium">
+                      {uploadState === 'uploading' ? 'Uploading…' : 'Tap to upload'}
+                    </p>
+                    <p className="text-slate-500 text-xs">PDF or Word · max 10 MB</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="flex items-center gap-2 mt-2 text-red-400 text-xs">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {uploadError}
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 

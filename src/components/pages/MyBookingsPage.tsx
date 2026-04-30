@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,6 +15,9 @@ import {
   UserCheck,
   ChevronRight,
   ExternalLink,
+  Upload,
+  FileText,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { sessionBookingService } from '../../services/sessionBookingService';
@@ -241,6 +244,7 @@ export const MyBookingsPage: React.FC = () => {
               onCancel={handleCancel}
               onShowCancelConfirm={setShowCancelConfirm}
               onNavigate={navigate}
+              userId={user?.id}
             />
           ) : (
             <WebinarsTab
@@ -257,6 +261,8 @@ export const MyBookingsPage: React.FC = () => {
   );
 };
 
+type CardUploadState = 'idle' | 'uploading' | 'done' | 'error';
+
 interface SessionsTabProps {
   loading: boolean;
   upcoming: SessionBooking[];
@@ -267,6 +273,7 @@ interface SessionsTabProps {
   onCancel: (id: string) => void;
   onShowCancelConfirm: (id: string | null) => void;
   onNavigate: (path: string) => void;
+  userId?: string;
 }
 
 const SessionsTab: React.FC<SessionsTabProps> = ({
@@ -279,6 +286,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
   onCancel,
   onShowCancelConfirm,
   onNavigate,
+  userId,
 }) => {
   if (loading) {
     return (
@@ -339,6 +347,7 @@ const SessionsTab: React.FC<SessionsTabProps> = ({
                     showCancelConfirm={showCancelConfirm}
                     onCancel={onCancel}
                     onShowCancelConfirm={onShowCancelConfirm}
+                    userId={userId}
                   />
                 ))}
               </div>
@@ -381,6 +390,7 @@ interface SessionCardProps {
   showCancelConfirm: string | null;
   onCancel: (id: string) => void;
   onShowCancelConfirm: (id: string | null) => void;
+  userId?: string;
 }
 
 const SessionCard: React.FC<SessionCardProps> = ({
@@ -390,9 +400,47 @@ const SessionCard: React.FC<SessionCardProps> = ({
   showCancelConfirm,
   onCancel,
   onShowCancelConfirm,
+  userId,
 }) => {
   const status = bookingStatusConfig[booking.status as BookingStatus] || bookingStatusConfig.confirmed;
   const slotLabel = sessionBookingService.getSlotLabel(booking.time_slot);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadState, setUploadState] = useState<CardUploadState>(
+    booking.resume_file_name ? 'done' : 'idle'
+  );
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(
+    booking.resume_file_name || null
+  );
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !userId) return;
+    if (!['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)) {
+      setUploadError('PDF or Word only.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('Max 10 MB.');
+      return;
+    }
+    setUploadState('uploading');
+    setUploadError(null);
+
+    const result = await sessionBookingService.uploadPreparationResume(booking.id, userId, file);
+    if (!result.success) {
+      setUploadState('error');
+      setUploadError(result.error || 'Upload failed.');
+      return;
+    }
+    await sessionBookingService.savePreparationDetails(booking.id, {
+      preparationNotes: booking.preparation_notes || '',
+      resumeFileName: result.fileName || file.name,
+      resumeStoragePath: result.storagePath || '',
+    });
+    setUploadedFileName(result.fileName || file.name);
+    setUploadState('done');
+  };
 
   return (
     <motion.div
@@ -440,6 +488,56 @@ const SessionCard: React.FC<SessionCardProps> = ({
         </a>
       )}
 
+      {/* Resume upload for upcoming confirmed sessions */}
+      {isUpcoming && userId && (
+        <div className="mt-3 pt-3 border-t border-slate-700/50">
+          {uploadState === 'done' ? (
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+              <span className="text-emerald-300 text-xs truncate flex-1">{uploadedFileName}</span>
+              <button
+                onClick={() => { setUploadState('idle'); setUploadedFileName(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                className="text-slate-500 hover:text-slate-300 text-xs underline flex-shrink-0"
+              >
+                Replace
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onChange={handleFileChange}
+                disabled={uploadState === 'uploading'}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                style={{ touchAction: 'manipulation' }}
+              />
+              <button
+                type="button"
+                disabled={uploadState === 'uploading'}
+                className="relative w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-slate-600 hover:border-emerald-500/60 transition-colors text-slate-400 hover:text-slate-200 pointer-events-none"
+              >
+                {uploadState === 'uploading' ? (
+                  <Loader2 className="w-4 h-4 text-emerald-400 animate-spin flex-shrink-0" />
+                ) : (
+                  <Upload className="w-4 h-4 flex-shrink-0" />
+                )}
+                <span className="text-xs font-medium">
+                  {uploadState === 'uploading' ? 'Uploading…' : 'Upload Resume'}
+                </span>
+                <FileText className="w-3.5 h-3.5 ml-auto flex-shrink-0 opacity-50" />
+              </button>
+            </div>
+          )}
+          {uploadError && (
+            <div className="flex items-center gap-1 mt-1.5 text-red-400 text-xs">
+              <AlertCircle className="w-3 h-3 flex-shrink-0" />
+              {uploadError}
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 };
