@@ -19,9 +19,8 @@ function getReferralAdminEmails(): string[] {
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
 
-  const fallbackPrimary = (
-    Deno.env.get('REFERRAL_ADMIN_EMAIL') || 'ityaswanthamara107@gmail.com'
-  ).trim().toLowerCase();
+  const fallbackPrimary = (Deno.env.get('REFERRAL_ADMIN_EMAIL') || 'yaswanthamara107@gmail.com')
+    .trim().toLowerCase();
 
   return Array.from(
     new Set([
