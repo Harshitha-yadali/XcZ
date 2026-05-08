@@ -1,7 +1,8 @@
 import { openrouter } from './aiProxyService';
+import { DEFAULT_OPENROUTER_MODEL } from './openrouterModelConfig';
 
 class DeepSeekService {
-  private static readonly JOB_WRITER_MODEL = 'google/gemma-3n-e4b-it:free';
+  private static readonly JOB_WRITER_MODEL = DEFAULT_OPENROUTER_MODEL;
 
   private async callAI(systemPrompt: string, userPrompt: string, temperature = 0.7): Promise<string> {
     return openrouter.chatWithSystem(systemPrompt, userPrompt, {

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-StoredCredential -Target \"git:https://github.com\" -ErrorAction SilentlyContinue)",
+      "PowerShell(cmdkey /list)",
+      "PowerShell(Select-String -Pattern \"github|Git\" -CaseSensitive:$false)",
+      "Bash(git remote *)",
+      "Bash(git pull *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(git init *)",
+      "Bash(git reset *)"
+    ]
+  }
+}

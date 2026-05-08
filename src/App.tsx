@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy, useLayoutEffect } from 'react';
 import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
@@ -349,6 +349,20 @@ const handleDiwaliCTAClick = useCallback(() => {
     navigate(`/reset-password${fullHash}`, { replace: true });
   }
 }, [location.pathname, navigate]);
+
+  useLayoutEffect(() => {
+    const hashTargetId = location.hash ? decodeURIComponent(location.hash.slice(1)) : '';
+    const hashTarget = hashTargetId ? document.getElementById(hashTargetId) : null;
+
+    if (hashTarget) {
+      hashTarget.scrollIntoView({ block: 'start' });
+      return;
+    }
+
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [location.pathname, location.search, location.hash]);
 
   useEffect(() => {
   console.log(

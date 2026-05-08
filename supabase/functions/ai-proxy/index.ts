@@ -12,6 +12,9 @@ const jsonResponse = (data: any, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+const DEFAULT_OPENROUTER_MODEL =
+  Deno.env.get("OPENROUTER_DEFAULT_MODEL")?.trim() || "openrouter/free";
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -40,7 +43,7 @@ async function handleOpenRouter(action: string, params: any) {
 
   switch (action) {
     case "chat": {
-      const { prompt, model = "google/gemma-3n-e4b-it:free", temperature = 0.3, maxTokens = 4000 } = params;
+      const { prompt, model = DEFAULT_OPENROUTER_MODEL, temperature = 0.3, maxTokens = 4000 } = params;
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -58,7 +61,7 @@ async function handleOpenRouter(action: string, params: any) {
     }
 
     case "chat_with_system": {
-      const { systemPrompt, userPrompt, model = "google/gemma-3n-e4b-it:free", temperature = 0.3 } = params;
+      const { systemPrompt, userPrompt, model = DEFAULT_OPENROUTER_MODEL, temperature = 0.3 } = params;
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {

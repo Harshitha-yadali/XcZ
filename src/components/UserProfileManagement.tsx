@@ -42,6 +42,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import { openrouter } from '../services/aiProxyService';
+import { DEFAULT_OPENROUTER_MODEL } from '../services/openrouterModelConfig';
 import { ProfileBookingsTab } from './profile/ProfileBookingsTab';
 import { ProfileUsageTab } from './profile/ProfileUsageTab';
 import { ProfilePaymentsTab } from './profile/ProfilePaymentsTab';
@@ -153,7 +154,7 @@ const mockPaymentService = {
       'You are an expert ATS resume parsing assistant.',
       prompt,
       {
-        model: 'google/gemma-3n-e4b-it:free',
+        model: DEFAULT_OPENROUTER_MODEL,
         temperature: 0.1,
       }
     );

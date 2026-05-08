@@ -1,8 +1,11 @@
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  getOpenRouterModelsToTry,
+  shouldRetryWithNextOpenRouterModel,
+} from './openrouterModelConfig';
 
 const PROXY_URL = getSupabaseEdgeFunctionUrl('ai-proxy');
-const DEFAULT_OPENROUTER_MODEL = 'google/gemma-3n-e4b-it:free';
-const OPENROUTER_MODEL_FALLBACKS = [DEFAULT_OPENROUTER_MODEL, 'google/gemma-3n-e4b-it'] as const;
 
 const callProxy = async (service: string, action: string, params: Record<string, unknown> = {}) => {
   const isAbsoluteUrl = /^https?:\/\//i.test(PROXY_URL);
@@ -53,26 +56,9 @@ const callProxy = async (service: string, action: string, params: Record<string,
   return data;
 };
 
-const isRateLimitLikeError = (error: unknown) => {
-  if (!(error instanceof Error)) return false;
-  return /(429|rate[-\s]?limit|temporarily rate-limited|too many requests|provider returned error)/i.test(
-    error.message
-  );
-};
-
-const getModelsToTry = (requestedModel?: string) => {
-  const normalizedRequestedModel = requestedModel?.trim();
-  if (normalizedRequestedModel) {
-    return normalizedRequestedModel === DEFAULT_OPENROUTER_MODEL
-      ? [...OPENROUTER_MODEL_FALLBACKS]
-      : [normalizedRequestedModel];
-  }
-  return [...OPENROUTER_MODEL_FALLBACKS];
-};
-
 export const openrouter = {
   async chat(prompt: string, options: { model?: string; temperature?: number; maxTokens?: number } = {}) {
-    const modelsToTry = getModelsToTry(options.model);
+    const modelsToTry = getOpenRouterModelsToTry(options.model);
     let lastError: unknown = null;
 
     for (let i = 0; i < modelsToTry.length; i += 1) {
@@ -87,7 +73,7 @@ export const openrouter = {
         return result.choices?.[0]?.message?.content || '';
       } catch (error) {
         lastError = error;
-        const shouldRetryWithNext = isRateLimitLikeError(error) && i < modelsToTry.length - 1;
+        const shouldRetryWithNext = shouldRetryWithNextOpenRouterModel(error, i, modelsToTry);
         if (!shouldRetryWithNext) throw error;
       }
     }
@@ -96,7 +82,7 @@ export const openrouter = {
   },
 
   async chatWithSystem(systemPrompt: string, userPrompt: string, options: { model?: string; temperature?: number } = {}) {
-    const modelsToTry = getModelsToTry(options.model);
+    const modelsToTry = getOpenRouterModelsToTry(options.model);
     let lastError: unknown = null;
 
     for (let i = 0; i < modelsToTry.length; i += 1) {
@@ -111,7 +97,7 @@ export const openrouter = {
         return result.choices?.[0]?.message?.content || '';
       } catch (error) {
         lastError = error;
-        const shouldRetryWithNext = isRateLimitLikeError(error) && i < modelsToTry.length - 1;
+        const shouldRetryWithNext = shouldRetryWithNextOpenRouterModel(error, i, modelsToTry);
         if (!shouldRetryWithNext) throw error;
       }
     }

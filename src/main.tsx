@@ -6,6 +6,10 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { BrowserRouter } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <AuthProvider>
@@ -17,4 +21,3 @@ createRoot(document.getElementById('root')!).render(
     </AuthProvider>
   </ErrorBoundary>
 );
-
