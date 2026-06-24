@@ -1,4 +1,9 @@
-import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import {
+  SUPABASE_ANON_KEY,
+  SUPABASE_DIRECT_URL,
+  fetchWithSupabaseFallback,
+  getSupabaseEdgeFunctionUrl,
+} from '../config/env';
 import {
   DEFAULT_OPENROUTER_MODEL,
   getOpenRouterModelsToTry,
@@ -6,10 +11,41 @@ import {
 } from './openrouterModelConfig';
 
 const PROXY_URL = getSupabaseEdgeFunctionUrl('ai-proxy');
+const buildEdgeFunctionUrl = (baseUrl: string, functionName: string) =>
+  `${baseUrl.replace(/\/+$/, '')}/functions/v1/${functionName.replace(/^\/+/, '')}`;
+const DIRECT_PROXY_URL = buildEdgeFunctionUrl(SUPABASE_DIRECT_URL, 'ai-proxy');
+const RETRYABLE_PROXY_STATUSES = new Set([502, 503, 504, 522, 524, 546]);
+const RETRYABLE_PROXY_BODY_PATTERNS = [
+  'worker_resource_limit',
+  'not having enough compute resources',
+  'function failed due to not having enough compute resources',
+];
+
+const getProxyAttemptUrls = () =>
+  Array.from(
+    new Set([PROXY_URL, DIRECT_PROXY_URL].filter((url) => /^https?:\/\//i.test(url)))
+  );
+
+const shouldRetryOnDirectRoute = (
+  status: number,
+  responseText: string,
+  currentUrl: string,
+  attemptIndex: number,
+  attemptUrls: string[],
+) => {
+  if (attemptIndex >= attemptUrls.length - 1) return false;
+  if (currentUrl === DIRECT_PROXY_URL) return false;
+
+  const normalizedText = responseText.toLowerCase();
+  return (
+    RETRYABLE_PROXY_STATUSES.has(status) ||
+    RETRYABLE_PROXY_BODY_PATTERNS.some((pattern) => normalizedText.includes(pattern))
+  );
+};
 
 const callProxy = async (service: string, action: string, params: Record<string, unknown> = {}) => {
-  const isAbsoluteUrl = /^https?:\/\//i.test(PROXY_URL);
-  if (!isAbsoluteUrl) {
+  const attemptUrls = getProxyAttemptUrls();
+  if (attemptUrls.length === 0) {
     throw new Error(
       'AI proxy URL is not configured. Set VITE_SUPABASE_PUBLIC_URL (or VITE_SUPABASE_URL) in deployment env vars.'
     );
@@ -21,39 +57,56 @@ const callProxy = async (service: string, action: string, params: Record<string,
     );
   }
 
-  const response = await fetchWithSupabaseFallback(PROXY_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-    body: JSON.stringify({ service, action, ...params }),
-  });
+  for (let attemptIndex = 0; attemptIndex < attemptUrls.length; attemptIndex += 1) {
+    const requestUrl = attemptUrls[attemptIndex];
+    const response = await fetchWithSupabaseFallback(requestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ service, action, ...params }),
+    });
 
-  const rawText = await response.text();
-  const data = rawText ? (() => {
-    try {
-      return JSON.parse(rawText);
-    } catch {
-      return null;
+    const rawText = await response.text();
+    const data = rawText
+      ? (() => {
+          try {
+            return JSON.parse(rawText);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
+    if (!response.ok) {
+      const responseError =
+        typeof data?.error === 'string' && data.error.trim()
+          ? data.error.trim()
+          : rawText.trim() || 'Empty response body';
+
+      if (shouldRetryOnDirectRoute(response.status, responseError, requestUrl, attemptIndex, attemptUrls)) {
+        console.warn('AI proxy route failed, retrying against direct Supabase function URL', {
+          status: response.status,
+          requestUrl,
+          fallbackUrl: attemptUrls[attemptIndex + 1],
+        });
+        continue;
+      }
+
+      throw new Error(`AI proxy request failed (${response.status}): ${responseError}`);
     }
-  })() : null;
 
-  if (!response.ok) {
-    const responseError =
-      typeof data?.error === 'string' && data.error.trim()
-        ? data.error.trim()
-        : rawText.trim() || 'Empty response body';
-    throw new Error(`AI proxy request failed (${response.status}): ${responseError}`);
+    if (!data) {
+      throw new Error(
+        `AI proxy returned empty or non-JSON response for ${service}/${action}. URL: ${requestUrl}`
+      );
+    }
+
+    return data;
   }
 
-  if (!data) {
-    throw new Error(
-      `AI proxy returned empty or non-JSON response for ${service}/${action}. URL: ${PROXY_URL}`
-    );
-  }
-
-  return data;
+  throw new Error(`AI proxy request failed for ${service}/${action}`);
 };
 
 export const openrouter = {

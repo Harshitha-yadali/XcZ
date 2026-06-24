@@ -2,7 +2,14 @@ import { ResumeData } from '../types/resume';
 import { ParameterScore, scoreResumeAgainstJD, JDScoringResult } from './jdScoringEngine';
 import { GapItem } from './gapClassificationEngine';
 import { openrouter } from './aiProxyService';
-import { ALL_HARD_SKILLS, ALL_TOOL_SKILLS, CONTACT_PROFILE_WORDS } from '../constants/skillsTaxonomy';
+import {
+  ALL_HARD_SKILLS,
+  ALL_TOOL_SKILLS,
+  CONTACT_PROFILE_WORDS,
+  categorizeSkill,
+  formatSkillName,
+  SKILL_CATEGORIES,
+} from '../constants/skillsTaxonomy';
 
 const IMPACT_VERBS = [
   'Achieved', 'Exceeded', 'Surpassed', 'Delivered', 'Generated', 'Produced',
@@ -654,6 +661,17 @@ const SKILL_BUCKET_ORDER: SkillBucketName[] = [
   'Core Competencies',
 ];
 
+const SKILL_BUCKET_MINIMUMS: Partial<Record<SkillBucketName, number>> = {
+  'Languages': 2,
+  'Frontend': 1,
+  'Backend': 1,
+  'Databases': 1,
+  'Cloud/DevOps': 1,
+  'AI/ML': 1,
+  'Tools': 2,
+  'Core Competencies': 2,
+};
+
 function canonicalizeSkillLabel(skill: string): string {
   const normalized = skill.trim().replace(/\s+/g, ' ');
   const lower = normalized.toLowerCase();
@@ -676,6 +694,8 @@ function canonicalizeSkillLabel(skill: string): string {
     'pytorch': 'PyTorch',
     'nlp': 'NLP',
     'sql': 'SQL',
+    'postgresql': 'PostgreSQL',
+    'postgres': 'PostgreSQL',
     'html5': 'HTML5',
     'css3': 'CSS3',
     'aws': 'AWS',
@@ -683,6 +703,9 @@ function canonicalizeSkillLabel(skill: string): string {
     'gcp': 'GCP',
     'git': 'Git',
     'jira': 'Jira',
+    'sap fiori': 'SAP Fiori',
+    'sapui5': 'SAPUI5',
+    'ui5': 'UI5',
     '.net': '.NET',
     'c#': 'C#',
     'c++': 'C++',
@@ -698,6 +721,143 @@ function canonicalizeSkillLabel(skill: string): string {
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
+}
+
+function expandCompositeSkillLabel(skill: string): string[] {
+  const normalized = skill.trim().replace(/\s+/g, ' ');
+  if (!normalized) return [];
+
+  const explicitParts = normalized
+    .split(/[|,/]/)
+    .map(part => part.trim())
+    .filter(Boolean);
+  if (explicitParts.length > 1) {
+    return explicitParts;
+  }
+
+  const lower = normalized.toLowerCase();
+  const heuristicMatches: string[] = [];
+  if (/\bsap\s*fiori\b/i.test(lower)) heuristicMatches.push('SAP Fiori');
+  if (/\bsapui5\b|\bui5\b/i.test(lower)) heuristicMatches.push('UI5');
+
+  if (heuristicMatches.length > 1) {
+    return heuristicMatches;
+  }
+
+  return [normalized];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function skillAppearsInText(text: string, skill: string): boolean {
+  const normalizedText = text.toLowerCase();
+  const normalizedSkill = skill.toLowerCase().trim();
+  if (!normalizedSkill) return false;
+
+  const escaped = escapeRegExp(normalizedSkill);
+  const pattern = new RegExp(`(^|[^a-z0-9+#.])${escaped}([^a-z0-9+#.]|$)`, 'i');
+  return pattern.test(normalizedText);
+}
+
+function collectResumeEvidenceText(resume: ResumeData): string {
+  return [
+    resume.targetRole || '',
+    resume.summary || '',
+    ...(resume.skills?.flatMap(category => category.list || []) || []),
+    ...(resume.workExperience?.flatMap(experience => [
+      experience.role || '',
+      experience.company || '',
+      ...(experience.bullets || []),
+    ]) || []),
+    ...(resume.projects?.flatMap(project => [
+      project.title || '',
+      ...(project.bullets || []),
+      ...(project.techStack || []),
+    ]) || []),
+    ...(resume.education?.flatMap(education => [
+      education.degree || '',
+      education.school || '',
+    ]) || []),
+  ]
+    .join('\n')
+    .toLowerCase();
+}
+
+function extractSkillsFromResumeEvidence(resume: ResumeData): string[] {
+  const evidenceText = collectResumeEvidenceText(resume);
+  const extracted = new Set<string>();
+  const candidates = [...ALL_HARD_SKILLS, ...ALL_TOOL_SKILLS];
+
+  for (const candidate of candidates) {
+    if (CONTACT_PROFILE_WORDS.has(candidate.toLowerCase())) continue;
+    if (skillAppearsInText(evidenceText, candidate)) {
+      extracted.add(formatSkillName(candidate));
+    }
+  }
+
+  const customHeuristics: Array<{ pattern: RegExp; label: string }> = [
+    { pattern: /\bsap\s*fiori\b/i, label: 'SAP Fiori' },
+    { pattern: /\bsapui5\b/i, label: 'SAPUI5' },
+    { pattern: /\bui5\b/i, label: 'UI5' },
+    { pattern: /\bdata structures?\b/i, label: 'Data Structures' },
+    { pattern: /\balgorithms?\b/i, label: 'Algorithms' },
+    { pattern: /\boops?\b|\bobject oriented programming\b/i, label: 'OOP' },
+    { pattern: /\bagile methodologies?\b/i, label: 'Agile Methodologies' },
+  ];
+
+  for (const heuristic of customHeuristics) {
+    if (heuristic.pattern.test(evidenceText)) {
+      extracted.add(heuristic.label);
+    }
+  }
+
+  return Array.from(extracted);
+}
+
+function inferSkillBucket(skill: string): SkillBucketName {
+  const normalizedSkill = canonicalizeSkillLabel(skill);
+  const lower = normalizedSkill.toLowerCase();
+  const taxonomyCategory = categorizeSkill(lower);
+
+  switch (taxonomyCategory) {
+    case SKILL_CATEGORIES.PROGRAMMING_LANGUAGES:
+      return 'Languages';
+    case SKILL_CATEGORIES.FRONTEND_TECHNOLOGIES:
+      return 'Frontend';
+    case SKILL_CATEGORIES.BACKEND_TECHNOLOGIES:
+      return 'Backend';
+    case SKILL_CATEGORIES.DATABASES:
+      return 'Databases';
+    case SKILL_CATEGORIES.CLOUD_AND_DEVOPS:
+      return 'Cloud/DevOps';
+    case SKILL_CATEGORIES.DATA_SCIENCE_AND_ML:
+      return 'AI/ML';
+    case SKILL_CATEGORIES.SOFT_SKILLS:
+      return 'Core Competencies';
+    case SKILL_CATEGORIES.TOOLS_AND_PLATFORMS:
+    case SKILL_CATEGORIES.TESTING_AND_QA:
+      return 'Tools';
+    default:
+      break;
+  }
+
+  if (/\bsap\s*fiori\b|\bsapui5\b|\bui5\b|\bhtml\b|\bcss\b|\bux\b|\bui\b/i.test(lower)) {
+    return 'Frontend';
+  }
+  if (/\bdata structures?\b|\balgorithms?\b|\boop\b|\bproblem solving\b|\bagile\b|\bscrum\b/i.test(lower)) {
+    return 'Core Competencies';
+  }
+
+  return 'Tools';
+}
+
+function addUniqueSkill(bucketMap: Record<SkillBucketName, string[]>, bucket: SkillBucketName, skill: string) {
+  const normalizedSkill = canonicalizeSkillLabel(skill);
+  if (!bucketMap[bucket].some(existing => existing.toLowerCase() === normalizedSkill.toLowerCase())) {
+    bucketMap[bucket].push(normalizedSkill);
+  }
 }
 
 const VALID_SKILL_BUCKETS = new Set<SkillBucketName>(SKILL_BUCKET_ORDER);
@@ -723,14 +883,19 @@ async function reorganizeSkillsForATS(resume: ResumeData, jobDescription: string
   };
 
   const seen = new Set<string>();
-  const allSkills = existingCategories.flatMap(cat => cat.list || []);
+  const allSkills = [
+    ...existingCategories.flatMap(cat => cat.list || []),
+    ...extractSkillsFromResumeEvidence(resume),
+  ];
   const canonicalSkills: string[] = [];
   for (const raw of allSkills) {
-    const canonical = canonicalizeSkillLabel(raw);
-    const key = canonical.toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    canonicalSkills.push(canonical);
+    for (const expanded of expandCompositeSkillLabel(raw)) {
+      const canonical = canonicalizeSkillLabel(expanded);
+      const key = canonical.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      canonicalSkills.push(canonical);
+    }
   }
 
   let aiAssignments: Array<{ skill: string; category: SkillBucketName }> = [];
@@ -766,29 +931,23 @@ async function reorganizeSkillsForATS(resume: ResumeData, jobDescription: string
       })
       .filter(Boolean) as Array<{ skill: string; category: SkillBucketName }>;
   } catch (error) {
-    console.warn('AI skill categorization failed, preserving existing skill categories:', error);
+    console.warn('AI skill categorization failed, falling back to local skill categorization:', error);
   }
 
   if (aiAssignments.length > 0) {
     const assigned = new Set<string>();
     for (const item of aiAssignments) {
       assigned.add(item.skill.toLowerCase());
-      bucketMap[item.category].push(item.skill);
+      addUniqueSkill(bucketMap, item.category, item.skill);
     }
     for (const skill of canonicalSkills) {
       if (!assigned.has(skill.toLowerCase())) {
-        bucketMap['Tools'].push(skill);
+        addUniqueSkill(bucketMap, inferSkillBucket(skill), skill);
       }
     }
   } else {
-    for (const category of existingCategories) {
-      const normalizedCategory = category.category.trim();
-      const target = VALID_SKILL_BUCKETS.has(normalizedCategory as SkillBucketName)
-        ? (normalizedCategory as SkillBucketName)
-        : 'Tools';
-      for (const skill of category.list || []) {
-        bucketMap[target].push(canonicalizeSkillLabel(skill));
-      }
+    for (const skill of canonicalSkills) {
+      addUniqueSkill(bucketMap, inferSkillBucket(skill), skill);
     }
   }
 
@@ -835,6 +994,8 @@ function pruneIrrelevantSkillsToJD(resume: ResumeData, jobDescription: string): 
   const beforeText = resume.skills.map(c => `${c.category}: ${c.list.join(', ')}`).join(' | ');
 
   for (const category of resume.skills) {
+    const minimumToKeep = SKILL_BUCKET_MINIMUMS[category.category as SkillBucketName] || 0;
+    const originalList = [...category.list];
     const filtered: string[] = [];
     for (const skill of category.list) {
       const s = skill.toLowerCase().trim();
@@ -848,6 +1009,15 @@ function pruneIrrelevantSkillsToJD(resume: ResumeData, jobDescription: string): 
         extraAllowance--;
       }
     }
+
+    if (filtered.length < minimumToKeep) {
+      for (const skill of originalList) {
+        if (filtered.some(existing => existing.toLowerCase() === skill.toLowerCase())) continue;
+        filtered.push(skill);
+        if (filtered.length >= minimumToKeep) break;
+      }
+    }
+
     category.list = filtered;
     category.count = filtered.length;
   }

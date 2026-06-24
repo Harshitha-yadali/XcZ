@@ -8,6 +8,7 @@ import {
 } from '../types/resume';
 import { openrouter } from './aiProxyService';
 import { DEFAULT_OPENROUTER_MODEL } from './openrouterModelConfig';
+import { parseResumeText as parseResumeTextHeuristically } from './resumeScoringFixes';
 
 export interface ParsedResume extends ResumeData {
   parsedText: string;
@@ -16,6 +17,7 @@ export interface ParsedResume extends ResumeData {
 }
 
 const MAX_PARSED_TEXT_LENGTH = 45000;
+const MAX_AI_INPUT_LENGTH = 9000;
 const MAX_RETRIES = 1;
 const RESUME_PARSER_MODEL = DEFAULT_OPENROUTER_MODEL;
 
@@ -117,8 +119,18 @@ function safeParseJSON(raw: string): any {
   }
 }
 
+function normalizeResumeTextForAI(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/[ \u00A0]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function extractWithGemini(text: string): Promise<any> {
-  const userPrompt = `Resume Text:\n"""\n${text.slice(0, 12000)}\n"""`;
+  const userPrompt = `Resume Text:\n"""\n${normalizeResumeTextForAI(text).slice(0, MAX_AI_INPUT_LENGTH)}\n"""`;
 
   const response = await openrouter.chatWithSystem(
     RESUME_PARSER_SYSTEM_PROMPT,
@@ -147,7 +159,7 @@ async function extractWithRetry(text: string): Promise<any> {
 
     if (MAX_RETRIES > 0) {
       try {
-        const retryPrompt = `Return ONLY valid JSON. Fix formatting.\n\nResume Text:\n"""\n${text.slice(0, 12000)}\n"""`;
+        const retryPrompt = `Return ONLY valid JSON. Fix formatting.\n\nResume Text:\n"""\n${normalizeResumeTextForAI(text).slice(0, MAX_AI_INPUT_LENGTH)}\n"""`;
         const response = await openrouter.chatWithSystem(
           RESUME_PARSER_SYSTEM_PROMPT,
           retryPrompt,
@@ -180,6 +192,138 @@ function isInternshipEntry(entry: any): boolean {
   if (entry.company && entry.role && !DEGREE_PATTERN.test(entry.degree || '')) return true;
   if (entry.bullets && Array.isArray(entry.bullets) && entry.bullets.length > 0 && !DEGREE_PATTERN.test(entry.degree || '')) return true;
   return false;
+}
+
+function mapHeuristicFallbackToResume(rawText: string, failureReason: string): ParsedResume | null {
+  const heuristicResult = parseResumeTextHeuristically(rawText);
+  const { data } = heuristicResult;
+  const fallbackWorkExperience = data.workExperience.length > 0
+    ? data.workExperience
+    : extractSimpleWorkExperienceFallback(rawText);
+  const totalSignals =
+    [data.name, data.email, data.phone, data.summary].filter(Boolean).length +
+    data.skills.length +
+    fallbackWorkExperience.length +
+    data.projects.length +
+    data.education.length +
+    data.certifications.length;
+
+  if (totalSignals === 0) {
+    return null;
+  }
+
+  const truncatedText =
+    rawText.length > MAX_PARSED_TEXT_LENGTH
+      ? rawText.substring(0, MAX_PARSED_TEXT_LENGTH) + '... [truncated]'
+      : rawText;
+
+  const education: Education[] = data.education.map((entry) => ({
+    degree: entry.degree || '',
+    school: entry.school || '',
+    year: entry.year || '',
+    cgpa: '',
+    location: '',
+  }));
+
+  const workExperience: WorkExperience[] = fallbackWorkExperience.map((entry) => ({
+    role: entry.role || '',
+    company: entry.company || '',
+    year: entry.year || '',
+    bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
+  }));
+
+  const projects: Project[] = data.projects.map((entry) => ({
+    title: entry.title || '',
+    bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
+    githubUrl: '',
+  }));
+
+  const skills: Skill[] = data.skills.map((entry) => ({
+    category: entry.category || 'Skills',
+    count: Array.isArray(entry.list) ? entry.list.length : 0,
+    list: Array.isArray(entry.list) ? entry.list : [],
+  }));
+
+  const certifications: Certification[] = data.certifications.map((entry) => ({
+    title: entry,
+    description: '',
+  }));
+
+  return {
+    name: data.name || '',
+    phone: data.phone || '',
+    email: data.email || '',
+    linkedin: data.linkedin || '',
+    github: data.github || '',
+    location: '',
+    summary: data.summary || '',
+    careerObjective: data.summary || '',
+    targetRole: workExperience[0]?.role || '',
+    education,
+    workExperience,
+    projects,
+    skills,
+    certifications,
+    parsedText: truncatedText,
+    parsingConfidence: Math.max(0.35, heuristicResult.confidence / 100),
+    rawResponse: {
+      fallback: 'heuristic',
+      failureReason,
+      warnings: heuristicResult.warnings,
+      parsingQuality: heuristicResult.parsingQuality,
+    },
+    origin: 'heuristic_parsed',
+  };
+}
+
+function extractSimpleWorkExperienceFallback(text: string): WorkExperience[] {
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const yearPattern = /(\d{4}\s*[-–]\s*(?:\d{4}|present|current|now))/i;
+  const bulletPattern = /^[-*•]\s*/;
+  const experiences: WorkExperience[] = [];
+  let current: WorkExperience | null = null;
+
+  for (const line of lines) {
+    if (yearPattern.test(line) && !bulletPattern.test(line)) {
+      if (current) {
+        experiences.push(current);
+      }
+
+      const yearMatch = line.match(yearPattern);
+      const year = yearMatch?.[1] || '';
+      const beforeYear = yearMatch ? line.slice(0, yearMatch.index).trim() : line;
+      const parts = beforeYear
+        .split(/\s*[|@,]\s*/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      current = {
+        role: parts[0] || 'Professional Experience',
+        company: parts[1] || '',
+        year,
+        bullets: [],
+      };
+      continue;
+    }
+
+    if (current && bulletPattern.test(line)) {
+      const bullet = line.replace(bulletPattern, '').trim();
+      if (bullet.length > 10) {
+        current.bullets.push(bullet);
+      }
+    }
+  }
+
+  if (current) {
+    experiences.push(current);
+  }
+
+  return experiences.filter((entry) => entry.role || entry.company || entry.bullets.length > 0);
 }
 
 function mapToResume(parsed: any, rawText: string): ParsedResume {
@@ -284,14 +428,24 @@ export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => 
       throw new Error('Could not extract enough text from file. Please ensure the file contains readable text.');
     }
 
-    const parsed = await extractWithRetry(extractedText);
-    const resume = mapToResume(parsed, extractedText);
+    try {
+      const parsed = await extractWithRetry(extractedText);
+      const resume = mapToResume(parsed, extractedText);
 
-    if (resume.name === 'John Doe' || resume.email === 'johndoe@example.com') {
-      throw new Error('Placeholder data received - extraction failed');
+      if (resume.name === 'John Doe' || resume.email === 'johndoe@example.com') {
+        throw new Error('Placeholder data received - extraction failed');
+      }
+
+      return resume;
+    } catch (parseError: any) {
+      console.warn('AI resume parsing failed, falling back to heuristic parser:', parseError.message);
+      const fallbackResume = mapHeuristicFallbackToResume(extractedText, parseError.message || 'Unknown AI parsing failure');
+      if (fallbackResume) {
+        return fallbackResume;
+      }
+
+      throw parseError;
     }
-
-    return resume;
   } catch (error: any) {
     console.error('Resume parsing failed:', error.message);
     throw new Error(`Failed to parse resume: ${error.message}`);
