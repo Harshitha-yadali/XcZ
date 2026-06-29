@@ -67,8 +67,18 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
   }, []);
 
   const navigationItems = [
-    { id: "/jobs", label: "Latest Jobs", icon: <Briefcase className="w-4 h-4" /> },
-    { id: "/tutorials", label: "Tutorials", icon: <BookOpen className="w-4 h-4" /> },
+    {
+      id: "/jobs",
+      label: "Latest Jobs",
+      compactLabel: "Jobs",
+      icon: <Briefcase className="w-4 h-4" />,
+    },
+    {
+      id: "/tutorials",
+      label: "Tutorials",
+      compactLabel: "Learn",
+      icon: <BookOpen className="w-4 h-4" />,
+    },
   ];
 
   const dashboardItems = [
@@ -118,19 +128,20 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
   const visibleAdminItems = isAdmin ? adminItems : isReferralAdmin ? adminItems.filter(i => i.id === "/admin/referrals") : [];
 
   return (
-    <nav className="hidden lg:flex items-center space-x-6">
+    <nav className="hidden md:flex items-center space-x-1.5 lg:space-x-3 xl:space-x-6">
       {navigationItems.map((item) => (
         <Link
           key={item.id}
           to={item.id}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+          className={`flex items-center space-x-2 px-2.5 lg:px-4 py-2 rounded-lg font-medium text-sm lg:text-base transition-all duration-200 ${
             typeof window !== "undefined" && window.location.pathname === item.id
               ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
               : "text-slate-300 hover:text-emerald-400 hover:bg-slate-800/50"
           }`}
         >
           {item.icon}
-          <span>{item.label}</span>
+          <span className="hidden lg:inline">{item.label}</span>
+          <span className="lg:hidden">{item.compactLabel}</span>
         </Link>
       ))}
 
@@ -143,14 +154,15 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
               setShowDashboardDropdown(false);
               setShowAdminDropdown(false);
             }}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-2.5 lg:px-4 py-2 rounded-lg font-medium text-sm lg:text-base transition-all duration-200 ${
               showAIToolsDropdown
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 : 'text-slate-300 hover:text-emerald-400 hover:bg-slate-800/50'
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>AI Tools</span>
+            <span className="hidden lg:inline">AI Tools</span>
+            <span className="lg:hidden">AI</span>
             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showAIToolsDropdown ? 'rotate-180' : ''}`} />
           </button>
 
@@ -181,14 +193,15 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
             setShowAIToolsDropdown(false);
             setShowAdminDropdown(false);
           }}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+          className={`flex items-center space-x-2 px-2.5 lg:px-4 py-2 rounded-lg font-medium text-sm lg:text-base transition-all duration-200 ${
             showDashboardDropdown
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
               : 'text-slate-300 hover:text-emerald-400 hover:bg-slate-800/50'
           }`}
         >
           <LayoutDashboard className="w-4 h-4" />
-          <span>Primo space</span>
+          <span className="hidden lg:inline">Primo space</span>
+          <span className="lg:hidden">Space</span>
           <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showDashboardDropdown ? 'rotate-180' : ''}`} />
         </button>
 
@@ -219,7 +232,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
               setShowAIToolsDropdown(false);
               setShowDashboardDropdown(false);
             }}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-2.5 lg:px-4 py-2 rounded-lg font-medium text-sm lg:text-base transition-all duration-200 ${
               showAdminDropdown
                 ? 'bg-red-500/20 text-red-300 border border-red-500/30'
                 : 'text-slate-300 hover:text-red-400 hover:bg-red-500/10'

@@ -127,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
             </Link>
 
             {/* Desktop Navigation and Auth */}
-            <div className="hidden lg:flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-2 lg:space-x-4 min-w-0">
               {children}
 
               {isAuthenticated && user ? (
@@ -135,20 +135,20 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={openProfile}
-                    className={`flex items-center space-x-3 rounded-full px-4 py-1 transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
+                    className={`flex items-center space-x-2 lg:space-x-3 rounded-full px-2.5 lg:px-4 py-1 transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
                       isChristmasMode
                         ? 'bg-slate-800/50 hover:bg-slate-800/70 border-green-500/30 focus:ring-green-400'
                         : 'bg-slate-800/50 hover:bg-slate-800/70 border-emerald-500/30 focus:ring-emerald-400'
                     }`}
                   >
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md ${
+                    <div className={`w-8 h-8 lg:w-9 lg:h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md ${
                       isChristmasMode
                         ? 'bg-gradient-to-br from-red-500 to-green-600'
                         : 'bg-gradient-to-br from-emerald-500 to-cyan-500'
                     }`}>
                       {getUserInitials()}
                     </div>
-                    <div className="text-left">
+                    <div className="hidden xl:block text-left">
                       <p className="text-sm font-semibold text-white">
                          {getUserDisplayName()}!
                       </p>
@@ -165,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
                       e.stopPropagation();
                       setShowUserMenu((current) => !current);
                     }}
-                    className={`flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
+                    className={`flex items-center justify-center w-9 h-9 lg:w-10 lg:h-10 rounded-full transition-all duration-200 focus:outline-none focus:ring-2 border shadow-sm ${
                       isChristmasMode
                         ? 'bg-slate-800/50 hover:bg-slate-800/70 border-green-500/30 focus:ring-green-400'
                         : 'bg-slate-800/50 hover:bg-slate-800/70 border-emerald-500/30 focus:ring-emerald-400'
@@ -208,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   onClick={() => setShowAuthModal(true)}
                   disabled={showLoadingSpinner}
-                  className={`px-6 py-2.5 rounded-xl flex items-center space-x-2 shadow-lg transition-all duration-300 font-semibold ${
+                  className={`px-4 lg:px-6 py-2 md:py-2.5 rounded-xl flex items-center space-x-2 shadow-lg transition-all duration-300 font-semibold text-sm lg:text-base ${
                     isChristmasMode
                       ? 'bg-gradient-to-r from-red-500 via-emerald-500 to-green-600 hover:shadow-green-500/50 text-white'
                       : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:shadow-emerald-500/50 text-white'
@@ -225,7 +225,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Mobile Menu Button */}
-            <div className="lg:hidden">
+            <div className="md:hidden">
               <div className="flex items-center space-x-2">
                 <button
                   onClick={onMobileMenuToggle}

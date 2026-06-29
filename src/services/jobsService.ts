@@ -38,6 +38,22 @@ class JobsService {
   private static skillsSupported = true;
   private static expiresAtSupported = true;
 
+  private normalizePackageAmountForStorage(
+    packageAmount: JobListing['package_amount'],
+    packageType: JobListing['package_type']
+  ): number | null {
+    if (typeof packageAmount !== 'number' || !Number.isFinite(packageAmount) || packageAmount <= 0) {
+      return null;
+    }
+
+    const normalizedPackageType = (packageType || '').trim().toLowerCase();
+    if (normalizedPackageType === 'ctc' && packageAmount < 1000) {
+      return Math.round(packageAmount * 100000);
+    }
+
+    return packageAmount;
+  }
+
   private async getAuthenticatedAdminSession() {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
@@ -197,15 +213,19 @@ class JobsService {
 
       const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
       const normalizedSkills = this.normalizeSkills(jobData.skills);
+      const normalizedPackageAmount = this.normalizePackageAmountForStorage(
+        jobData.package_amount,
+        jobData.package_type
+      );
       const insertData: Record<string, any> = {
         company_name: jobData.company_name,
         company_logo_url: jobData.company_logo_url || null,
         company_website: jobData.company_website || null,
         company_description: jobData.company_description || null,
         role_title: jobData.role_title,
-        package_amount: jobData.package_amount || null,
+        package_amount: normalizedPackageAmount,
         package_currency: jobData.package_currency || null,
-        package_type: jobData.package_type || null,
+        package_type: normalizedPackageAmount ? jobData.package_type || null : null,
         domain: jobData.domain,
         location_type: jobData.location_type,
         location_city: jobData.location_city || null,
@@ -315,15 +335,19 @@ class JobsService {
 
       const eligibleYears = this.normalizeEligibleYears(jobData.eligible_years);
       const normalizedSkills = this.normalizeSkills(jobData.skills);
+      const normalizedPackageAmount = this.normalizePackageAmountForStorage(
+        jobData.package_amount,
+        jobData.package_type
+      );
       const updateData: Record<string, any> = {
         company_name: jobData.company_name,
         company_logo_url: jobData.company_logo_url || null,
         company_website: jobData.company_website || null,
         company_description: jobData.company_description || null,
         role_title: jobData.role_title,
-        package_amount: jobData.package_amount || null,
+        package_amount: normalizedPackageAmount,
         package_currency: jobData.package_currency || null,
-        package_type: jobData.package_type || null,
+        package_type: normalizedPackageAmount ? jobData.package_type || null : null,
         domain: jobData.domain,
         location_type: jobData.location_type,
         location_city: jobData.location_city || null,

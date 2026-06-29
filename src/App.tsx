@@ -727,7 +727,7 @@ const handleDiwaliCTAClick = useCallback(() => {
         </ErrorBoundary>
 
         {showMobileMenu && (
-          <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-label="Navigation menu" aria-modal="true">
+          <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-label="Navigation menu" aria-modal="true">
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)} />
             <div className="fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-[#05131A] shadow-2xl overflow-y-auto safe-area border-l border-[#0c1d25]">
               <div className="flex flex-col space-y-4 p-4">
