@@ -5,6 +5,12 @@ export class JobUpdatesService {
   private static readonly WHATSAPP_SOURCE_PLATFORM = 'primo_whatsapp_auto';
   private static readonly WHATSAPP_JOB_KIND = 'whatsapp_job_card';
 
+  private applyPublicFeedFilter<T extends { or: (filters: string) => T }>(query: T): T {
+    return query.or(
+      `source_platform.is.null,source_platform.neq.${JobUpdatesService.WHATSAPP_SOURCE_PLATFORM}`
+    );
+  }
+
   async getAllUpdates(activeOnly: boolean = false): Promise<JobUpdate[]> {
     let query = supabase
       .from('job_updates')
@@ -22,37 +28,43 @@ export class JobUpdatesService {
   }
 
   async getLatestUpdates(limit: number = 10): Promise<JobUpdate[]> {
-    const { data, error } = await supabase
+    const { data, error } = await this.applyPublicFeedFilter(
+      supabase
       .from('job_updates')
       .select('*')
       .eq('is_active', true)
       .order('published_at', { ascending: false })
-      .limit(limit);
+      .limit(limit)
+    );
 
     if (error) throw error;
     return data || [];
   }
 
   async getFeaturedUpdates(): Promise<JobUpdate[]> {
-    const { data, error } = await supabase
+    const { data, error } = await this.applyPublicFeedFilter(
+      supabase
       .from('job_updates')
       .select('*')
       .eq('is_active', true)
       .eq('is_featured', true)
       .order('published_at', { ascending: false })
-      .limit(5);
+      .limit(5)
+    );
 
     if (error) throw error;
     return data || [];
   }
 
   async getUpdatesByCategory(category: JobUpdateCategory): Promise<JobUpdate[]> {
-    const { data, error } = await supabase
+    const { data, error } = await this.applyPublicFeedFilter(
+      supabase
       .from('job_updates')
       .select('*')
       .eq('is_active', true)
       .eq('category', category)
-      .order('published_at', { ascending: false });
+      .order('published_at', { ascending: false })
+    );
 
     if (error) throw error;
     return data || [];

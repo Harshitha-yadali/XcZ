@@ -152,7 +152,7 @@ const jobListingSchema = z.object({
 
 type JobFormData = z.infer<typeof jobListingSchema>;
 
-type AiJobFieldValue = string | number | boolean | null | undefined;
+type AiJobFieldValue = string | number | boolean | string[] | number[] | null | undefined;
 type AiJobFieldMap = Partial<Record<keyof JobFormData, AiJobFieldValue>> & {
   description?: AiJobFieldValue;
   job_description?: AiJobFieldValue;
@@ -336,12 +336,159 @@ const normalizeExtractedText = (value: unknown): string => {
     .trim();
 };
 
+const extractUrlFromText = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+
+  const normalized = normalizeExtractedText(value);
+  if (!normalized) return '';
+
+  const markdownLinkMatch = normalized.match(/\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i);
+  if (markdownLinkMatch?.[1]) {
+    return markdownLinkMatch[1];
+  }
+
+  const directUrlMatch = normalized.match(/https?:\/\/[^\s<>"')\]]+/i);
+  if (directUrlMatch?.[0]) {
+    return directUrlMatch[0].replace(/[),.;!?]+$/g, '');
+  }
+
+  return normalized;
+};
+
 const normalizeExtractedSkills = (value: unknown): string => {
   if (typeof value !== 'string' && !Array.isArray(value)) {
     return '';
   }
 
   return parseSkillsInput(value as string | string[]).join(', ');
+};
+
+const normalizeExtractedList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => {
+        if (typeof item === 'string') return parseSkillsInput(item);
+        if (typeof item === 'number' && Number.isFinite(item)) return [String(item)];
+        return [];
+      });
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return [String(value)];
+  }
+
+  if (typeof value === 'string') {
+    return parseSkillsInput(value);
+  }
+
+  return [];
+};
+
+const normalizePackageAmount = (value: unknown, packageTypeHint?: unknown): number | null => {
+  const normalized = normalizePositiveNumber(value);
+  if (normalized === null) return null;
+
+  const normalizedPackageType = normalizeExtractedPackageType(packageTypeHint);
+  if (normalizedPackageType !== 'CTC' || normalized >= RUPEES_PER_LAKH) {
+    return normalized;
+  }
+
+  const rawNumeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number.parseFloat((value.match(/\d[\d,]*(?:\.\d+)?/)?.[0] || '').replace(/,/g, ''))
+        : Number.NaN;
+
+  if (!Number.isFinite(rawNumeric) || rawNumeric <= 0 || rawNumeric >= 1000) {
+    return normalized;
+  }
+
+  const scaled = Math.round(rawNumeric * RUPEES_PER_LAKH);
+  return scaled <= MAX_SUPPORTED_DB_INTEGER ? scaled : null;
+};
+
+const getNestedRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return null;
+  return value as Record<string, unknown>;
+};
+
+const parseStructuredAdminJsonInput = (input: string): AiJobFieldMap | null => {
+  try {
+    const parsed = parseAiJsonObject(input);
+    const packageDetails = getNestedRecord(parsed.package);
+    const locationDetails = getNestedRecord(parsed.location);
+    const domainValues = normalizeExtractedList(parsed.domain);
+    const eligibleYearsValues = normalizeExtractedList(
+      parsed.eligible_years ?? parsed.eligible_graduation_years
+    );
+    const skillValues =
+      parsed.skills ??
+      parsed.required_skills ??
+      parsed.skills_required;
+
+    const flattened: AiJobFieldMap = {
+      company_name: pickFirstNonEmptyText(parsed.company_name, parsed.company),
+      company_logo_url: extractUrlFromText(parsed.company_logo_url ?? parsed.company_logo),
+      role_title: pickFirstNonEmptyText(parsed.role_title, parsed.role, parsed.title),
+      package_amount: (parsed.package_amount ?? packageDetails?.amount) as AiJobFieldValue,
+      package_type: pickFirstNonEmptyText(parsed.package_type, packageDetails?.type),
+      domain: domainValues.join(', '),
+      location_type: pickFirstNonEmptyText(parsed.location_type, parsed.work_mode, locationDetails?.type),
+      location_city: pickFirstNonEmptyText(parsed.location_city, parsed.city, locationDetails?.city),
+      experience_required: pickFirstNonEmptyText(parsed.experience_required, parsed.experience),
+      qualification: pickFirstNonEmptyText(parsed.qualification, parsed.education),
+      eligible_years: eligibleYearsValues.join(', '),
+      skills: Array.isArray(skillValues)
+        ? normalizeExtractedList(skillValues)
+        : normalizeExtractedText(skillValues),
+      short_description: pickFirstNonEmptyText(parsed.short_description, parsed.summary, parsed.job_summary),
+      full_description: pickFirstNonEmptyText(
+        parsed.full_description,
+        parsed.description,
+        parsed.job_description,
+        parsed.full_job_description,
+        parsed.jd,
+        parsed.job_details
+      ),
+      application_link: extractUrlFromText(
+        parsed.application_link ?? parsed.apply_link ?? parsed.job_url
+      ),
+      expires_at: pickFirstNonEmptyText(
+        parsed.expires_at,
+        parsed.application_deadline,
+        parsed.deadline,
+        parsed.apply_by,
+        parsed.last_date_to_apply
+      ),
+      referral_person_name: pickFirstNonEmptyText(parsed.referral_person_name),
+      referral_email: pickFirstNonEmptyText(parsed.referral_email),
+      referral_code: pickFirstNonEmptyText(parsed.referral_code),
+      referral_link: extractUrlFromText(parsed.referral_link),
+      referral_terms: pickFirstNonEmptyText(parsed.referral_terms),
+      test_requirements: pickFirstNonEmptyText(parsed.test_requirements),
+      is_active: parsed.is_active as AiJobFieldValue,
+      has_coding_test: parsed.has_coding_test as AiJobFieldValue,
+      has_aptitude_test: parsed.has_aptitude_test as AiJobFieldValue,
+      has_technical_interview: parsed.has_technical_interview as AiJobFieldValue,
+      has_hr_interview: parsed.has_hr_interview as AiJobFieldValue,
+      referral_bonus_amount: parsed.referral_bonus_amount as AiJobFieldValue,
+      test_duration_minutes: parsed.test_duration_minutes as AiJobFieldValue,
+    };
+
+    const normalizedEntries = Object.entries(flattened).filter(([, value]) => {
+      if (value === null || typeof value === 'undefined') return false;
+      if (typeof value === 'string') return value.trim().length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      return true;
+    });
+
+    return normalizedEntries.length > 0
+      ? Object.fromEntries(normalizedEntries) as AiJobFieldMap
+      : null;
+  } catch {
+    return null;
+  }
 };
 
 const normalizeDateInputValue = (value: unknown): string => {
@@ -677,7 +824,10 @@ const buildFormValuesFromExtractedJob = (
   const normalizedDomain = normalizeExtractedText(extractedJob.domain);
   if (normalizedDomain) applyValue('domain', normalizedDomain);
 
-  const normalizedPackageAmount = normalizePositiveNumber(extractedJob.package_amount);
+  const normalizedPackageAmount = normalizePackageAmount(
+    extractedJob.package_amount,
+    extractedJob.package_type
+  );
   const extractedPackageText = normalizeExtractedText(extractedJob.package_amount);
   let packageAmountPlaceholder = DEFAULT_PACKAGE_AMOUNT_PLACEHOLDER;
   let packageAmountSourceNote: string | null = null;
@@ -1346,11 +1496,14 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
     setAiCheckSuccess(null);
     setSubmitError(null);
     setSubmitSuccess(false);
+    setPackageAmountPlaceholder(DEFAULT_PACKAGE_AMOUNT_PLACEHOLDER);
+    setPackageAmountSourceNote(null);
 
     try {
       const currentFormValues = getValues();
       const nextValues: JobFormData = { ...currentFormValues };
       const parsedAdminInput = parseAdminKeyValueInput(trimmedInput);
+      const directJsonFields = parseStructuredAdminJsonInput(trimmedInput);
       const systemPrompt = [
         'You are an assistant that converts admin job notes or a pasted job description into job form values.',
         'Return only a valid JSON object with keys from the allowed list.',
@@ -1373,12 +1526,14 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         'Fill missing values, correct clearly wrong values, and keep good existing values.',
       ].join('\n');
 
-      const aiResponse = await openrouter.chatWithSystem(systemPrompt, userPrompt, {
-        temperature: 0.1,
-      });
-
-      const parsed = parseAiJsonObject(aiResponse) as AiJobFieldMap;
+      const parsed = directJsonFields ?? await (async () => {
+        const aiResponse = await openrouter.chatWithSystem(systemPrompt, userPrompt, {
+          temperature: 0.1,
+        });
+        return parseAiJsonObject(aiResponse) as AiJobFieldMap;
+      })();
       let updatedCount = 0;
+      const usedDirectJson = !!directJsonFields;
 
       const applyFormValue = <K extends keyof JobFormData>(field: K, value: JobFormData[K]) => {
         nextValues[field] = value;
@@ -1395,12 +1550,25 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         applyFormValue(field, normalized as JobFormData[typeof field]);
       };
 
-      const applyNumberField = (
-        field: 'package_amount' | 'referral_bonus_amount' | 'test_duration_minutes',
+      const applyUrlField = (
+        field: 'company_logo_url' | 'application_link' | 'referral_link',
         rawValue: unknown
       ) => {
+        const normalized = extractUrlFromText(rawValue);
+        const isOptional = OPTIONAL_STRING_FIELDS.has(field);
+        if (!normalized && !isOptional) return;
+        applyFormValue(field, normalized as JobFormData[typeof field]);
+      };
+
+      const applyNumberField = (
+        field: 'package_amount' | 'referral_bonus_amount' | 'test_duration_minutes',
+        rawValue: unknown,
+        options?: { packageTypeHint?: unknown }
+      ) => {
         if (rawValue === null || rawValue === '') return;
-        const normalized = normalizePositiveNumber(rawValue);
+        const normalized = field === 'package_amount'
+          ? normalizePackageAmount(rawValue, options?.packageTypeHint)
+          : normalizePositiveNumber(rawValue);
         if (normalized === null) return;
         applyFormValue(field, normalized as JobFormData[typeof field]);
       };
@@ -1415,13 +1583,21 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       };
 
       applyStringField('company_name', pickFirstNonEmptyText(parsed.company_name, parsed.company, parsedAdminInput.company_name, parsedAdminInput.company));
-      applyStringField('company_logo_url', parsed.company_logo_url);
+      applyUrlField('company_logo_url', parsed.company_logo_url);
       applyStringField('role_title', pickFirstNonEmptyText(parsed.role_title, parsed.role, parsed.title, parsedAdminInput.role_title, parsedAdminInput.role, parsedAdminInput.title));
-      applyStringField('domain', parsed.domain);
+      if (typeof parsed.domain === 'string') {
+        applyStringField('domain', parsed.domain);
+      } else if (Array.isArray(parsed.domain)) {
+        applyFormValue('domain', normalizeExtractedList(parsed.domain).join(', '));
+      }
       applyStringField('location_city', pickFirstNonEmptyText(parsed.location_city, parsed.city, parsedAdminInput.location_city, parsedAdminInput.city));
       applyStringField('experience_required', pickFirstNonEmptyText(parsed.experience_required, parsed.experience, parsedAdminInput.experience_required, parsedAdminInput.experience));
       applyStringField('qualification', pickFirstNonEmptyText(parsed.qualification, parsed.education, parsedAdminInput.qualification, parsedAdminInput.education));
-      applyStringField('eligible_years', parsed.eligible_years);
+      if (typeof parsed.eligible_years === 'string') {
+        applyStringField('eligible_years', parsed.eligible_years);
+      } else if (Array.isArray(parsed.eligible_years)) {
+        applyFormValue('eligible_years', normalizeExtractedList(parsed.eligible_years).join(', '));
+      }
       const resolvedSkills = parsed.skills ?? parsed.required_skills ?? parsed.skills_required ?? parsedAdminInput.skills ?? parsedAdminInput.required_skills ?? parsedAdminInput.skills_required;
       if (typeof resolvedSkills === 'string' || Array.isArray(resolvedSkills)) {
         const normalizedSkills = parseSkillsInput(resolvedSkills as string | string[]);
@@ -1433,7 +1609,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         buildShortDescriptionFromText(resolvedFullDescription);
       applyStringField('short_description', resolvedShortDescription);
       applyStringField('full_description', resolvedFullDescription);
-      applyStringField('application_link', pickFirstNonEmptyText(parsed.application_link, parsed.apply_link, parsed.job_url, parsedAdminInput.application_link, parsedAdminInput.apply_link, parsedAdminInput.job_url));
+      applyUrlField('application_link', pickFirstNonEmptyText(parsed.application_link, parsed.apply_link, parsed.job_url, parsedAdminInput.application_link, parsedAdminInput.apply_link, parsedAdminInput.job_url));
       applyStringField('expires_at', normalizeDateInputValue(pickFirstNonEmptyText(
         typeof parsed.expires_at === 'string' ? parsed.expires_at : '',
         parsedAdminInput.expires_at
@@ -1441,19 +1617,19 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       applyStringField('referral_person_name', parsed.referral_person_name);
       applyStringField('referral_email', parsed.referral_email);
       applyStringField('referral_code', parsed.referral_code);
-      applyStringField('referral_link', parsed.referral_link);
+      applyUrlField('referral_link', parsed.referral_link);
       applyStringField('referral_terms', parsed.referral_terms);
       applyStringField('test_requirements', parsed.test_requirements);
 
-      applyNumberField('package_amount', parsed.package_amount);
+      applyNumberField('package_amount', parsed.package_amount, {
+        packageTypeHint: parsed.package_type,
+      });
       applyNumberField('referral_bonus_amount', parsed.referral_bonus_amount);
       applyNumberField('test_duration_minutes', parsed.test_duration_minutes);
 
-      if (typeof parsed.package_type === 'string') {
-        const packageType = parsed.package_type.trim().toLowerCase();
-        if (packageType === 'ctc') applyFormValue('package_type', 'CTC');
-        if (packageType === 'stipend') applyFormValue('package_type', 'stipend');
-        if (packageType === 'hourly') applyFormValue('package_type', 'hourly');
+      const normalizedPackageType = normalizeExtractedPackageType(parsed.package_type);
+      if (normalizedPackageType) {
+        applyFormValue('package_type', normalizedPackageType);
       }
 
       if (typeof parsed.location_type === 'string') {
@@ -1495,12 +1671,12 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         if (!validationResult.success) {
           const firstIssue = validationResult.error.issues[0];
           setAiCheckSuccess(
-            `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review the form and create the job manually.`
+            `${usedDirectJson ? 'JSON parsing' : 'AI'} updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review the form and create the job manually.`
           );
           setAiCheckError(
             firstIssue?.message
-              ? `AI filled the form, but auto-create stopped: ${firstIssue.message}.`
-              : 'AI filled the form, but auto-create stopped. Review the form and save manually.'
+              ? `${usedDirectJson ? 'JSON parsing' : 'AI fill'} completed, but auto-create stopped: ${firstIssue.message}.`
+              : `${usedDirectJson ? 'JSON parsing' : 'AI fill'} completed, but auto-create stopped. Review the form and save manually.`
           );
           return;
         }
@@ -1509,13 +1685,15 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
           stayOnPageAfterCreate: true,
           successMessageTarget: 'ai',
           focusTarget: 'ai',
-          successMessage: 'AI filled the form and created the job automatically. Paste the next details.',
+          successMessage: usedDirectJson
+            ? 'JSON parsed successfully and the job was created automatically. Paste the next details.'
+            : 'AI filled the form and created the job automatically. Paste the next details.',
         });
         return;
       }
 
       setAiCheckSuccess(
-        `AI updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and update the job.`
+        `${usedDirectJson ? 'JSON parsing' : 'AI'} updated ${updatedCount} field${updatedCount > 1 ? 's' : ''}. Review and update the job.`
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI check failed. Please retry.';
