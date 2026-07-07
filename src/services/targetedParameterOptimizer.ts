@@ -259,58 +259,51 @@ function parseKeywordsFromGapSuggestions(gaps: GapItem[], parameterIds: number[]
 
 function addMissingKeywords(
   resume: ResumeData,
-  jobDescription: string,
+  _jobDescription: string,
   explicitKeywords: string[] = []
 ): OptimizationChange[] {
   const changes: OptimizationChange[] = [];
-  const jdLower = jobDescription.toLowerCase();
-  const resumeText = [
-    resume.summary || '',
-    ...(resume.skills?.flatMap(s => s.list) || []),
-    ...(resume.workExperience?.flatMap(e => e.bullets || []) || []),
-    ...(resume.projects?.flatMap(p => [...(p.bullets || []), ...(p.techStack || [])]) || []),
-  ].join(' ').toLowerCase();
-
-  const jdKeywords = extractOptimizationKeywordsFromJD(jobDescription);
+  const jdKeywords = extractOptimizationKeywordsFromJD(_jobDescription);
   const candidateSkills = [...new Set([
-    ...jdKeywords,
-    ...explicitKeywords.map(k => k.toLowerCase().trim()),
+    ...jdKeywords.map(skill => canonicalizeSkillLabel(skill)),
+    ...explicitKeywords.map(skill => canonicalizeSkillLabel(skill)),
   ])];
+  const evidenceSkills = buildCanonicalSkillSet(extractSkillsFromResumeEvidence(resume));
+  const structuredSkills = buildCanonicalSkillSet(
+    resume.skills?.flatMap(category => category.list || []) || []
+  );
 
   const missingSkills = candidateSkills.filter(skill => {
     if (!skill || skill.length < 2) return false;
-    if (CONTACT_PROFILE_WORDS.has(skill)) return false;
-    const existsInJD = jdLower.includes(skill);
-    const forced = explicitKeywords.some(k => k.toLowerCase().trim() === skill);
-    if (!existsInJD && !forced) return false;
-    return !resumeText.includes(skill);
+    const normalized = skill.toLowerCase();
+    if (CONTACT_PROFILE_WORDS.has(normalized)) return false;
+    if (!evidenceSkills.has(normalized)) return false;
+    return !structuredSkills.has(normalized);
   });
 
   if (missingSkills.length === 0) return changes;
 
   if (!resume.skills) resume.skills = [];
-  let techCategory = resume.skills.find(s => s.category.toLowerCase().includes('technical') || s.category.toLowerCase() === 'tools & platforms');
-  if (!techCategory) {
-    techCategory = { category: 'Technical Skills', count: 0, list: [] };
-    resume.skills.push(techCategory);
-  }
+  const existingLower = new Set(
+    resume.skills.flatMap(category => (category.list || []).map(skill => canonicalizeSkillLabel(skill).toLowerCase()))
+  );
 
-  const existingLower = new Set(techCategory.list.map(s => s.toLowerCase()));
   missingSkills.forEach(skill => {
-    if (existingLower.has(skill)) return;
-    const formatted = skill.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    techCategory!.list.push(formatted);
-    techCategory!.count = techCategory!.list.length;
-    existingLower.add(skill);
-    changes.push({ parameterId: 6, section: 'skills', before: '', after: formatted, description: `Added missing JD keyword "${formatted}" to skills` });
-  });
+    const normalized = skill.toLowerCase();
+    if (existingLower.has(normalized)) return;
 
-  if (resume.summary && missingSkills.length > 0) {
-    const topMissing = missingSkills.slice(0, 3).map(s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '));
-    const oldSummary = resume.summary;
-    resume.summary = `${resume.summary.replace(/\.?\s*$/, '')}. Proficient in ${topMissing.join(', ')}.`;
-    changes.push({ parameterId: 10, section: 'summary', before: oldSummary, after: resume.summary, description: `Integrated ${topMissing.length} keywords into summary` });
-  }
+    const targetCategory = ensureSkillCategory(resume, inferSkillBucket(skill));
+    targetCategory.list.push(skill);
+    targetCategory.count = targetCategory.list.length;
+    existingLower.add(normalized);
+    changes.push({
+      parameterId: 6,
+      section: 'skills',
+      before: '',
+      after: skill,
+      description: `Added evidence-backed JD skill "${skill}" to ${targetCategory.category}`,
+    });
+  });
 
   return changes;
 }
@@ -562,33 +555,12 @@ function enforceBulletWordLimit(resume: ResumeData, maxWords: number = MAX_BULLE
 function addProjectTechStacks(resume: ResumeData, jobDescription: string): OptimizationChange[] {
   const changes: OptimizationChange[] = [];
   const jdLower = jobDescription.toLowerCase();
-  const fallbackTechSkills = [
-    'react', 'react.js', 'next.js', 'nextjs', 'vue', 'vue.js', 'angular', 'svelte',
-    'node.js', 'nodejs', 'express', 'express.js', 'fastify', 'nestjs',
-    'python', 'django', 'flask', 'fastapi',
-    'java', 'spring', 'spring boot', 'springboot',
-    'typescript', 'javascript', 'go', 'golang', 'rust', 'c++', 'c#', '.net',
-    'aws', 'azure', 'gcp', 'google cloud',
-    'docker', 'kubernetes', 'k8s', 'terraform', 'jenkins', 'ci/cd',
-    'postgresql', 'postgres', 'mysql', 'mongodb', 'redis', 'elasticsearch',
-    'graphql', 'rest', 'restful', 'grpc',
-    'jest', 'cypress', 'selenium', 'pytest',
-    'kafka', 'rabbitmq', 'microservices',
-    'html', 'css', 'tailwind', 'sass', 'bootstrap',
-    'git', 'github', 'gitlab', 'jira', 'agile', 'scrum',
-    'sql', 'nosql', 'firebase', 'supabase',
-    'machine learning', 'deep learning', 'tensorflow', 'pytorch', 'nlp',
-    'linux', 'nginx', 'apache'
-  ];
-  const jdTechFromTaxonomy = [...ALL_HARD_SKILLS, ...ALL_TOOL_SKILLS]
-    .map(skill => skill.toLowerCase())
-    .filter(skill => !CONTACT_PROFILE_WORDS.has(skill))
-    .filter(skill => jdLower.includes(skill));
-
-  const jdTechFallback = fallbackTechSkills.filter(skill => jdLower.includes(skill.toLowerCase()));
-  const jdTech = [...new Set([...jdTechFromTaxonomy, ...jdTechFallback])];
-
-  const capitalize = (t: string) => t.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const jdTech = new Set(
+    [...ALL_HARD_SKILLS, ...ALL_TOOL_SKILLS]
+      .map(skill => canonicalizeSkillLabel(skill).toLowerCase())
+      .filter(skill => !CONTACT_PROFILE_WORDS.has(skill))
+      .filter(skill => jdLower.includes(skill))
+  );
   const dedupeKeepOrder = (items: string[]): string[] => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -601,40 +573,48 @@ function addProjectTechStacks(resume: ResumeData, jobDescription: string): Optim
     return out;
   };
 
-  if (!resume.projects || resume.projects.length === 0 || jdTech.length === 0) {
+  if (!resume.projects || resume.projects.length === 0) {
     return changes;
   }
 
   resume.projects?.forEach(proj => {
-    const projectText = [proj.title, ...(proj.bullets || []), ...(proj.techStack || [])].join(' ').toLowerCase();
-    const missingTech = jdTech.filter(t => !projectText.includes(t));
+    const projectText = [proj.title, ...(proj.bullets || []), ...(proj.techStack || [])].join(' ');
+    const projectEvidenceSkills = extractSkillsFromTextEvidence(projectText);
+    if (projectEvidenceSkills.length === 0) return;
+
+    const orderedEvidenceSkills = [
+      ...projectEvidenceSkills.filter(skill => jdTech.has(skill.toLowerCase())),
+      ...projectEvidenceSkills.filter(skill => !jdTech.has(skill.toLowerCase())),
+    ];
+    const uniqueEvidenceSkills = dedupeKeepOrder(orderedEvidenceSkills);
 
     if (!proj.techStack || proj.techStack.length === 0) {
-      const relevantTech = jdTech.filter(t => projectText.includes(t));
-      if (relevantTech.length > 0) {
-        proj.techStack = relevantTech.map(capitalize);
-      } else if (jdTech.length > 0) {
-        proj.techStack = jdTech.slice(0, 6).map(capitalize);
+      proj.techStack = uniqueEvidenceSkills.slice(0, 6);
+      if (proj.techStack.length > 0) {
+        changes.push({
+          parameterId: 20,
+          section: 'projects',
+          before: '',
+          after: proj.techStack.join(', '),
+          description: `Added evidence-backed tech stack to "${proj.title}"`,
+        });
       }
-      if (proj.techStack && proj.techStack.length > 0) {
-        proj.techStack = dedupeKeepOrder(proj.techStack);
-        changes.push({ parameterId: 20, section: 'projects', before: '', after: proj.techStack.join(', '), description: `Added tech stack to "${proj.title}"` });
-      }
-    } else if (missingTech.length > 0) {
-      const toAdd = missingTech.slice(0, 5).map(capitalize);
-      const before = proj.techStack.join(', ');
-      proj.techStack = dedupeKeepOrder([...proj.techStack, ...toAdd]);
-      changes.push({ parameterId: 20, section: 'projects', before, after: proj.techStack.join(', '), description: `Extended tech stack for "${proj.title}"` });
+      return;
     }
 
-    if (missingTech.length > 0 && proj.bullets && proj.bullets.length > 0) {
-      const techToMention = missingTech.slice(0, 2).map(capitalize);
-      const lastBulletIdx = proj.bullets.length - 1;
-      const originalBullet = proj.bullets[lastBulletIdx];
-      const techStr = techToMention.join(' and ');
-      proj.bullets[lastBulletIdx] = `${originalBullet.replace(/\.?\s*$/, '')}, leveraging ${techStr}.`;
-      changes.push({ parameterId: 19, section: 'projects', before: originalBullet, after: proj.bullets[lastBulletIdx], description: `Added JD skills to project bullet in "${proj.title}"` });
-    }
+    const existingTech = buildCanonicalSkillSet(proj.techStack);
+    const missingEvidenceSkills = uniqueEvidenceSkills.filter(skill => !existingTech.has(skill.toLowerCase()));
+    if (missingEvidenceSkills.length === 0) return;
+
+    const before = proj.techStack.join(', ');
+    proj.techStack = dedupeKeepOrder([...proj.techStack, ...missingEvidenceSkills.slice(0, 5)]);
+    changes.push({
+      parameterId: 20,
+      section: 'projects',
+      before,
+      after: proj.techStack.join(', '),
+      description: `Extended "${proj.title}" tech stack using project evidence`,
+    });
   });
 
   return changes;
@@ -702,6 +682,9 @@ function canonicalizeSkillLabel(skill: string): string {
     'azure': 'Azure',
     'gcp': 'GCP',
     'git': 'Git',
+    'github': 'GitHub',
+    'github actions': 'GitHub Actions',
+    'gitlab ci': 'GitLab CI',
     'jira': 'Jira',
     'sap fiori': 'SAP Fiori',
     'sapui5': 'SAPUI5',
@@ -757,7 +740,7 @@ function skillAppearsInText(text: string, skill: string): boolean {
   if (!normalizedSkill) return false;
 
   const escaped = escapeRegExp(normalizedSkill);
-  const pattern = new RegExp(`(^|[^a-z0-9+#.])${escaped}([^a-z0-9+#.]|$)`, 'i');
+  const pattern = new RegExp(`(^|[^a-z0-9+#])${escaped}($|[^a-z0-9+#])`, 'i');
   return pattern.test(normalizedText);
 }
 
@@ -786,14 +769,18 @@ function collectResumeEvidenceText(resume: ResumeData): string {
 }
 
 function extractSkillsFromResumeEvidence(resume: ResumeData): string[] {
-  const evidenceText = collectResumeEvidenceText(resume);
+  return extractSkillsFromTextEvidence(collectResumeEvidenceText(resume));
+}
+
+function extractSkillsFromTextEvidence(text: string): string[] {
+  const evidenceText = text.toLowerCase();
   const extracted = new Set<string>();
   const candidates = [...ALL_HARD_SKILLS, ...ALL_TOOL_SKILLS];
 
   for (const candidate of candidates) {
     if (CONTACT_PROFILE_WORDS.has(candidate.toLowerCase())) continue;
     if (skillAppearsInText(evidenceText, candidate)) {
-      extracted.add(formatSkillName(candidate));
+      extracted.add(canonicalizeSkillLabel(formatSkillName(candidate)));
     }
   }
 
@@ -809,7 +796,7 @@ function extractSkillsFromResumeEvidence(resume: ResumeData): string[] {
 
   for (const heuristic of customHeuristics) {
     if (heuristic.pattern.test(evidenceText)) {
-      extracted.add(heuristic.label);
+      extracted.add(canonicalizeSkillLabel(heuristic.label));
     }
   }
 
@@ -858,6 +845,26 @@ function addUniqueSkill(bucketMap: Record<SkillBucketName, string[]>, bucket: Sk
   if (!bucketMap[bucket].some(existing => existing.toLowerCase() === normalizedSkill.toLowerCase())) {
     bucketMap[bucket].push(normalizedSkill);
   }
+}
+
+function buildCanonicalSkillSet(skills: string[]): Set<string> {
+  return new Set(
+    skills
+      .map(skill => canonicalizeSkillLabel(skill).toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function ensureSkillCategory(resume: ResumeData, bucket: SkillBucketName) {
+  if (!resume.skills) resume.skills = [];
+
+  let category = resume.skills.find(existing => existing.category === bucket);
+  if (!category) {
+    category = { category: bucket, count: 0, list: [] };
+    resume.skills.push(category);
+  }
+
+  return category;
 }
 
 const VALID_SKILL_BUCKETS = new Set<SkillBucketName>(SKILL_BUCKET_ORDER);
@@ -1182,8 +1189,14 @@ function addIndustryKeywords(resume: ResumeData, jobDescription: string): Optimi
     ...(resume.projects || []).flatMap(p => p.bullets || []),
     ...(resume.skills || []).flatMap(s => s.list || []),
   ].join(' ').toLowerCase();
+  const summaryText = (resume.summary || '').toLowerCase();
+  const resumeEvidenceSkills = buildCanonicalSkillSet(extractSkillsFromResumeEvidence(resume));
+  const portableKeywords = industryTerms.filter(term => {
+    const normalized = canonicalizeSkillLabel(term).toLowerCase();
+    return resumeText.includes(term) || resumeEvidenceSkills.has(normalized);
+  });
 
-  const missing = industryTerms.filter(t => !resumeText.includes(t));
+  const missing = portableKeywords.filter(term => !summaryText.includes(term));
   if (missing.length === 0) return changes;
 
   const topMissing = missing.slice(0, 4);
@@ -1200,18 +1213,13 @@ function addIndustryKeywords(resume: ResumeData, jobDescription: string): Optimi
   const oldSummary = resume.summary;
   const keywordStr = topMissing.join(', ');
   resume.summary = `${resume.summary.replace(/\.?\s*$/, '')}. Experienced in ${keywordStr}.`;
-  changes.push({ parameterId: 28, section: 'summary', before: oldSummary, after: resume.summary, description: `Integrated industry keywords: ${keywordStr}` });
-
-  if (resume.projects && resume.projects.length > 0) {
-    const p = resume.projects[0];
-    if (!p.bullets) p.bullets = [];
-    if (p.bullets.length > 0) {
-      const original = p.bullets[0];
-      const addition = topMissing.slice(0, 2).join(' and ');
-      p.bullets[0] = `${original.replace(/\.?\s*$/, '')}, aligned to ${addition}.`;
-      changes.push({ parameterId: 28, section: 'projects', before: original, after: p.bullets[0], description: `Added industry keywords to "${p.title}" bullet` });
-    }
-  }
+  changes.push({
+    parameterId: 28,
+    section: 'summary',
+    before: oldSummary,
+    after: resume.summary,
+    description: `Integrated evidence-backed keywords into summary: ${keywordStr}`,
+  });
 
   return changes;
 }

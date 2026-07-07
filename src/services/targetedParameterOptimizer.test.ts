@@ -74,4 +74,112 @@ describe('targetedParameterOptimizer', () => {
     expect(byCategory['Cloud/DevOps']).toEqual(expect.arrayContaining(['Docker']));
     expect(byCategory['Tools']).toEqual(expect.arrayContaining(['Git']));
   });
+
+  it('adds only JD skills that already have resume evidence', async () => {
+    chatWithSystemMock.mockRejectedValue(
+      new Error('AI proxy request failed (504): {"code":"IDLE_TIMEOUT","message":"Request idle timeout limit reached"}')
+    );
+
+    const resume: ResumeData = {
+      name: 'Backend Candidate',
+      phone: '+91 9999999999',
+      email: 'backend@example.com',
+      linkedin: '',
+      github: '',
+      summary: 'Software engineer building backend services with Python and Django.',
+      targetRole: 'Software Engineer',
+      education: [],
+      workExperience: [
+        {
+          role: 'Software Engineer',
+          company: 'Acme',
+          year: '2024 - Present',
+          bullets: [
+            'Developed backend APIs using Python and Django.',
+            'Automated deployment workflows with GitHub Actions and Terraform.',
+          ],
+        },
+      ],
+      projects: [],
+      skills: [
+        { category: 'Languages', count: 1, list: ['Python'] },
+        { category: 'Tools', count: 1, list: ['Git'] },
+      ],
+      certifications: [],
+    };
+
+    const jd = 'Hiring a backend engineer with Django, PostgreSQL, Redis, Terraform, and GitHub Actions.';
+    const gaps = [
+      {
+        parameterId: 6,
+        parameterName: 'Hard Skills Match',
+        category: 'Skills',
+        currentScore: 1,
+        maxScore: 5,
+        percentage: 20,
+        fixType: 'ai' as const,
+        suggestions: ['Add missing skills: Django, PostgreSQL, Redis, Terraform, GitHub Actions'],
+        priority: 'critical' as const,
+      },
+    ];
+
+    const result = await optimizeByParameter(resume, jd, gaps);
+    const allSkills = (result.optimizedResume.skills || []).flatMap(category => category.list);
+
+    expect(allSkills).toEqual(expect.arrayContaining(['Django', 'Terraform', 'GitHub Actions']));
+    expect(allSkills).not.toContain('PostgreSQL');
+    expect(allSkills).not.toContain('Redis');
+  });
+
+  it('builds project tech stacks from project evidence instead of JD-only tools', async () => {
+    chatWithSystemMock.mockRejectedValue(
+      new Error('AI proxy request failed (504): {"code":"IDLE_TIMEOUT","message":"Request idle timeout limit reached"}')
+    );
+
+    const resume: ResumeData = {
+      name: 'Project Candidate',
+      phone: '+91 8888888888',
+      email: 'project@example.com',
+      linkedin: '',
+      github: '',
+      summary: 'Backend engineer focused on Django services.',
+      targetRole: 'Backend Engineer',
+      education: [],
+      workExperience: [],
+      projects: [
+        {
+          title: 'Order Service',
+          bullets: [
+            'Built backend service using Django and PostgreSQL.',
+            'Containerized deployment using Docker for local environments.',
+          ],
+          techStack: [],
+        },
+      ],
+      skills: [],
+      certifications: [],
+    };
+
+    const jd = 'Need backend experience with Django, PostgreSQL, Redis, Kafka, and Docker.';
+    const gaps = [
+      {
+        parameterId: 20,
+        parameterName: 'Project Tech Stack',
+        category: 'Projects',
+        currentScore: 1,
+        maxScore: 5,
+        percentage: 20,
+        fixType: 'ai' as const,
+        suggestions: ['Add project tech stack keywords: Django, PostgreSQL, Redis, Kafka, Docker'],
+        priority: 'high' as const,
+      },
+    ];
+
+    const result = await optimizeByParameter(resume, jd, gaps);
+    const techStack = result.optimizedResume.projects?.[0]?.techStack || [];
+
+    expect(techStack).toEqual(expect.arrayContaining(['Django', 'PostgreSQL', 'Docker']));
+    expect(techStack).not.toContain('Redis');
+    expect(techStack).not.toContain('Kafka');
+  });
 });

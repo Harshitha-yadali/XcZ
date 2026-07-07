@@ -244,6 +244,8 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     setCurrentStep(0);
     setActiveTab('resume');
     setOptimizationInterrupted(false);
+    setParameter16Scores(null);
+    setUserActionsRequired([]);
     setJdOptimizationResult(null);
     setEditorMode('preview');
     setShowExportModal(false);
@@ -503,6 +505,9 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     
     try {
       setIsOptimizing(true);
+      setJdOptimizationResult(null);
+      setParameter16Scores(null);
+      setUserActionsRequired([]);
 
       const optimizationCreditResult = await paymentService.useOptimization(user!.id);
       if (!optimizationCreditResult.success) {
@@ -560,7 +565,8 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           const loopResult = await runOptimizationLoop(
             finalOptimizedResume,
             currentJobDescription,
-            (msg, pct) => console.log(`[OptLoop] ${pct}% - ${msg}`)
+            (msg, pct) => console.log(`[OptLoop] ${pct}% - ${msg}`),
+            resumeData
           );
           setJdOptimizationResult(loopResult);
           finalOptimizedResume = loopResult.optimizedResume;

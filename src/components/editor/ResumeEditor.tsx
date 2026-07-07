@@ -16,7 +16,7 @@ interface ResumeEditorProps {
 }
 
 const DEFAULT_SECTIONS: SectionConfig[] = [
-  { id: 'summary', label: 'CAREER OBJECTIVE', visible: true },
+  { id: 'summary', label: 'PROFESSIONAL SUMMARY', visible: true },
   { id: 'skills', label: 'SKILLS', visible: true },
   { id: 'workExperience', label: 'WORK EXPERIENCE', visible: true },
   { id: 'projects', label: 'PROJECTS', visible: true },

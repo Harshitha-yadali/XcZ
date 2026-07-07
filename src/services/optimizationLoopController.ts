@@ -79,17 +79,21 @@ function prioritizeFixableGaps(
 export async function runOptimizationLoop(
   resume: ResumeData,
   jobDescription: string,
-  onProgress?: (message: string, progress: number) => void
+  onProgress?: (message: string, progress: number) => void,
+  baselineResume?: ResumeData
 ): Promise<OptimizationSessionResult> {
   const startTime = Date.now();
   const iterations: LoopIterationResult[] = [];
   const allChanges: OptimizationChange[] = [];
 
   onProgress?.('Scoring your resume against the job description...', 10);
-  const beforeScore = scoreResumeAgainstJD(resume, jobDescription);
+  const baseline = baselineResume
+    ? JSON.parse(JSON.stringify(baselineResume)) as ResumeData
+    : JSON.parse(JSON.stringify(resume)) as ResumeData;
+  const beforeScore = scoreResumeAgainstJD(baseline, jobDescription);
 
   let currentResume = JSON.parse(JSON.stringify(resume)) as ResumeData;
-  let currentScore = beforeScore;
+  let currentScore = scoreResumeAgainstJD(currentResume, jobDescription);
   let currentGaps = classifyGaps(currentScore.parameters, currentScore.overallScore);
 
   for (let loop = 0; loop < MAX_LOOPS; loop++) {

@@ -8,7 +8,7 @@ export interface SectionConfig {
 }
 
 const ALL_SECTIONS: { id: string; label: string }[] = [
-  { id: 'summary', label: 'CAREER OBJECTIVE' },
+  { id: 'summary', label: 'PROFESSIONAL SUMMARY' },
   { id: 'skills', label: 'SKILLS' },
   { id: 'workExperience', label: 'WORK EXPERIENCE' },
   { id: 'projects', label: 'PROJECTS' },
