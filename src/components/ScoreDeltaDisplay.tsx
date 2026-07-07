@@ -3,16 +3,42 @@ import { TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, AlertTriangle,
 import type { ParameterDelta, CategoryDelta, OptimizationSessionResult } from '../services/optimizationLoopController';
 import type { UserActionCard } from '../services/gapClassificationEngine';
 
+export interface ScoreSummaryOverride {
+  before: {
+    score: number;
+    band: string;
+    probability: string;
+  };
+  after: {
+    score: number;
+    band: string;
+    probability: string;
+  };
+}
+
 interface ScoreDeltaDisplayProps {
   result: OptimizationSessionResult;
   userActionCards?: UserActionCard[];
+  scoreSummaryOverride?: ScoreSummaryOverride;
 }
 
-const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards }) => {
+const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [showAllParameters, setShowAllParameters] = useState(false);
 
   const { beforeScore, afterScore, parameterDeltas, categoryDeltas, reachedTarget, totalChanges } = result;
+  const displayBefore = scoreSummaryOverride?.before ?? {
+    score: beforeScore.overallScore,
+    band: beforeScore.matchBand,
+    probability: beforeScore.interviewProbability,
+  };
+  const displayAfter = scoreSummaryOverride?.after ?? {
+    score: afterScore.overallScore,
+    band: afterScore.matchBand,
+    probability: afterScore.interviewProbability,
+  };
+  const displayedDelta = displayAfter.score - displayBefore.score;
+  const showReachedTarget = reachedTarget || displayAfter.score >= 90;
 
   const toggleCategory = (name: string) => {
     setExpandedCategory(expandedCategory === name ? null : name);
@@ -21,26 +47,26 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ScoreCard label="Before" score={beforeScore.overallScore} band={beforeScore.matchBand} probability={beforeScore.interviewProbability} variant="before" />
+        <ScoreCard label="Before" score={displayBefore.score} band={displayBefore.band} probability={displayBefore.probability} variant="before" />
         <div className="flex items-center justify-center">
           <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-950/50 px-6 py-8 flex flex-col items-center gap-2 text-center shadow-[0_20px_45px_-30px_rgba(0,0,0,0.7)]">
             <ArrowRight className="w-8 h-8 text-slate-400 hidden md:block" />
-            <span className={`text-3xl font-bold ${afterScore.overallScore - beforeScore.overallScore > 0 ? 'text-emerald-400' : afterScore.overallScore - beforeScore.overallScore < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-              {afterScore.overallScore - beforeScore.overallScore > 0 ? '+' : ''}{afterScore.overallScore - beforeScore.overallScore}
+            <span className={`text-3xl font-bold ${displayedDelta > 0 ? 'text-emerald-400' : displayedDelta < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+              {displayedDelta > 0 ? '+' : ''}{displayedDelta}
             </span>
             <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">ATS points</span>
             <span className="text-sm text-slate-400">Saved before and final after optimization</span>
           </div>
         </div>
-        <ScoreCard label="After" score={afterScore.overallScore} band={afterScore.matchBand} probability={afterScore.interviewProbability} variant="after" />
+        <ScoreCard label="After" score={displayAfter.score} band={displayAfter.band} probability={displayAfter.probability} variant="after" />
       </div>
 
-      {reachedTarget ? (
+      {showReachedTarget ? (
         <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-400/30 rounded-xl">
           <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
           <div>
             <p className="font-semibold text-emerald-100">Target Score Reached</p>
-            <p className="text-sm text-emerald-200/80">Your resume scores {afterScore.overallScore}/100 and is ready for submission.</p>
+            <p className="text-sm text-emerald-200/80">Your resume scores {displayAfter.score}/100 and is ready for submission.</p>
           </div>
         </div>
       ) : (
@@ -48,7 +74,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
           <AlertTriangle className="w-5 h-5 text-amber-300 flex-shrink-0" />
           <div>
             <p className="font-semibold text-amber-100">Some Gaps Need Your Input</p>
-            <p className="text-sm text-amber-200/80">AI optimization brought you to {afterScore.overallScore}/100. Review the action items below to push past 90.</p>
+            <p className="text-sm text-amber-200/80">AI optimization brought you to {displayAfter.score}/100. Review the action items below to push past 90.</p>
           </div>
         </div>
       )}

@@ -3,7 +3,7 @@ import { FileText, ArrowLeft, CheckCircle, Send, BarChart3, Pencil, Eye, Downloa
 import { ResumeData, UserType } from '../types/resume';
 import { ExportOptions, defaultExportOptions } from '../types/export';
 import type { OptimizationSessionResult } from '../services/optimizationLoopController';
-import ScoreDeltaDisplay from './ScoreDeltaDisplay';
+import ScoreDeltaDisplay, { type ScoreSummaryOverride } from './ScoreDeltaDisplay';
 import { Parameter16ScoreDisplay } from './Parameter16ScoreDisplay';
 
 interface Section {
@@ -27,6 +27,7 @@ interface MobileOptimizedInterfaceProps {
   } | null;
   onApplyNow?: () => void;
   jdOptimizationResult?: OptimizationSessionResult | null;
+  scoreSummaryOverride?: ScoreSummaryOverride | null;
   parameter16Scores?: {
     beforeScores: any[];
     afterScores: any[];
@@ -48,6 +49,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   jobContext,
   onApplyNow,
   jdOptimizationResult,
+  scoreSummaryOverride,
   parameter16Scores,
   onEditResume,
   onExportResume,
@@ -184,6 +186,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                 <ScoreDeltaDisplay
                   result={jdOptimizationResult}
                   userActionCards={jdOptimizationResult.gapClassification.userActionCards}
+                  scoreSummaryOverride={scoreSummaryOverride || undefined}
                 />
               ) : parameter16Scores ? (
                 <Parameter16ScoreDisplay

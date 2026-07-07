@@ -38,9 +38,10 @@ import { matchProjectsToJd, extractJdKeywords, ProjectMatchResult } from '../ser
 import { processResumeText } from '../services/edenModerationService';
 import { ProjectMatchingPanel } from './ProjectMatchingPanel';
 import { MissingSections, arrayToMissingSections } from '../types/edenai';
+import { EnhancedScoringService } from '../services/enhancedScoringService';
 
 import { runOptimizationLoop, OptimizationSessionResult } from '../services/optimizationLoopController';
-import ScoreDeltaDisplay from './ScoreDeltaDisplay';
+import ScoreDeltaDisplay, { type ScoreSummaryOverride } from './ScoreDeltaDisplay';
 import MissingProfilePrompt from './MissingProfilePrompt';
 import ResumeEditor from './editor/ResumeEditor';
 import ExportResumeModal from './ExportResumeModal';
@@ -167,6 +168,7 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   } | null>(null);
 
   const [jdOptimizationResult, setJdOptimizationResult] = useState<OptimizationSessionResult | null>(null);
+  const [optimizationScoreSummary, setOptimizationScoreSummary] = useState<ScoreSummaryOverride | null>(null);
   const [showMissingProfile, setShowMissingProfile] = useState(true);
 
   const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
@@ -247,6 +249,7 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     setParameter16Scores(null);
     setUserActionsRequired([]);
     setJdOptimizationResult(null);
+    setOptimizationScoreSummary(null);
     setEditorMode('preview');
     setShowExportModal(false);
   }, []);
@@ -507,6 +510,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setIsOptimizing(true);
       setJdOptimizationResult(null);
       setParameter16Scores(null);
+      setOptimizationScoreSummary(null);
       setUserActionsRequired([]);
 
       const optimizationCreditResult = await paymentService.useOptimization(user!.id);
@@ -561,6 +565,20 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           });
         }
 
+        const baseScoreSummary: ScoreSummaryOverride = {
+          before: {
+            score: optimizationResult.beforeScore?.overall || 0,
+            band: optimizationResult.beforeScore?.match_band || '',
+            probability: optimizationResult.beforeScore?.interview_probability_range || '',
+          },
+          after: {
+            score: optimizationResult.afterScore?.overall || 0,
+            band: optimizationResult.afterScore?.match_band || '',
+            probability: optimizationResult.afterScore?.interview_probability_range || '',
+          },
+        };
+        setOptimizationScoreSummary(baseScoreSummary);
+
         try {
           const loopResult = await runOptimizationLoop(
             finalOptimizedResume,
@@ -570,6 +588,26 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           );
           setJdOptimizationResult(loopResult);
           finalOptimizedResume = loopResult.optimizedResume;
+
+          try {
+            const finalEnhancedScore = await EnhancedScoringService.calculateScore({
+              resumeText: reconstructResumeText(finalOptimizedResume),
+              resumeData: finalOptimizedResume,
+              jobDescription: currentJobDescription,
+              extractionMode: 'TEXT',
+            });
+
+            setOptimizationScoreSummary({
+              before: baseScoreSummary.before,
+              after: {
+                score: finalEnhancedScore.overall || baseScoreSummary.after.score,
+                band: finalEnhancedScore.match_band || baseScoreSummary.after.band,
+                probability: finalEnhancedScore.interview_probability_range || baseScoreSummary.after.probability,
+              },
+            });
+          } catch (finalScoreError) {
+            console.warn('Failed to calculate final enhanced score after optimization loop:', finalScoreError);
+          }
 
           if (loopResult.gapClassification.userActionCards.length > 0) {
             setUserActionsRequired(loopResult.gapClassification.userActionCards);
@@ -1113,6 +1151,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           jobContext={jobContext}
           onApplyNow={() => handleExternalApply(optimizedResume)}
           jdOptimizationResult={jdOptimizationResult}
+          scoreSummaryOverride={optimizationScoreSummary}
           parameter16Scores={parameter16Scores}
           onEditResume={() => setEditorMode('edit')}
           onExportResume={() => setShowExportModal(true)}
@@ -1409,6 +1448,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                       <ScoreDeltaDisplay
                         result={jdOptimizationResult}
                         userActionCards={jdOptimizationResult.gapClassification.userActionCards}
+                        scoreSummaryOverride={optimizationScoreSummary || undefined}
                       />
                     </div>
                   )}
