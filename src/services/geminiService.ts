@@ -22,6 +22,7 @@ export const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions
 export const MAX_INPUT_LENGTH = 50000;
 export const MAX_RETRIES = 3;
 export const INITIAL_RETRY_DELAY_MS = 1000;
+export const JD_OPTIMIZER_MODEL = 'google/gemini-2.5-flash';
 // --- END ---
 
 const deepCleanComments = (val: any): any => {
@@ -68,9 +69,13 @@ const deepCleanComments = (val: any): any => {
 };
 
 // --- OpenRouter safeFetch function via Supabase Edge Function proxy ---
-const safeFetch = async (options: { prompt: string }, maxRetries = MAX_RETRIES): Promise<{ content: string }> => {
+const safeFetch = async (
+  options: { prompt: string; model?: string },
+  maxRetries = MAX_RETRIES
+): Promise<{ content: string }> => {
   let retries = 0;
   let delay = INITIAL_RETRY_DELAY_MS;
+  const selectedModel = options.model || JD_OPTIMIZER_MODEL;
 
   while (retries < maxRetries) {
     try {
@@ -78,7 +83,7 @@ const safeFetch = async (options: { prompt: string }, maxRetries = MAX_RETRIES):
       const content = await openrouter.chatWithSystem(
         'You are a professional resume optimization assistant. Always respond with valid JSON only.',
         options.prompt,
-        { model: 'google/gemini-2.5-flash', temperature: 0.3 }
+        { model: selectedModel, temperature: 0.3 }
       );
       
       if (!content) {
@@ -468,7 +473,7 @@ LinkedIn URL provided: ${linkedinUrl || 'NONE - leave empty'}
 GitHub URL provided: ${githubUrl || 'NONE - leave empty'}
 ${additionalSections && additionalSections.length > 0 ? `Additional Sections Provided: ${JSON.stringify(additionalSections)}` : ''}`;
 
-  const response = await safeFetch({ prompt: promptContent });
+  const response = await safeFetch({ prompt: promptContent, model: JD_OPTIMIZER_MODEL });
   let raw = response.content;
   if (!raw) throw new Error("No content returned from EdenAI");
 
@@ -1239,7 +1244,7 @@ Return ONLY a JSON array of strings: ["skill1", "skill2", "skill3", "skill4", "s
 
   const prompt = getPromptForMultipleVariations(sectionType, data, variationCount, draftText);
 
-  const response = await safeFetch({ prompt });
+  const response = await safeFetch({ prompt, model: modelOverride || JD_OPTIMIZER_MODEL });
   let result = response.content;
 
   if (!result) throw new Error('No response content from EdenAI');
@@ -1497,7 +1502,7 @@ Return ONLY a JSON array of strings: ["skill1", "skill2", "skill3", "skill4", "s
 
   const prompt = getPromptForSection(sectionType, data, draftText);
 
-  const response = await safeFetch({ prompt });
+  const response = await safeFetch({ prompt, model: modelOverride || JD_OPTIMIZER_MODEL });
   let result = response.content;
   
   if (!result) {
@@ -1592,7 +1597,7 @@ REQUIREMENTS:
 
 Generate the company description now:`;
 
-  const response = await safeFetch({ prompt });
+  const response = await safeFetch({ prompt, model: JD_OPTIMIZER_MODEL });
   let result = response.content;
 
   if (!result) {
