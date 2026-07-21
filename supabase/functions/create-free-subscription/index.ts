@@ -4,6 +4,7 @@ import {
   calculateSelectedAddOnsTotal,
   findPaymentAddOn,
   findSubscriptionPlan,
+  getAddOnBundleCount,
   resolveSubscriptionEndDateIso,
 } from '../_shared/paymentCatalog.ts';
 import {
@@ -193,7 +194,7 @@ serve(async (req) => {
     const transactionId = transactionInsert.data.id;
 
     for (const [addOnId, quantityValue] of Object.entries(selectedAddOns)) {
-      const requestedQuantity = Math.max(0, Number(quantityValue || 0));
+      const requestedQuantity = Number(quantityValue || 0);
       if (!requestedQuantity) {
         continue;
       }
@@ -202,6 +203,11 @@ serve(async (req) => {
       if (!addOn) {
         throw new Error(`Unsupported add-on selected: ${addOnId}`);
       }
+      const bundleCount = getAddOnBundleCount(addOn, requestedQuantity);
+      if (bundleCount <= 0) {
+        throw new Error(`Invalid add-on quantity selected: ${addOnId}`);
+      }
+      const grantedQuantity = bundleCount * addOn.quantity;
 
       let { data: addonType, error: addonTypeError } = await supabase
         .from('addon_types')
@@ -233,8 +239,9 @@ serve(async (req) => {
         .insert({
           user_id: user.id,
           addon_type_id: addonType.id,
-          quantity_purchased: requestedQuantity,
-          quantity_remaining: requestedQuantity,
+          quantity_purchased: grantedQuantity,
+          quantity_remaining: grantedQuantity,
+          optimization_tier: addOn.type === 'optimization' ? (addOn.optimizationTier || 'quick') : null,
           payment_transaction_id: transactionId,
         });
 
@@ -247,23 +254,7 @@ serve(async (req) => {
 
     if (plan) {
       const subscriptionStartDate = new Date();
-
-      const { data: existingSubscription } = await supabase
-        .from('subscriptions')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .gt('end_date', new Date().toISOString())
-        .order('end_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingSubscription?.id) {
-        await supabase
-          .from('subscriptions')
-          .update({ status: 'upgraded', updated_at: new Date().toISOString() })
-          .eq('id', existingSubscription.id);
-      }
+      const optimizationTier = plan.optimizations > 0 ? (plan.optimizationTier || 'quick') : null;
 
       const subscriptionInsert = await supabase
         .from('subscriptions')
@@ -275,6 +266,12 @@ serve(async (req) => {
           end_date: resolveSubscriptionEndDateIso(plan, subscriptionStartDate),
           optimizations_used: 0,
           optimizations_total: plan.optimizations,
+          quick_optimizations_used: 0,
+          quick_optimizations_total: optimizationTier === 'quick' ? plan.optimizations : 0,
+          smart_optimizations_used: 0,
+          smart_optimizations_total: optimizationTier === 'smart' ? plan.optimizations : 0,
+          deep_optimizations_used: 0,
+          deep_optimizations_total: optimizationTier === 'deep' ? plan.optimizations : 0,
           score_checks_used: 0,
           score_checks_total: plan.scoreChecks,
           linkedin_messages_used: 0,

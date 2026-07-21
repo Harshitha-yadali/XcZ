@@ -1,0 +1,1 @@
+alter table if exists public.session_bookings add column if not exists preparation_notes text, add column if not exists resume_file_name text, add column if not exists resume_storage_path text, add column if not exists resume_public_url text, add column if not exists preparation_submitted_at timestamptz;;

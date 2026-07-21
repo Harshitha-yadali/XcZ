@@ -23,9 +23,16 @@ import {
 } from '../types/optimizer';
 
 import { GapAnalyzerService } from './gapAnalyzerService';
-import { EnhancedScoringService, EnhancedScoringInput } from './enhancedScoringService';
 import { FullResumeRewriter16ParameterService } from './fullResumeRewriter16ParameterService';
-import { optimizeResume as geminiOptimizeResume } from './geminiService';
+import {
+  analyzeResumeForQuickScan,
+  optimizeResume as geminiOptimizeResume,
+  type QuickScanInsight,
+} from './geminiService';
+import { validateAndRepairResume, type EvidenceViolation } from './resumeEvidenceValidator';
+import { CanonicalJdScoringService, type CanonicalScoreContext } from './canonicalJdScoringService';
+import { mapCanonicalToEnhancedScore } from './canonicalScoreMapper';
+import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 // ============================================================================
 // USER ACTION REQUIRED TYPES
@@ -332,13 +339,23 @@ export class EnhancedJdOptimizerService {
     resumeText: string,
     jobDescription: string,
     _targetRole: string,
-    mode: OptimizationMode = 'standard'
+    mode: OptimizationMode = 'standard',
+    modelOverride?: string,
+    runId?: string,
+    candidateTypeOverride?: UserType,
   ): Promise<OptimizationResult> {
     const startTime = Date.now();
     const modeConfig = OPTIMIZATION_MODES[mode];
 
-    // Step 1: Analyze gaps using 220+ metrics
-    const gapAnalysis = await GapAnalyzerService.analyzeGaps(resumeData, resumeText, jobDescription);
+    const userType: UserType = candidateTypeOverride || this.detectUserType(resumeData);
+    const optimizationTier: JdOptimizationTierId = mode === 'light' ? 'quick' : mode === 'standard' ? 'smart' : 'deep';
+
+    // Step 1: Analyze gaps using the canonical PrimoBoost JD score.
+    const gapAnalysis = await GapAnalyzerService.analyzeGaps(resumeData, resumeText, jobDescription, {
+      candidateType: userType,
+      optimizationTier,
+      runId,
+    });
     const beforeScore = gapAnalysis.beforeScore;
 
     // Step 2: Create optimized resume copy
@@ -353,6 +370,8 @@ export class EnhancedJdOptimizerService {
       overallAfter?: number;
       improvement?: number;
     } | undefined;
+    let quickScanInsights: QuickScanInsight[] = [];
+    let evidenceViolations: EvidenceViolation[] = [];
 
     // ========================================================================
     // STEP 1: Use Gemini Service (EdenAI + GPT-4o-mini) for AI-powered optimization
@@ -360,29 +379,38 @@ export class EnhancedJdOptimizerService {
     
     try {
       // Detect user type based on experience
-      const userType: UserType = this.detectUserType(resumeData);
-      
       // Convert resume to text for AI processing
       const resumeTextForAI = this.resumeDataToText(resumeData);
       
-      // Call Gemini service for AI-based full resume optimization
-      const aiOptimizedResume = await geminiOptimizeResume(
-        resumeTextForAI,
-        jobDescription,
-        userType,
-        resumeData.name,
-        undefined, // _logStart
-        resumeData.email,
-        resumeData.phone,
-        resumeData.linkedin,
-        resumeData.github,
-        resumeData.linkedin,
-        resumeData.github,
-        _targetRole || resumeData.targetRole
-      );
-      
-      // Use the AI-optimized resume
-      optimizedResume = aiOptimizedResume;
+      if (mode === 'light') {
+        // Quick Scan uses Gemini Flash for a structured diagnostic only.
+        // It never asks the model to generate an optimized resume.
+        quickScanInsights = await analyzeResumeForQuickScan(
+          resumeTextForAI,
+          jobDescription,
+          modelOverride,
+        );
+        optimizedResume = JSON.parse(JSON.stringify(resumeData)) as ResumeData;
+      } else {
+        optimizedResume = await geminiOptimizeResume(
+          resumeTextForAI,
+          jobDescription,
+          userType,
+          resumeData.name,
+          undefined, // _logStart
+          resumeData.email,
+          resumeData.phone,
+          resumeData.linkedin,
+          resumeData.github,
+          resumeData.linkedin,
+          resumeData.github,
+          _targetRole || resumeData.targetRole,
+          undefined,
+          undefined,
+          modelOverride,
+          mode,
+        );
+      }
       
       // CRITICAL: Preserve original skills if AI didn't return any
       if ((!optimizedResume.skills || optimizedResume.skills.length === 0) && 
@@ -413,22 +441,25 @@ export class EnhancedJdOptimizerService {
         optimizedResume.certifications = resumeData.certifications;
       }
       
-      changes.push({
-        section: 'full_resume',
-        changeType: 'rewritten',
-        description: '[AI Optimization] Full resume rewritten by Gemini/GPT-4o-mini based on job description',
-      });
+      if (mode !== 'light') {
+        changes.push({
+          section: 'full_resume',
+          changeType: 'rewritten',
+          description: '[AI Optimization] Full resume rewritten for the job description.',
+        });
+      }
       
       // ========================================================================
       // STEP 2: Score the AI-optimized resume with 16 parameters
       // ========================================================================
-      
-      const rewriteResult = await FullResumeRewriter16ParameterService.rewriteResume(
-        optimizedResume,
-        jobDescription,
-        _targetRole,
-        userType
-      );
+      // Quick Scan intentionally reports gaps without applying the full rewrite.
+      if (mode !== 'light') {
+        const rewriteResult = await FullResumeRewriter16ParameterService.rewriteResume(
+          optimizedResume,
+          jobDescription,
+          _targetRole,
+          userType
+        );
       
       // Store the AI-optimized data BEFORE 16-parameter rewrite (for fallback)
       const aiOptimizedSkills = optimizedResume.skills ? JSON.parse(JSON.stringify(optimizedResume.skills)) : null;
@@ -488,63 +519,99 @@ export class EnhancedJdOptimizerService {
       };
       
       // Convert rewrite changes to section changes
-      rewriteResult.changesApplied.forEach(change => {
-        changes.push({
-          section: change.section,
-          changeType: change.changeType as any,
-          description: `[${change.parameter}] ${change.description}`,
-          before: change.before,
-          after: change.after,
+        rewriteResult.changesApplied.forEach(change => {
+          changes.push({
+            section: change.section,
+            changeType: change.changeType as any,
+            description: `[${change.parameter}] ${change.description}`,
+            before: change.before,
+            after: change.after,
+          });
         });
-      });
-      
-    } catch (rewriteError) {
-      console.error('AI optimization failed, falling back to legacy optimization:', rewriteError);
-      
-      // Fallback to legacy optimization
-      const cleaningChanges = this.cleanGarbageFromSkills(optimizedResume);
-      changes.push(...cleaningChanges);
-      
-      const summaryChanges = this.optimizeSummary(optimizedResume, jobDescription, gapAnalysis);
-      changes.push(...summaryChanges);
-      
-      const keywordChanges = this.addMissingKeywords(optimizedResume, jobDescription, gapAnalysis, 50);
-      changes.push(...keywordChanges);
-      
-      const skillsChanges = this.optimizeSkillsSection(optimizedResume, jobDescription);
-      changes.push(...skillsChanges);
-      
-      if (modeConfig.rewriteBullets) {
-        const bulletChanges = this.rewriteBullets(optimizedResume, jobDescription, gapAnalysis, 30);
-        changes.push(...bulletChanges);
       }
       
-      const experienceChanges = this.enhanceExperienceBullets(optimizedResume, jobDescription);
-      changes.push(...experienceChanges);
-      
-      const quantificationChanges = this.addQuantifiedResults(optimizedResume);
-      changes.push(...quantificationChanges);
-      
-      const projectChanges = this.optimizeProjects(optimizedResume, jobDescription);
-      changes.push(...projectChanges);
-      
-      const redFlagChanges = this.fixRedFlags(optimizedResume);
-      changes.push(...redFlagChanges);
+    } catch (rewriteError) {
+      if (modelOverride) {
+        console.error(`Requested JD optimization model failed (${modelOverride}):`, rewriteError);
+        throw new Error('The selected AI model could not complete this optimization. No credits were charged. Please try again.');
+      }
+
+      console.error('AI optimization failed, falling back to legacy optimization:', rewriteError);
+
+      if (mode === 'light') {
+        // A failed Quick Scan must never fall through to a mutating legacy rewrite.
+        optimizedResume = JSON.parse(JSON.stringify(resumeData)) as ResumeData;
+      } else {
+        // Fallback to legacy optimization
+        const cleaningChanges = this.cleanGarbageFromSkills(optimizedResume);
+        changes.push(...cleaningChanges);
+
+        const summaryChanges = this.optimizeSummary(optimizedResume, jobDescription, gapAnalysis);
+        changes.push(...summaryChanges);
+
+        const keywordChanges = this.addMissingKeywords(optimizedResume, jobDescription, gapAnalysis, 50);
+        changes.push(...keywordChanges);
+
+        const skillsChanges = this.optimizeSkillsSection(optimizedResume, jobDescription);
+        changes.push(...skillsChanges);
+
+        if (modeConfig.rewriteBullets) {
+          const bulletChanges = this.rewriteBullets(optimizedResume, jobDescription, gapAnalysis, 30);
+          changes.push(...bulletChanges);
+        }
+
+        const experienceChanges = this.enhanceExperienceBullets(optimizedResume, jobDescription);
+        changes.push(...experienceChanges);
+
+        const quantificationChanges = this.addQuantifiedResults(optimizedResume);
+        changes.push(...quantificationChanges);
+
+        const projectChanges = this.optimizeProjects(optimizedResume, jobDescription);
+        changes.push(...projectChanges);
+
+        const redFlagChanges = this.fixRedFlags(optimizedResume);
+        changes.push(...redFlagChanges);
+      }
+    }
+
+    if (mode !== 'light') {
+      const evidenceValidation = validateAndRepairResume(resumeData, optimizedResume);
+      optimizedResume = evidenceValidation.resume;
+      evidenceViolations = evidenceValidation.violations;
     }
 
     // Step 4: Calculate after score
-    const optimizedResumeText = this.resumeDataToText(optimizedResume);
-    
-    const afterScoringInput: EnhancedScoringInput = {
-      resumeText: optimizedResumeText,
+    const afterContext: CanonicalScoreContext = optimizationTier === 'quick'
+      ? 'quick_scan'
+      : `${optimizationTier}_after` as CanonicalScoreContext;
+    const afterCanonical = await CanonicalJdScoringService.score({
       resumeData: optimizedResume,
       jobDescription,
-      extractionMode: 'TEXT',
-    };
-    const afterScore = await EnhancedScoringService.calculateScore(afterScoringInput);
+      candidateType: userType,
+      context: afterContext,
+      runId,
+    });
+    const afterScore = mapCanonicalToEnhancedScore(afterCanonical.scoreResult, optimizedResume);
 
     // Step 5: Identify user actions required
-    const userActionsRequired = this.identifyUserActionsRequired(afterScore, gapAnalysis, jobDescription, optimizedResume);
+    const scoreBasedActions = this.identifyUserActionsRequired(afterScore, gapAnalysis, jobDescription, optimizedResume);
+    const quickActions: UserActionRequired[] = quickScanInsights.map((insight) => ({
+      ...insight,
+      currentScore: 0,
+      targetScore: 90,
+      canAutoFix: false,
+    }));
+    const evidenceActions: UserActionRequired[] = evidenceViolations.length > 0 ? [{
+      category: 'experience',
+      priority: 'high',
+      title: 'Candidate evidence required',
+      description: 'Some proposed improvements were excluded because the original resume did not support them.',
+      currentScore: 0,
+      targetScore: 100,
+      suggestions: [...new Set(evidenceViolations.map((violation) => violation.message))].slice(0, 5),
+      canAutoFix: false,
+    }] : [];
+    const userActionsRequired = [...quickActions, ...evidenceActions, ...scoreBasedActions];
 
     // Step 6: Build comparisons
     const tierComparison = this.buildTierComparison(beforeScore.tier_scores, afterScore.tier_scores);

@@ -1,0 +1,12 @@
+\n\nCREATE TABLE IF NOT EXISTS app_metrics (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  metric_name text UNIQUE NOT NULL,\n  metric_value bigint NOT NULL DEFAULT 0,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);
+\n\nALTER TABLE app_metrics ENABLE ROW LEVEL SECURITY;
+\n\n-- Allow public read access for displaying stats\nCREATE POLICY "Public can read app metrics"\n  ON app_metrics\n  FOR SELECT\n  TO public\n  USING (true);
+\n\n-- Allow service role to update metrics\nCREATE POLICY "Service role can update app metrics"\n  ON app_metrics\n  FOR UPDATE\n  TO service_role\n  USING (true);
+\n\n-- Allow service role to insert metrics\nCREATE POLICY "Service role can insert app metrics"\n  ON app_metrics\n  FOR INSERT\n  TO service_role\n  WITH CHECK (true);
+\n\n-- Insert initial record for total resumes created\nINSERT INTO app_metrics (metric_name, metric_value) \nVALUES ('total_resumes_created', 50000)\nON CONFLICT (metric_name) DO NOTHING;
+\n\n-- Create trigger to update updated_at timestamp\nCREATE OR REPLACE FUNCTION update_app_metrics_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN\n  NEW.updated_at = now();
+\n  RETURN NEW;
+\nEND;
+\n$$ LANGUAGE plpgsql;
+\n\nCREATE TRIGGER update_app_metrics_updated_at_trigger\n  BEFORE UPDATE ON app_metrics\n  FOR EACH ROW\n  EXECUTE FUNCTION update_app_metrics_updated_at();
+;

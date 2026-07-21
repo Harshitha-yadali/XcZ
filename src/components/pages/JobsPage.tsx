@@ -1,6 +1,6 @@
 // src/components/pages/JobsPage.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
   Briefcase,
@@ -94,6 +94,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isChristmasMode, colors } = useTheme();
+  const prefersReducedMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
   useSEO({
@@ -372,12 +373,21 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     }
   }, [autoApplyResult, showStatusModal, showProjectModal, autoApplyJob]);
 
-  const stats = [
+const stats = [
   { label: 'Total Jobs', value: total, icon: <Briefcase className="w-5 h-5" /> },
   { label: 'Remote Jobs', value: jobs.filter(j => j.location_type === 'Remote').length, icon: <MapPin className="w-5 h-5" /> },
   { label: 'Fresh Openings', value: jobs.filter(j => new Date(j.posted_date) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length, icon: <Clock className="w-5 h-5" /> },
   { label: 'Companies', value: totalCompanies, icon: <Users className="w-5 h-5" /> }
 ];
+
+  const displayedJobs = showingRecommendations && aiRecommendations.length > 0
+    ? aiRecommendations.map((rec) => ({
+        ...rec.job_data,
+        match_score: rec.match_score,
+        match_reason: rec.match_reason,
+        skills_matched: rec.skills_matched,
+      }))
+    : jobs;
 
 
   return (
@@ -418,14 +428,23 @@ export const JobsPage: React.FC<JobsPageProps> = ({
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-12">
         {/* Hero Section */}
-        <div className="text-center mb-12">
-          <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg ${
+        <motion.div
+          className="text-center mb-12"
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.88, rotate: -5 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 240, damping: 20, delay: 0.08 }}
+            className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg ${
             isChristmasMode
               ? 'bg-gradient-to-br from-red-500 via-emerald-500 to-green-600 shadow-green-500/50'
               : 'bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-emerald-500/50'
           }`}>
             <Briefcase className="w-10 h-10 text-white" />
-          </div>
+          </motion.div>
           <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
             {showingRecommendations ? (
               'Your Recommended Jobs'
@@ -489,7 +508,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
               </GradientButton>
             </div>
           )}
-        </div>
+        </motion.div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -515,13 +534,18 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         </div>
 
         {/* Filters */}
-        <div className="mb-8">
+        <motion.div
+          className="mb-8"
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: prefersReducedMotion ? 0 : 0.18 }}
+        >
           <JobFiltersComponent
             filters={filters}
             onFiltersChange={handleFiltersChange}
             isLoading={isLoading}
           />
-        </div>
+        </motion.div>
 
         {/* Error State */}
         {error && (
@@ -549,19 +573,18 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         {/* Jobs Grid */}
         {!error && (
           <>
-           <div className="w-full max-w-full mx-auto px-0 sm:px-0 py-8 space-y-4">
-              {(showingRecommendations && aiRecommendations.length > 0
-                ? aiRecommendations.map((rec) => ({
-                    ...rec.job_data,
-                    match_score: rec.match_score,
-                    match_reason: rec.match_reason,
-                    skills_matched: rec.skills_matched,
-                  }))
-                : jobs
-              ).map((job: any, index: number) => (
+           <motion.div
+             layout
+             animate={{ opacity: isLoading ? 0.58 : 1 }}
+             transition={{ duration: 0.2 }}
+             className="w-full max-w-full mx-auto px-0 sm:px-0 py-8 space-y-4"
+           >
+            <AnimatePresence initial={false} mode="sync">
+              {displayedJobs.map((job: any, index: number) => (
                 <JobCard
                   key={job.id}
                   job={job}
+                  animationDelay={prefersReducedMotion ? 0 : Math.min(index * 0.045, 0.27)}
                   onManualApply={handleManualApply}
                   onAutoApply={handleAutoApply}
                   isAuthenticated={isAuthenticated}
@@ -569,19 +592,40 @@ export const JobsPage: React.FC<JobsPageProps> = ({
                   onCompleteProfile={() => onShowProfile && onShowProfile('profile')} // NEW: Pass profile completion handler
                 />
               ))}
-            </div>
+            </AnimatePresence>
+           </motion.div>
 
             {/* Loading State */}
-            {isLoading && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3 dark:text-neon-cyan-400" />
-                <span className="text-lg text-gray-600 dark:text-gray-300">Loading jobs...</span>
-              </div>
-            )}
+            <AnimatePresence>
+              {isLoading && (
+                <motion.div
+                  initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
+                  className="relative overflow-hidden flex items-center justify-center gap-3 py-5 px-6 rounded-xl border border-slate-700/60 bg-slate-900/60 backdrop-blur-md"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Loader2 className={`w-5 h-5 text-emerald-400 ${prefersReducedMotion ? '' : 'animate-spin'}`} />
+                  <span className="text-sm font-medium text-slate-300">Updating the latest jobs...</span>
+                  {!prefersReducedMotion && (
+                    <motion.div
+                      className="absolute bottom-0 left-0 h-px w-1/3 bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
+                      animate={{ x: ['-100%', '400%'] }}
+                      transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
+                    />
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Pagination */}
             {!isLoading && jobs.length > 0 && totalPages > 1 && (
-              <div className="mt-8">
+              <motion.div
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-8"
+              >
                 <Pagination
                   currentPage={currentPage}
                   totalPages={totalPages}
@@ -592,13 +636,17 @@ export const JobsPage: React.FC<JobsPageProps> = ({
                     Showing {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, total)} of {total} jobs
                   </p>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* No Jobs Found */}
             {!isLoading && jobs.length === 0 && (
-              <div className="text-center py-12">
-                <div className="bg-gray-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 dark:bg-dark-200">
+              <motion.div
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className="text-center py-12"
+              >
+                <div className="bg-slate-800/80 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 border border-slate-700/60">
                   <Briefcase className="w-10 h-10 text-gray-600 dark:text-gray-400" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">No Jobs Found</h3>
@@ -611,7 +659,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
                 >
                   Clear All Filters
                 </button>
-              </div>
+              </motion.div>
             )}
           </>
         )}

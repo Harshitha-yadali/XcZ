@@ -22,6 +22,7 @@ interface Parameter16ScoreDisplayProps {
   overallAfter?: number;
   improvement?: number;
   compact?: boolean;
+  mode?: 'comparison' | 'scan';
 }
 
 const PARAMETER_ICONS: Record<number, string> = {
@@ -50,8 +51,11 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
   overallAfter,
   improvement,
   compact = false,
+  mode = 'comparison',
 }) => {
-  const scores = afterScores || beforeScores || [];
+  const isScan = mode === 'scan';
+  const scores = isScan ? (beforeScores || afterScores || []) : (afterScores || beforeScores || []);
+  const currentScore = overallBefore ?? overallAfter ?? 0;
   
   const getScoreColor = (percentage: number): string => {
     if (percentage >= 80) return 'text-green-500';
@@ -75,15 +79,39 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
     return { grade: 'D', color: 'text-red-500' };
   };
 
+  if (isScan) {
+    return (
+      <div className="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 rounded-lg p-4 border border-cyan-500/30">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Target className="w-4 h-4 text-cyan-400" />
+          Quick Scan Complete
+        </h3>
+        <p className="mt-2 text-sm text-gray-300">Review the matched areas and improvement suggestions below.</p>
+        {scores.length > 0 && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {scores.map((score) => (
+              <div key={score.parameterNumber} className="rounded-md border border-gray-700 bg-gray-900/40 p-3">
+                <div className="text-sm font-medium text-white">
+                  {PARAMETER_ICONS[score.parameterNumber]} {score.parameter}
+                </div>
+                {score.suggestions[0] && <div className="mt-1 text-xs text-gray-400">{score.suggestions[0]}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (compact) {
     return (
       <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-lg p-4 border border-purple-500/30">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
             <Target className="w-4 h-4 text-purple-400" />
-            16-Parameter ATS Score
+            {isScan ? 'Quick Scan JD Match' : '16-Parameter ATS Score'}
           </h3>
-          {improvement !== undefined && improvement > 0 && (
+          {!isScan && improvement !== undefined && improvement > 0 && (
             <span className="text-xs text-green-400 flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
               +{improvement}%
@@ -92,9 +120,9 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
         </div>
         
         <div className="flex items-center gap-4">
-          {/* Show Before → After scores */}
+          {/* Quick shows one current score; optimization tiers show Before → After. */}
           <div className="flex items-center gap-2">
-            {overallBefore !== undefined && overallBefore > 0 && (
+            {!isScan && overallBefore !== undefined && overallBefore > 0 && (
               <>
                 <div className="text-center">
                   <div className={`text-lg font-bold ${getScoreColor(overallBefore)} opacity-60`}>
@@ -106,11 +134,11 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
               </>
             )}
             <div className="text-center">
-              <div className={`text-2xl font-bold ${getScoreColor(overallAfter || 0)}`}>
-                {overallAfter || 0}%
+              <div className={`text-2xl font-bold ${getScoreColor(isScan ? currentScore : (overallAfter || 0))}`}>
+                {isScan ? currentScore : (overallAfter || 0)}%
               </div>
               <div className="text-xs text-gray-400">
-                {overallBefore !== undefined && overallBefore > 0 ? 'After' : 'Overall'}
+                {isScan ? 'Current Match' : overallBefore !== undefined && overallBefore > 0 ? 'After' : 'Overall'}
               </div>
             </div>
           </div>
@@ -146,13 +174,13 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
             16-Parameter ATS Optimization
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            Full resume rewrite based on job description analysis
+            {isScan ? 'Current resume match against the job description' : 'Full resume rewrite based on job description analysis'}
           </p>
         </div>
         
         <div className="text-right">
           <div className="flex items-center gap-4">
-            {overallBefore !== undefined && (
+            {!isScan && overallBefore !== undefined && (
               <div className="text-center">
                 <div className="text-sm text-gray-400">Before</div>
                 <div className={`text-xl font-bold ${getScoreColor(overallBefore)}`}>
@@ -161,13 +189,23 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
               </div>
             )}
             
-            {improvement !== undefined && improvement > 0 && (
+            {!isScan && improvement !== undefined && improvement > 0 && (
               <div className="text-green-400">
                 <TrendingUp className="w-6 h-6" />
               </div>
             )}
             
-            {overallAfter !== undefined && (
+            {isScan ? (
+              <div className="text-center">
+                <div className="text-sm text-gray-400">Current Match</div>
+                <div className={`text-3xl font-bold ${getScoreColor(currentScore)}`}>
+                  {currentScore}%
+                </div>
+                <div className={`text-sm font-semibold ${getOverallGrade(currentScore).color}`}>
+                  Grade: {getOverallGrade(currentScore).grade}
+                </div>
+              </div>
+            ) : overallAfter !== undefined && (
               <div className="text-center">
                 <div className="text-sm text-gray-400">After</div>
                 <div className={`text-3xl font-bold ${getScoreColor(overallAfter)}`}>
@@ -186,7 +224,7 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {scores.map((score) => {
           const beforeScore = beforeScores?.find(s => s.parameterNumber === score.parameterNumber);
-          const improved = beforeScore && score.percentage > beforeScore.percentage;
+          const improved = !isScan && beforeScore && score.percentage > beforeScore.percentage;
           
           return (
             <div

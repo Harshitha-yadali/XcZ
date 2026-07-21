@@ -2,7 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   calculateSelectedAddOnsTotal,
+  findPaymentAddOn,
   findSubscriptionPlan,
+  getAddOnBundleCount,
   type PaymentPlanConfig,
 } from "../_shared/paymentCatalog.ts";
 import {
@@ -70,6 +72,16 @@ Deno.serve(async (req: Request) => {
     const isWebinarPayment = metadata?.type === 'webinar';
     const isSessionBooking = metadata?.type === 'session_booking';
     const isReferralBooking = metadata?.type === 'referral_booking';
+
+    for (const [addOnId, requestedQuantity] of Object.entries(selectedAddOns || {})) {
+      const addOn = findPaymentAddOn(addOnId);
+      if (!addOn || getAddOnBundleCount(addOn, Number(requestedQuantity)) <= 0) {
+        return new Response(
+          JSON.stringify({ error: `Invalid add-on or quantity selected: ${addOnId}` }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 },
+        );
+      }
+    }
 
     const resolvedAddOnsTotal = calculateSelectedAddOnsTotal(selectedAddOns);
 
@@ -453,9 +465,15 @@ Deno.serve(async (req: Request) => {
 
     const order = await response.json();
 
-    try {
-      await supabase.from('payment_transactions').update({ order_id: order.id }).eq('id', transactionId as string);
-    } catch (_e) {}
+    const { error: bindOrderError } = await supabase
+      .from('payment_transactions')
+      .update({ order_id: order.id })
+      .eq('id', transactionId as string)
+      .eq('user_id', user.id);
+
+    if (bindOrderError) {
+      throw new Error('Payment order was created but could not be linked to the transaction. Please try again.');
+    }
 
     return new Response(
       JSON.stringify({ orderId: order.id, amount: finalAmount, keyId: razorpayKeyId, currency: 'INR', transactionId: transactionId, mode: isTestMode ? 'test' : 'live' }),

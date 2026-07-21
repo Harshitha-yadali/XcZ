@@ -1,0 +1,14 @@
+/*\n  # Add Auto-Submit and Skip Question Tracking\n\n  1. Changes to Tables\n    - Add `auto_submitted` column to `interview_responses` table\n      - Boolean field to track if answer was auto-submitted due to silence\n    - Add `silence_duration` column to `interview_responses` table\n      - Integer field to track how many seconds of silence before submission\n    - Add `skipped_questions` column to `mock_interview_sessions` table\n      - JSONB array to store IDs of skipped questions\n    - Add `skip_count` column to `mock_interview_sessions` table\n      - Integer counter for total questions skipped\n\n  2. Purpose\n    - Track which answers were automatically submitted vs manually submitted\n    - Record silence duration for analytics and coaching insights\n    - Monitor which questions users skip for difficulty analysis\n    - Improve interview experience tracking and reporting\n*/\n\nDO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'interview_responses' AND column_name = 'auto_submitted'\n  ) THEN\n    ALTER TABLE interview_responses ADD COLUMN auto_submitted boolean DEFAULT false;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'interview_responses' AND column_name = 'silence_duration'\n  ) THEN\n    ALTER TABLE interview_responses ADD COLUMN silence_duration integer DEFAULT 0;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'skipped_questions'\n  ) THEN\n    ALTER TABLE mock_interview_sessions ADD COLUMN skipped_questions jsonb DEFAULT '[]'::jsonb;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'skip_count'\n  ) THEN\n    ALTER TABLE mock_interview_sessions ADD COLUMN skip_count integer DEFAULT 0;
+\n  END IF;
+\nEND $$;
+\n\nCOMMENT ON COLUMN interview_responses.auto_submitted IS 'Indicates if the answer was automatically submitted after 5 seconds of silence';
+\nCOMMENT ON COLUMN interview_responses.silence_duration IS 'Duration of silence in seconds before auto-submission';
+\nCOMMENT ON COLUMN mock_interview_sessions.skipped_questions IS 'Array of question IDs that were skipped during the interview';
+\nCOMMENT ON COLUMN mock_interview_sessions.skip_count IS 'Total count of questions skipped in this session';
+\n;

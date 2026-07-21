@@ -83,7 +83,7 @@ export const TierScoresDisplay: React.FC<TierScoresDisplayProps> = ({ tierScores
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold text-gray-800">
-        Tier Analysis (220+ Metrics)
+        Tier Analysis (28 Evidence-Backed Checks)
       </h3>
       
       <div className={`grid ${compact ? 'grid-cols-2 gap-2' : 'grid-cols-1 md:grid-cols-2 gap-3'}`}>

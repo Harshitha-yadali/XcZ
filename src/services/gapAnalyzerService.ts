@@ -17,7 +17,10 @@ import {
   FailingMetric,
 } from '../types/optimizer';
 
-import { EnhancedScoringService, EnhancedScoringInput } from './enhancedScoringService';
+import { CanonicalJdScoringService, type CanonicalScoreContext } from './canonicalJdScoringService';
+import { mapCanonicalToEnhancedScore } from './canonicalScoreMapper';
+import type { UserType } from '../types/resume';
+import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 // ============================================================================
 // GAP ANALYZER SERVICE
@@ -31,17 +34,25 @@ export class GapAnalyzerService {
   static async analyzeGaps(
     resumeData: ResumeData,
     resumeText: string,
-    jobDescription: string
+    jobDescription: string,
+    options: {
+      candidateType: UserType;
+      optimizationTier: JdOptimizationTierId;
+      runId?: string;
+    },
   ): Promise<GapAnalysisResult> {
-    // Get comprehensive score using 220+ metrics
-    const scoringInput: EnhancedScoringInput = {
-      resumeText,
+    void resumeText;
+    const context: CanonicalScoreContext = options.optimizationTier === 'quick'
+      ? 'quick_scan'
+      : `${options.optimizationTier}_before` as CanonicalScoreContext;
+    const canonical = await CanonicalJdScoringService.score({
       resumeData,
       jobDescription,
-      extractionMode: 'TEXT',
-    };
-
-    const beforeScore = await EnhancedScoringService.calculateScore(scoringInput);
+      candidateType: options.candidateType,
+      context,
+      runId: options.runId,
+    });
+    const beforeScore = mapCanonicalToEnhancedScore(canonical.scoreResult, resumeData);
 
     // Analyze tier gaps
     const tierGaps = this.analyzeTierGaps(beforeScore.tier_scores);

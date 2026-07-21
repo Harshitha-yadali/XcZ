@@ -5,6 +5,7 @@ import { ExportOptions, defaultExportOptions } from '../types/export';
 import type { OptimizationSessionResult } from '../services/optimizationLoopController';
 import ScoreDeltaDisplay, { type ScoreSummaryOverride } from './ScoreDeltaDisplay';
 import { Parameter16ScoreDisplay } from './Parameter16ScoreDisplay';
+import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 interface Section {
   id: string;
@@ -40,6 +41,7 @@ interface MobileOptimizedInterfaceProps {
   editorMode?: 'preview' | 'edit';
   onEditorModeChange?: (mode: 'preview' | 'edit') => void;
   resumeEditor?: React.ReactNode;
+  optimizationTier?: JdOptimizationTierId;
 }
 
 export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> = ({
@@ -55,7 +57,8 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   onExportResume,
   editorMode = 'preview',
   onEditorModeChange,
-  resumeEditor
+  resumeEditor,
+  optimizationTier = 'smart',
 }) => {
   const hasScores = !!(jdOptimizationResult || parameter16Scores);
   const [activeTab, setActiveTab] = useState<'preview' | 'scores' | 'export'>('preview');
@@ -142,7 +145,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                 }`}
                 style={{ minHeight: '44px' }}
               >
-                Scores
+                {optimizationTier === 'quick' ? 'Scan' : 'Scores'}
               </button>
             )}
             <button
@@ -180,13 +183,14 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
             <div className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-700/50 p-4">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center">
                 <BarChart3 className="w-5 h-5 mr-2 text-emerald-400" />
-                Score Improvements
+                {optimizationTier === 'quick' ? 'Quick Scan Results' : 'Score Improvements'}
               </h2>
               {jdOptimizationResult ? (
                 <ScoreDeltaDisplay
                   result={jdOptimizationResult}
                   userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                   scoreSummaryOverride={scoreSummaryOverride || undefined}
+                  mode={optimizationTier === 'quick' ? 'scan' : 'comparison'}
                 />
               ) : parameter16Scores ? (
                 <Parameter16ScoreDisplay
@@ -196,6 +200,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                   overallAfter={parameter16Scores.overallAfter}
                   improvement={parameter16Scores.improvement}
                   compact={true}
+                  mode={optimizationTier === 'quick' ? 'scan' : 'comparison'}
                 />
               ) : null}
             </div>
@@ -204,7 +209,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
           <div className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-700/50 p-3">
             <h2 className="text-base font-bold text-white mb-3 flex items-center">
               <FileText className="w-5 h-5 mr-2 text-emerald-400" />
-              Your Optimized Resume
+              {optimizationTier === 'quick' ? 'Your Resume' : 'Your Optimized Resume'}
             </h2>
             <div
               className="relative w-full bg-slate-800/50 rounded-xl overflow-hidden border border-slate-600/50"

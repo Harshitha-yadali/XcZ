@@ -1,5 +1,6 @@
 // src/services/analyzers/sectionDetector.ts
 import { SectionDetectorInterface, SectionDetectionResult, OrderIssue } from '../../types/resume';
+import { BULLET_PATTERN, detectResumeSectionHeading } from '../resumeEvidenceExtractor';
 
 /**
  * SectionDetector - Analyzes resume section organization and structure
@@ -168,7 +169,10 @@ export class SectionDetector implements SectionDetectorInterface {
     // Skip if line is too long to be a header
     if (line.length > 50) return null;
     
-    // Check against all section patterns
+    const canonicalSection = detectResumeSectionHeading(line);
+    if (canonicalSection) return canonicalSection;
+
+    // Retain header/contact support for legacy analyzer callers.
     for (const [section, pattern] of Object.entries(this.SECTION_PATTERNS)) {
       if (pattern.test(line)) {
         return section;
@@ -288,7 +292,7 @@ export class SectionDetector implements SectionDetectorInterface {
     if (!text) return 0;
     
     const bulletPatterns = [
-      /^[\s]*[-•*]\s+.+/gm,
+      new RegExp(`${BULLET_PATTERN.source}.+`, 'gm'),
       /^[\s]*[▪▫■□]\s+.+/gm,
       /^[\s]*[►▶]\s+.+/gm,
       /^[\s]*\d+\.\s+.+/gm,

@@ -20,7 +20,7 @@ import { LoadingAnimation } from './LoadingAnimation';
 // REMOVED: OpenRouter scoring - using EdenAI only
 // import { generateBeforeScore, generateAfterScore, getDetailedResumeScore, reconstructResumeText } from '../services/scoringService';
 import { reconstructResumeText } from '../services/scoringService'; // Keep only reconstructResumeText utility
-import { paymentService } from '../services/paymentService';
+import { getOptimizationTierRemaining, paymentService } from '../services/paymentService';
 import { authService } from '../services/authService'; // ADDED: Import authService
 import { ResumeData, UserType, MatchScore, DetailedScore, ExtractionResult, ScoringMode } from '../types/resume';
 import { ExportOptions, defaultExportOptions } from '../types/export';
@@ -32,19 +32,25 @@ import { FullScreenPreviewModal } from './FullScreenPreviewModal';
 import { jobsService } from '../services/jobsService';
 
 // NEW: EdenAI and enhanced services imports
-import { parseResumeFromFile, ParsedResume } from '../services/geminiResumeParserService';
-import { summarizeJd } from '../services/jdSummarizerService';
 import { matchProjectsToJd, extractJdKeywords, ProjectMatchResult } from '../services/projectMatchingEngine';
 import { processResumeText } from '../services/edenModerationService';
 import { ProjectMatchingPanel } from './ProjectMatchingPanel';
 import { MissingSections, arrayToMissingSections } from '../types/edenai';
-import { EnhancedScoringService } from '../services/enhancedScoringService';
 
 import { runOptimizationLoop, OptimizationSessionResult } from '../services/optimizationLoopController';
 import ScoreDeltaDisplay, { type ScoreSummaryOverride } from './ScoreDeltaDisplay';
 import MissingProfilePrompt from './MissingProfilePrompt';
 import ResumeEditor from './editor/ResumeEditor';
 import ExportResumeModal from './ExportResumeModal';
+import OptimizationQualityModal from './optimizer/OptimizationQualityModal';
+import {
+  DEFAULT_JD_OPTIMIZATION_TIER,
+  getJdOptimizationPackage,
+  getJdOptimizationTier,
+  type JdOptimizationPackageSize,
+  type JdOptimizationTierId,
+} from '../config/jdOptimizationTiers';
+import { findRequiredMissingSections } from '../utils/resumeMissingSections';
 
 // src/components/ResumeOptimizer.tsx
 const cleanResumeText = (text: string): string => {
@@ -147,12 +153,10 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   const [missingSections, setMissingSections] = useState<string[]>([]);
   
   // NEW: EdenAI enhanced state
-  const [jdSummary, setJdSummary] = useState<string>('');
-  const [edenParsedResume, setEdenParsedResume] = useState<ParsedResume | null>(null);
+  const jdSummary = jobDescription;
   const [showProjectMatchingPanel, setShowProjectMatchingPanel] = useState(false);
   const [projectMatchResults, setProjectMatchResults] = useState<ProjectMatchResult[]>([]);
   const [isParsingResume, setIsParsingResume] = useState(false);
-  const [isSummarizingJd, setIsSummarizingJd] = useState(false);
   const [missingSectionsJson, setMissingSectionsJson] = useState<MissingSections | null>(null);
   
   // NEW: User actions required for 90%+ score
@@ -214,6 +218,12 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   }>({ type: null, status: null, message: '' });
 
   const [optimizationInterrupted, setOptimizationInterrupted] = useState(false);
+  const [showOptimizationQuality, setShowOptimizationQuality] = useState(false);
+  const [availableOptimizationCredits, setAvailableOptimizationCredits] = useState(0);
+  const [processingQualityTier, setProcessingQualityTier] = useState<JdOptimizationTierId | null>(null);
+  const [qualitySelectionError, setQualitySelectionError] = useState<string | null>(null);
+  const selectedOptimizationTierRef = useRef<JdOptimizationTierId>(DEFAULT_JD_OPTIMIZATION_TIER);
+  const qualitySelectionLockRef = useRef(false);
   const [jobApplicationLink, setJobApplicationLink] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -339,172 +349,22 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     },
     [jobApplicationLink, jobIdFromContext, navigate]
   );
-const checkForMissingSections = useCallback((resumeData: ResumeData): string[] => {
-  const missing: string[] = [];
-  
-  // Helper function to check if content is placeholder/low quality
-  const isPlaceholderContent = (text: string): boolean => {
-    const placeholderPatterns = [
-      /placeholder/i,
-      /example/i,
-      /sample/i,
-      /\[.*\]/,  // [brackets]
-      /your .+ here/i,
-      /^(n\/a|na|none|nil)$/i,
-      /^-+$/,  // just dashes
-      /^\s*$/  // empty or whitespace
-    ];
-    return placeholderPatterns.some(pattern => pattern.test(text));
-  };
-
-  // Check work experience - completely empty = ask for full section
-  const hasAnyWorkExperience = resumeData.workExperience && 
-    resumeData.workExperience.length > 0 && 
-    resumeData.workExperience.some(exp => 
-      (exp.role?.trim() || exp.company?.trim()) && 
-      !isPlaceholderContent(exp.role || '') && 
-      !isPlaceholderContent(exp.company || '')
-    );
-  
-  if (!hasAnyWorkExperience) {
-    missing.push('workExperience');
-  } else {
-    // Work experience exists - check for missing dates (chronological data)
-    const expMissingDates: string[] = [];
-    resumeData.workExperience?.forEach((exp, index) => {
-      const hasValidDate = exp.year?.trim() && 
-        !isPlaceholderContent(exp.year) &&
-        /\d{4}/.test(exp.year); // Must contain a year (4 digits)
-      
-      if (!hasValidDate && (exp.role?.trim() || exp.company?.trim())) {
-        const expLabel = `${exp.role || exp.company || `Experience ${index + 1}`}`;
-        expMissingDates.push(expLabel);
-      }
-    });
-    
-    if (expMissingDates.length > 0) {
-      expMissingDates.forEach(exp => {
-        missing.push(`workExperience:date:${exp}`);
-      });
-    }
-  }
-
-  // Check projects - completely empty = ask for full section
-  const hasAnyProjects = resumeData.projects && 
-    resumeData.projects.length > 0 && 
-    resumeData.projects.some(proj => 
-      proj.title?.trim() && 
-      !isPlaceholderContent(proj.title)
-    );
-  
-  if (!hasAnyProjects) {
-    missing.push('projects');
-  }
-
-  // Check skills - completely empty = ask for full section
-  const hasAnySkills = resumeData.skills && 
-    resumeData.skills.length > 0 && 
-    resumeData.skills.some(skillCat => 
-      skillCat.list && 
-      skillCat.list.length > 0 &&
-      skillCat.list.some(s => s.trim() && !isPlaceholderContent(s))
-    );
-  
-  if (!hasAnySkills) {
-    missing.push('skills');
-  }
-
-  // Check education - GRANULAR: detect specific missing fields
-  if (!resumeData.education || resumeData.education.length === 0) {
-    // No education at all - ask for full section
-    missing.push('education');
-  } else {
-    // Education exists - check for specific missing fields
-    const eduMissingFields: string[] = [];
-    resumeData.education.forEach((edu, index) => {
-      const eduLabel = resumeData.education!.length > 1 ? ` (Entry ${index + 1})` : '';
-      if (!edu.degree?.trim() || isPlaceholderContent(edu.degree)) {
-        eduMissingFields.push(`Degree${eduLabel}`);
-      }
-      if (!edu.school?.trim() || isPlaceholderContent(edu.school)) {
-        eduMissingFields.push(`Institution${eduLabel}`);
-      }
-      if (!edu.year?.trim() || isPlaceholderContent(edu.year)) {
-        eduMissingFields.push(`Year${eduLabel}`);
-      }
-    });
-    
-    // If specific fields are missing, add them as "education:field" format
-    if (eduMissingFields.length > 0) {
-      eduMissingFields.forEach(field => {
-        missing.push(`education:${field}`);
-      });
-    }
-  }
-
-  // Check certifications - OPTIONAL, only flag if array exists but invalid
-  const hasValidCertifications = !resumeData.certifications || 
-    resumeData.certifications.length === 0 ||
-    resumeData.certifications.some(cert => {
-      const c: any = cert as any;
-      const certText = typeof cert === 'string'
-        ? cert
-        : (c?.title || c?.name || c?.text || c?.value || '');
-      return String(certText).trim() && !isPlaceholderContent(String(certText));
-    });
-  
-  if (resumeData.certifications && resumeData.certifications.length > 0 && !hasValidCertifications) {
-    missing.push('certifications');
-  }
-
-  // Contact details - GRANULAR: detect specific missing fields
-  const phoneOk = typeof resumeData.phone === 'string' && 
-                  resumeData.phone.trim().length > 0 && 
-                  !isPlaceholderContent(resumeData.phone) &&
-                  resumeData.phone.length >= 10;
-  
-  const emailOk = typeof resumeData.email === 'string' && 
-                  resumeData.email.trim().length > 0 && 
-                  !isPlaceholderContent(resumeData.email) &&
-                  resumeData.email.includes('@') && 
-                  resumeData.email.includes('.');
-  
-  const nameOk = typeof resumeData.name === 'string' &&
-                  resumeData.name.trim().length >= 2 &&
-                  !isPlaceholderContent(resumeData.name);
-
-  const linkedinOk = typeof resumeData.linkedin === 'string' &&
-                     resumeData.linkedin.trim().length > 0 &&
-                     /linkedin\.com/i.test(resumeData.linkedin);
-
-  const githubOk = typeof resumeData.github === 'string' &&
-                   resumeData.github.trim().length > 0 &&
-                   /github\.com/i.test(resumeData.github);
-
-  if (!phoneOk && !emailOk) {
-    missing.push('contactDetails');
-  } else if (!phoneOk) {
-    missing.push('contactDetails:Phone');
-  } else if (!emailOk) {
-    missing.push('contactDetails:Email');
-  }
-
-  if (!nameOk) {
-    missing.push('contactDetails:Name');
-  }
-  if (!linkedinOk) {
-    missing.push('contactDetails:LinkedIn');
-  }
-  if (!githubOk) {
-    missing.push('contactDetails:GitHub');
-  }
-
-  return missing;
-}, []);
+const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =>
+  findRequiredMissingSections(resumeData, userType, {
+    name: userName,
+    email: userEmail,
+    phone: userPhone,
+  }), [userEmail, userName, userPhone, userType]);
 
   const proceedWithFinalOptimization = useCallback(async (resumeData: ResumeData, initialScore: DetailedScore, accessToken: string) => { // Memoize
     // Use ref to get latest jobDescription value (fixes stale closure issue)
     const currentJobDescription = jobDescriptionRef.current;
+    const qualityTier = getJdOptimizationTier(selectedOptimizationTierRef.current);
+    const optimizationRunId = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `optimization-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let creditReservationId: string | null = null;
+    let creditFinalized = false;
     
     try {
       setIsOptimizing(true);
@@ -513,17 +373,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setOptimizationScoreSummary(null);
       setUserActionsRequired([]);
 
-      const optimizationCreditResult = await paymentService.useOptimization(user!.id);
-      if (!optimizationCreditResult.success) {
-        console.error('Failed to deduct optimization credit:', optimizationCreditResult.error);
-        alert('No optimization credits available. Please purchase a plan.');
-        return;
+      const reservation = await paymentService.reserveOptimization(user!.id, qualityTier.id, optimizationRunId);
+      if (!reservation.success || !reservation.reservationId) {
+        setAvailableOptimizationCredits(reservation.remaining || 0);
+        throw new Error(reservation.error || `No ${qualityTier.name} usage is available.`);
       }
-      await checkSubscriptionStatus();
-      setWalletRefreshKey(prevKey => prevKey + 1);
+      creditReservationId = reservation.reservationId;
 
       // EDENAI + JD OPTIMIZATION: Optimize resume against job description with 220+ metrics
       let finalOptimizedResume: ResumeData;
+      let optimizationSessionPayload: Record<string, unknown> | null = null;
       
       if (currentJobDescription && currentJobDescription.trim().length > 50) {
         // Import and use the ENHANCED JD optimizer service (220+ metrics)
@@ -535,7 +394,10 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           resumeText,
           currentJobDescription,
           targetRole,
-          'standard' // Use standard optimization mode
+          qualityTier.mode,
+          qualityTier.modelId,
+          optimizationRunId,
+          userType,
         );
         
         finalOptimizedResume = {
@@ -565,77 +427,95 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           });
         }
 
-        const baseScoreSummary: ScoreSummaryOverride = {
-          before: {
-            score: optimizationResult.beforeScore?.overall || 0,
-            band: optimizationResult.beforeScore?.match_band || '',
-            probability: optimizationResult.beforeScore?.interview_probability_range || '',
-          },
-          after: {
-            score: optimizationResult.afterScore?.overall || 0,
-            band: optimizationResult.afterScore?.match_band || '',
-            probability: optimizationResult.afterScore?.interview_probability_range || '',
-          },
-        };
-        setOptimizationScoreSummary(baseScoreSummary);
-
         try {
           const loopResult = await runOptimizationLoop(
             finalOptimizedResume,
             currentJobDescription,
             (msg, pct) => console.log(`[OptLoop] ${pct}% - ${msg}`),
-            resumeData
+            resumeData,
+            {
+              maxLoops: Math.max(0, qualityTier.aiPasses - 1),
+              modelSequence: qualityTier.refinementModels,
+              candidateType: userType,
+              optimizationTier: qualityTier.id,
+              runId: optimizationRunId,
+            },
           );
           setJdOptimizationResult(loopResult);
           finalOptimizedResume = loopResult.optimizedResume;
+          setParameter16Scores({
+            overallBefore: loopResult.beforeScore.overallScore,
+            overallAfter: loopResult.afterScore.overallScore,
+            improvement: loopResult.afterScore.overallScore - loopResult.beforeScore.overallScore,
+          });
+          setOptimizationScoreSummary({
+            before: {
+              score: loopResult.beforeScore.overallScore,
+              band: loopResult.beforeScore.matchBand,
+              probability: loopResult.beforeScore.interviewProbability,
+            },
+            after: {
+              score: loopResult.afterScore.overallScore,
+              band: loopResult.afterScore.matchBand,
+              probability: loopResult.afterScore.interviewProbability,
+            },
+          });
 
-          try {
-            const finalEnhancedScore = await EnhancedScoringService.calculateScore({
-              resumeText: reconstructResumeText(finalOptimizedResume),
-              resumeData: finalOptimizedResume,
-              jobDescription: currentJobDescription,
-              extractionMode: 'TEXT',
-            });
-
-            setOptimizationScoreSummary({
-              before: baseScoreSummary.before,
-              after: {
-                score: finalEnhancedScore.overall || baseScoreSummary.after.score,
-                band: finalEnhancedScore.match_band || baseScoreSummary.after.band,
-                probability: finalEnhancedScore.interview_probability_range || baseScoreSummary.after.probability,
-              },
-            });
-          } catch (finalScoreError) {
-            console.warn('Failed to calculate final enhanced score after optimization loop:', finalScoreError);
-          }
-
-          if (loopResult.gapClassification.userActionCards.length > 0) {
-            setUserActionsRequired(loopResult.gapClassification.userActionCards);
+          const loopEvidenceAction = loopResult.evidenceViolations.length > 0 ? [{
+            category: 'experience',
+            priority: 'high',
+            title: 'Candidate evidence required',
+            description: 'Some suggested changes were excluded because they were not supported by your original resume.',
+            currentScore: 0,
+            targetScore: 100,
+            suggestions: [...new Set(loopResult.evidenceViolations.map((item) => item.message))].slice(0, 5),
+            canAutoFix: false,
+          }] : [];
+          if (loopResult.gapClassification.userActionCards.length > 0 || loopEvidenceAction.length > 0) {
+            setUserActionsRequired((current) => [
+              ...current,
+              ...loopEvidenceAction,
+              ...loopResult.gapClassification.userActionCards,
+            ]);
           }
 
           if (user) {
-            try {
-              await supabase.from('optimization_sessions').insert({
-                user_id: user.id,
-                resume_text: reconstructResumeText(resumeData),
-                job_description: currentJobDescription,
-                before_score: loopResult.beforeScore.overallScore,
-                after_score: loopResult.afterScore.overallScore,
-                before_parameters: loopResult.beforeScore.parameters,
-                after_parameters: loopResult.afterScore.parameters,
-                category_deltas: loopResult.categoryDeltas,
-                gap_classification: loopResult.gapClassification,
-                changes_applied: loopResult.totalChanges,
-                iterations_count: loopResult.iterations.length,
-                reached_target: loopResult.reachedTarget,
-                processing_time_ms: loopResult.processingTimeMs,
-              });
-            } catch (dbErr) {
-              console.warn('Failed to persist optimization session:', dbErr);
-            }
+            optimizationSessionPayload = {
+              user_id: user.id,
+              resume_text: reconstructResumeText(resumeData),
+              job_description: currentJobDescription,
+              before_score: loopResult.beforeScore.overallScore,
+              after_score: loopResult.afterScore.overallScore,
+              canonical_before_score_id: loopResult.beforeScoreId,
+              canonical_after_score_id: loopResult.afterScoreId,
+              scoring_version: loopResult.scoringVersion,
+              before_input_hash: loopResult.beforeInputHash,
+              after_input_hash: loopResult.afterInputHash,
+              before_parameters: loopResult.beforeScore.parameters,
+              after_parameters: loopResult.afterScore.parameters,
+              category_deltas: loopResult.categoryDeltas,
+              gap_classification: {
+                ...loopResult.gapClassification,
+                optimizationTier: qualityTier.id,
+                requestedModel: qualityTier.modelId,
+                creditsCharged: qualityTier.creditCost,
+                aiPasses: qualityTier.aiPasses,
+                scoringVersion: loopResult.scoringVersion,
+                beforeScoreId: loopResult.beforeScoreId,
+                afterScoreId: loopResult.afterScoreId,
+                beforeInputHash: loopResult.beforeInputHash,
+                afterInputHash: loopResult.afterInputHash,
+                runId: optimizationRunId,
+              },
+              changes_applied: loopResult.totalChanges,
+              iterations_count: loopResult.iterations.length,
+              reached_target: loopResult.reachedTarget,
+              processing_time_ms: loopResult.processingTimeMs,
+            };
           }
         } catch (loopErr) {
-          console.warn('20-parameter optimization loop failed, using base optimization:', loopErr);
+          console.error(`${qualityTier.name} refinement pass failed:`, loopErr);
+          throw new Error(`${qualityTier.name} could not complete every promised AI pass. No credits were charged.`);
         }
       } else {
         // Fallback: Use parsed resume directly if no JD provided
@@ -694,7 +574,28 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       // const afterScoreData = await generateAfterScore(finalOptimizedResume, jobDescription);
       // setAfterScore(afterScoreData);
       
-      setChangedSections(['workExperience', 'education', 'projects', 'skills', 'certifications']);
+      if (optimizationSessionPayload) {
+        const { error: sessionInsertError } = await supabase
+          .from('optimization_sessions')
+          .insert(optimizationSessionPayload);
+        if (sessionInsertError) {
+          console.warn('Failed to persist optimization session:', sessionInsertError);
+        }
+      }
+
+      const finalizedReservation = await paymentService.finalizeCreditReservation(creditReservationId);
+      if (!finalizedReservation.success) {
+        throw new Error(finalizedReservation.error || 'Unable to finalize the reserved optimization usage.');
+      }
+      creditFinalized = true;
+      await checkSubscriptionStatus();
+      setWalletRefreshKey(prevKey => prevKey + 1);
+
+      setChangedSections(
+        qualityTier.id === 'quick'
+          ? []
+          : ['workExperience', 'education', 'projects', 'skills', 'certifications'],
+      );
       if (user) {
         try {
           await authService.incrementResumesCreatedCount(user.id);
@@ -709,7 +610,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setOptimizedResume(finalOptimizedResume);
     } catch (error) {
       console.error('Error in final optimization pass:', error);
-      alert('Failed to complete resume optimization. Please try again.');
+      if (creditReservationId && !creditFinalized) {
+        const refund = await paymentService.refundCreditReservation(creditReservationId);
+        if (!refund.success) {
+          console.error('Failed to restore reserved optimization usage:', refund.error);
+        } else {
+          await checkSubscriptionStatus();
+          setWalletRefreshKey(prevKey => prevKey + 1);
+        }
+      }
+      alert(error instanceof Error ? error.message : 'Failed to complete resume optimization. Please try again.');
     } finally {
       setIsOptimizing(false);
       setIsCalculatingScore(false);
@@ -728,7 +638,9 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       // setOptimizedResume(resumeData); // REMOVED - was causing mobile to skip optimization
       setParsedResumeData(resumeData);
       
-      if (resumeData.projects && resumeData.projects.length > 0) {
+      if (selectedOptimizationTierRef.current === 'quick') {
+        await proceedWithFinalOptimization(resumeData, null as any, accessToken);
+      } else if (resumeData.projects && resumeData.projects.length > 0) {
         setShowProjectAnalysis(true);
       } else {
         // Pass null for initialScore since we're not using OpenRouter scoring
@@ -743,8 +655,10 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   }, [jobDescription, proceedWithFinalOptimization]); // Dependencies for memoized function
 
  const continueOptimizationProcess = useCallback(async (resumeData: ResumeData, accessToken: string) => { // Memoize
-  // ✅ FIXED: Check for missing sections BEFORE processing
-  const missing = checkForMissingSections(resumeData);
+  // Quick Scan is diagnostic and must never force users through data-entry.
+  const missing = selectedOptimizationTierRef.current === 'quick'
+    ? []
+    : checkForMissingSections(resumeData);
 
   // If missing sections, show modal and STOP processing
   if (missing.length > 0) {
@@ -823,7 +737,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     }
   }, [pendingResumeData, handleInitialResumeProcessing]);
 
-  const handleOptimize = useCallback(async () => { // Memoize
+  const handleOptimize = useCallback(async (requestedTier?: JdOptimizationTierId) => { // Memoize
     if (!extractionResult.text.trim() || !jobDescription.trim()) {
       alert('Please provide both resume content and job description');
       return;
@@ -845,6 +759,27 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     }
     // --- END NEW ---
 
+    if (!requestedTier) {
+      try {
+        const latestSubscription = await paymentService.getUserSubscription(user.id);
+        const remainingCredits = latestSubscription
+          ? Math.max(0, latestSubscription.optimizationsTotal - latestSubscription.optimizationsUsed)
+          : 0;
+        setAvailableOptimizationCredits(remainingCredits);
+        setQualitySelectionError(null);
+        setShowOptimizationQuality(true);
+      } catch (creditError) {
+        console.error('Failed to load optimization credit balance:', creditError);
+        setAvailableOptimizationCredits(0);
+        setQualitySelectionError('We could not load your credit balance. You can still choose a service and retry.');
+        setShowOptimizationQuality(true);
+      }
+      return;
+    }
+
+    const qualityTier = getJdOptimizationTier(requestedTier);
+    selectedOptimizationTierRef.current = requestedTier;
+
     // Clear any previous interruption state at the start of optimization attempt
     setOptimizationInterrupted(false);
     try {
@@ -860,51 +795,28 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
         onShowAuth();
         return;
       }
-      if (!userSubscription || (userSubscription.optimizationsTotal - userSubscription.optimizationsUsed) <= 0) {
-        // Re-fetch userSubscription here to ensure it's the absolute latest before checking credits
-        const latestUserSubscription = await paymentService.getUserSubscription(user.id);
-        if (!latestUserSubscription || (latestUserSubscription.optimizationsTotal - latestUserSubscription.optimizationsUsed) <= 0) {
-        onShowPlanSelection('optimizer');
+      const latestUserSubscription = await paymentService.getUserSubscription(user.id);
+      const remainingCredits = getOptimizationTierRemaining(latestUserSubscription, qualityTier.id);
+      if (remainingCredits < qualityTier.creditCost) {
+        setAvailableOptimizationCredits(remainingCredits);
+        setQualitySelectionError(
+          `${qualityTier.name} requires ${qualityTier.creditCost} ${qualityTier.creditCost === 1 ? 'credit' : 'credits'}. Choose a service to continue.`,
+        );
+        setShowOptimizationQuality(true);
         return;
-        }
       }
       setIsOptimizing(true);
       try {
-        // ⬇️ NEW: Summarize JD using EdenAI for better alignment (non-blocking)
-        let currentJdSummary = jdSummary;
-        if (!currentJdSummary && jobDescription.length > 100) {
-          setIsSummarizingJd(true);
-          try {
-            currentJdSummary = await summarizeJd(jobDescription);
-            setJdSummary(currentJdSummary);
-          } catch (summaryError) {
-            console.warn('JD summarization failed, continuing without summary:', summaryError);
-          } finally {
-            setIsSummarizingJd(false);
-          }
-        }
-
         // ⬇️ EDENAI ONLY: Use EdenAI parsed resume - no OpenRouter fallback
         let baseResume: ResumeData;
 
-        // Check if we have EdenAI parsed resume
-        if (edenParsedResume) {
-          baseResume = edenParsedResume;
-        } else if (parsedResumeData) {
-          // Use previously parsed resume (after user filled missing sections)
+        // parsedResumeData is the canonical state for both freshly uploaded and
+        // user-completed resumes, so old parser data cannot reopen the same form.
+        if (parsedResumeData) {
           baseResume = parsedResumeData;
         } else {
           // No parsed resume available - user needs to upload first
           alert('Please upload your resume first. The AI parser will extract your information.');
-          setIsOptimizing(false);
-          return;
-        }
-
-        const missing = checkForMissingSections(baseResume);
-        if (missing.length > 0) {
-          setMissingSections(missing);
-          setPendingResumeData(baseResume);
-          setShowMissingSectionsModal(true);
           setIsOptimizing(false);
           return;
         }
@@ -926,7 +838,6 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     jobDescription,
     user, // Keep user as a dependency
     onShowAuth,
-    onShowPlanSelection, // Keep onShowPlanSelection as a dependency
     userSubscription, // Keep userSubscription as a dependency for the useEffect below
     userType,
     userName,
@@ -937,7 +848,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     targetRole,
     checkForMissingSections,
     continueOptimizationProcess,
-    parsedResumeData // ⬅️ added dependency because we branch on it
+    parsedResumeData, // ⬅️ added dependency because we branch on it
   ]); // Dependencies for memoized function
 
   useEffect(() => {
@@ -947,10 +858,94 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     };
   }, [setToolProcessTrigger, handleOptimize]);
 
+  const handleOptimizationQualityChoice = useCallback(async (
+    tierId: JdOptimizationTierId,
+    packageSize: JdOptimizationPackageSize,
+  ) => {
+    if (!user || processingQualityTier || qualitySelectionLockRef.current) return;
+    qualitySelectionLockRef.current = true;
+
+    const tier = getJdOptimizationTier(tierId);
+    const optimizationPackage = getJdOptimizationPackage(tierId, packageSize);
+    setQualitySelectionError(null);
+    setProcessingQualityTier(tierId);
+
+    try {
+      const latestSubscription = await paymentService.getUserSubscription(user.id);
+      const remainingCredits = getOptimizationTierRemaining(latestSubscription, tierId);
+      setAvailableOptimizationCredits(remainingCredits);
+
+      if (remainingCredits >= tier.creditCost) {
+        selectedOptimizationTierRef.current = tierId;
+        setShowOptimizationQuality(false);
+        await handleOptimize(tierId);
+        return;
+      }
+
+      const addOn = paymentService.getAddOnById(optimizationPackage.addOnId);
+      if (
+        !addOn ||
+        Number(addOn.price) !== optimizationPackage.offerPrice ||
+        Number(addOn.quantity) !== optimizationPackage.credits
+      ) {
+        throw new Error(`${tier.name} is temporarily unavailable because its payment configuration is out of sync.`);
+      }
+
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+
+      const purchaseResult = await paymentService.processPayment(
+        {
+          planId: 'addon_only_purchase',
+          amount: optimizationPackage.offerPrice * 100,
+          currency: 'INR',
+        },
+        userEmail,
+        userName,
+        session.access_token,
+        undefined,
+        0,
+        optimizationPackage.offerPrice * 100,
+        { [optimizationPackage.addOnId]: optimizationPackage.credits },
+      );
+
+      if (!purchaseResult.success) {
+        throw new Error(purchaseResult.error || 'Payment was not completed. Please try again.');
+      }
+
+      await refreshUserSubscription();
+      const refreshedSubscription = await paymentService.getUserSubscription(user.id);
+      const refreshedCredits = getOptimizationTierRemaining(refreshedSubscription, tierId);
+      setAvailableOptimizationCredits(refreshedCredits);
+
+      if (refreshedCredits < tier.creditCost) {
+        throw new Error('Payment succeeded, but the credits are still syncing. Please wait a moment and choose the service again.');
+      }
+
+      selectedOptimizationTierRef.current = tierId;
+      setShowOptimizationQuality(false);
+      setProcessingQualityTier(null);
+      await handleOptimize(tierId);
+    } catch (qualityError) {
+      console.error('JD optimization quality selection failed:', qualityError);
+      setQualitySelectionError(
+        qualityError instanceof Error ? qualityError.message : 'Unable to start this optimization service.',
+      );
+    } finally {
+      qualitySelectionLockRef.current = false;
+      setProcessingQualityTier(null);
+    }
+  }, [handleOptimize, processingQualityTier, refreshUserSubscription, user, userEmail, userName]);
+
   useEffect(() => {
     // This useEffect should now primarily reset the flag, not re-trigger the process
     // The actual re-triggering will be handled by toolProcessTrigger from App.tsx
-    if (optimizationInterrupted && userSubscription && (userSubscription.optimizationsTotal - userSubscription.optimizationsUsed) > 0) {
+    if (
+      optimizationInterrupted &&
+      getOptimizationTierRemaining(userSubscription, selectedOptimizationTierRef.current) > 0
+    ) {
       setOptimizationInterrupted(false); // Reset the flag
     }
   }, [optimizationInterrupted, refreshUserSubscription, userSubscription, handleOptimize]);
@@ -1128,7 +1123,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     const mobileSections = [
       {
         id: 'resume',
-        title: 'Optimized Resume',
+        title: selectedOptimizationTierRef.current === 'quick' ? 'Resume' : 'Optimized Resume',
         icon: <FileText className="w-5 h-5" />,
         component: (
           <ResumePreview
@@ -1157,6 +1152,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           onExportResume={() => setShowExportModal(true)}
           editorMode={editorMode}
           onEditorModeChange={setEditorMode}
+          optimizationTier={selectedOptimizationTierRef.current}
           resumeEditor={
             <ResumeEditor
               resumeData={optimizedResume}
@@ -1250,14 +1246,22 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
             )}
 
             {isAuthenticated && !loadingSubscription && (
-              <div className="relative text-center mb-8 z-10">
-                <button className="inline-flex items-center space-x-2 px-6 py-3 rounded-full transition-all duration-200 font-semibold text-sm bg-gradient-to-r from-neon-purple-500 to-neon-blue-600 text-white shadow-md hover:shadow-neon-purple focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neon-cyan-500 max-w-[300px] mx-auto justify-center dark:shadow-neon-purple">
-                  <span>
-                    {userSubscription
-                      ? `Credits Left: ${userSubscription.optimizationsTotal - userSubscription.optimizationsUsed}`
-                      : 'No Active Plan'}
-                  </span>
-                </button>
+              <div className="relative mb-8 z-10 flex flex-wrap items-center justify-center gap-2">
+                {userSubscription ? (
+                  <>
+                    <span className="inline-flex items-center rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-200 shadow-sm sm:text-sm">
+                      Quick Scan: {getOptimizationTierRemaining(userSubscription, 'quick')}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-200 shadow-sm sm:text-sm">
+                      Smart Optimize: {getOptimizationTierRemaining(userSubscription, 'smart')}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-violet-300/20 bg-violet-400/10 px-4 py-2 text-xs font-semibold text-violet-200 shadow-sm sm:text-sm">
+                      Deep Optimize: {getOptimizationTierRemaining(userSubscription, 'deep')}
+                    </span>
+                  </>
+                ) : (
+                  <span className="inline-flex rounded-full bg-slate-800 px-5 py-2 text-sm font-semibold text-slate-300">No optimization credits</span>
+                )}
               </div>
             )}
 
@@ -1280,8 +1284,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                 onShowAuth={onShowAuth}
                 user={user}
                 onShowProfile={onShowProfile}
-                onParsedResume={setEdenParsedResume}
-                onShowSubscriptionPlans={onShowPlanSelection}
+                onParsedResume={setParsedResumeData}
                 onCreditCheckPassed={() => {
                   // Credits available after upload - user still needs to fill JD and click optimize
                 }}
@@ -1299,23 +1302,25 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                     </div>
                     <div>
                       <div className="flex items-center space-x-2 mb-1">
-                        <h3 className="text-xl font-bold text-white">Resume Optimized Successfully!</h3>
+                        <h3 className="text-xl font-bold text-white">
+                          {selectedOptimizationTierRef.current === 'quick' ? 'Quick Scan Completed!' : 'Resume Optimized Successfully!'}
+                        </h3>
                         <span className="bg-gradient-to-r from-emerald-500 to-cyan-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-md">
-                          READY
+                          {selectedOptimizationTierRef.current === 'quick' ? 'ANALYZED' : 'READY'}
                         </span>
                       </div>
                       <p className="text-sm text-slate-300 mb-2">
-                        Your resume has been optimized for <span className="font-semibold text-emerald-400">{jobContext.roleTitle}</span> at <span className="font-semibold text-emerald-400">{jobContext.companyName}</span>
+                        Your resume has been {selectedOptimizationTierRef.current === 'quick' ? 'analyzed' : 'optimized'} for <span className="font-semibold text-emerald-400">{jobContext.roleTitle}</span> at <span className="font-semibold text-emerald-400">{jobContext.companyName}</span>
                       </p>
                       <div className="flex items-center space-x-2 text-xs text-slate-400">
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>ATS-optimized</span>
+                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'JD gaps reviewed' : 'ATS-optimized'}</span>
                         <span>•</span>
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>Keyword-matched</span>
+                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'Resume unchanged' : 'Keyword-matched'}</span>
                         <span>•</span>
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>Ready to download</span>
+                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'Ready to review' : 'Ready to download'}</span>
                       </div>
                     </div>
                   </div>
@@ -1327,16 +1332,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                     <span>Apply Now</span>
                   </button>
                 </div>
-                <div className="mt-4 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                {selectedOptimizationTierRef.current !== 'quick' && <div className="mt-4 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
                   <p className="text-xs text-slate-400 flex items-center space-x-1">
                     <AlertCircle className="w-3 h-3" />
                     <span>Make sure to download your optimized resume before applying for future reference</span>
                   </p>
-                </div>
+                </div>}
               </div>
             )}
 
-            {optimizedResume && (
+            {optimizedResume && selectedOptimizationTierRef.current !== 'quick' && (
               <div className="flex items-start gap-3 p-4 rounded-xl border mb-2"
                 style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.3)' }}>
                 <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
@@ -1449,6 +1454,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                         result={jdOptimizationResult}
                         userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                         scoreSummaryOverride={optimizationScoreSummary || undefined}
+                        mode={selectedOptimizationTierRef.current === 'quick' ? 'scan' : 'comparison'}
                       />
                     </div>
                   )}
@@ -1468,6 +1474,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                       overallAfter={parameter16Scores.overallAfter}
                       improvement={parameter16Scores.improvement}
                       compact={true}
+                      mode={selectedOptimizationTierRef.current === 'quick' ? 'scan' : 'comparison'}
                     />
                   )}
                 </div>
@@ -1706,7 +1713,21 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           setIsOptimizing(false);
         }}
         missingSections={missingSections}
+        currentResumeData={pendingResumeData}
         onSectionsProvided={handleMissingSectionsProvided}
+      />
+
+      <OptimizationQualityModal
+        isOpen={showOptimizationQuality}
+        processingTier={processingQualityTier}
+        error={qualitySelectionError}
+        onClose={() => {
+          if (!processingQualityTier) {
+            setShowOptimizationQuality(false);
+            setQualitySelectionError(null);
+          }
+        }}
+        onChoose={handleOptimizationQualityChoice}
       />
 
       <FullScreenPreviewModal

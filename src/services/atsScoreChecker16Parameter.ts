@@ -22,8 +22,10 @@
 
 import { EnhancedScoringService, EnhancedScoringInput } from './enhancedScoringService';
 import { EnhancedComprehensiveScore } from '../types/resume';
+import type { ResumeData, UserType } from '../types/resume';
 import FullResumeRewriter16ParameterService, { Parameter16Score } from './fullResumeRewriter16ParameterService';
-import { scoreResumeAgainstJD } from './jdScoringEngine';
+import { CanonicalJdScoringService } from './canonicalJdScoringService';
+import type { CategoryScore as CanonicalCategoryScore, JDScoringResult, ParameterScore as CanonicalParameterScore } from './jdScoringEngine';
 
 // New unified 16-parameter scores interface (matches JD Optimizer)
 export interface Unified16ParameterScores {
@@ -71,6 +73,10 @@ export interface ATSScore16Parameter {
   };
   // NEW: Unified 16-parameter scores (same as JD Optimizer)
   unified16Scores?: Parameter16Score[];
+  /** Exact checks returned by the canonical JD scoring engine. */
+  canonicalParameters?: CanonicalParameterScore[];
+  canonicalCategories?: CanonicalCategoryScore[];
+  canonicalInterviewProbability?: string;
   summary: string;
   strengths: string[];
   areasToImprove: string[];
@@ -158,8 +164,6 @@ export class ATSScoreChecker16Parameter {
     const scores = this.calculateIntelligentParameterScores(enhancedScore, jobDescription);
     
     // Calculate raw total from intelligent scores
-    const rawTotal = Object.values(scores).reduce((sum, score) => sum + score, 0);
-    
     // Define max scores for each parameter
     const maxScores: Record<string, number> = {
       keywordMatch: 25, skillsAlignment: 20, experienceRelevance: 15,
@@ -306,78 +310,93 @@ export class ATSScoreChecker16Parameter {
    * This method uses already-parsed resume data for more accurate scoring
    */
   static async evaluateWithUnified16AndParsedData(
-    resumeText: string,
+    _resumeText: string,
     jobDescription: string,
-    parsedResumeData: any, // ParsedResume type
-    targetRole?: string
+    parsedResumeData: ResumeData,
+    _targetRole?: string,
+    candidateType: UserType = 'fresher',
   ): Promise<ATSScore16Parameter> {
-    console.log('🎯 ATSScoreChecker16Parameter.evaluateWithUnified16AndParsedData() - Using PARSED data');
-    console.log('📝 Resume text length:', resumeText.length);
-    console.log('📋 JD length:', jobDescription.length);
-    console.log('📊 Parsed data:', {
-      name: parsedResumeData?.name,
-      skills: parsedResumeData?.skills?.length || 0,
-      workExp: parsedResumeData?.workExperience?.length || 0,
-      projects: parsedResumeData?.projects?.length || 0,
-      education: parsedResumeData?.education?.length || 0
+    const canonical = await CanonicalJdScoringService.score({
+      resumeData: parsedResumeData,
+      jobDescription,
+      candidateType,
+      context: 'resume_score_checker',
     });
-    
-    // First get the legacy scores for backward compatibility
-    const legacyResult = await this.evaluateResumeTextOnly(resumeText, jobDescription);
-    console.log('📊 Legacy result obtained, now getting unified scores with parsed data...');
-    
-    // Now get the unified 16-parameter scores using parsed data
-    try {
-      console.log('🔄 Calling FullResumeRewriter16ParameterService.scoreWithParsedData()...');
-      const unified16Result = await FullResumeRewriter16ParameterService.scoreWithParsedData(
-        parsedResumeData,
-        jobDescription,
-        targetRole
-      );
-      
-      console.log('✅ scoreWithParsedData returned:', unified16Result);
-      
-      // Calculate overall from unified scores
-      const unifiedOverall = unified16Result.overallScore;
-      // Align JD mode headline score with the same engine used by JD optimizer loop.
-      const jdAlignedOverall = scoreResumeAgainstJD(parsedResumeData, jobDescription).overallScore;
-      
-      // Update the result with unified scores
-      legacyResult.unified16Scores = unified16Result.scores;
-      legacyResult.overallScore = jdAlignedOverall;
-      legacyResult.matchQuality = this.getMatchQuality(jdAlignedOverall);
-      legacyResult.interviewChance = this.getInterviewChance(jdAlignedOverall);
-      
-      // Map unified scores to legacy format
-      legacyResult.scores = this.mapUnifiedToLegacy(unified16Result.scores);
-      
-      // Update suggestions from unified scores
-      const allSuggestions = unified16Result.scores
-        .filter(s => s.percentage < 80)
-        .flatMap(s => s.suggestions)
-        .slice(0, 5);
-      
-      if (allSuggestions.length > 0) {
-        legacyResult.areasToImprove = allSuggestions;
-      }
-      
-      // Update summary to match the unified score
-      legacyResult.summary = this.generateSummaryFromScore(jdAlignedOverall, true);
-      
-      console.log('✅ Unified 16-Parameter Result (with parsed data):', {
-        overallScore: jdAlignedOverall,
-        unified16Overall: unifiedOverall,
-        parameterCount: unified16Result.scores.length,
-        parameters: unified16Result.scores.map(s => `${s.parameter}: ${s.percentage}%`)
-      });
-      
-    } catch (error) {
-      console.error('❌ Failed to get unified 16 scores with parsed data:', error);
-      // Fallback to text-only scoring
-      return this.evaluateWithUnified16(resumeText, jobDescription, targetRole);
-    }
-    
-    return legacyResult;
+
+    return this.mapCanonicalResult(canonical.scoreResult);
+  }
+
+  private static mapCanonicalResult(result: JDScoringResult): ATSScore16Parameter {
+    const categoryPercentage = (name: string) =>
+      result.categories.find(category => category.name === name)?.percentage ?? 0;
+    const parameter = (id: number) =>
+      result.parameters.find(candidate => candidate.id === id);
+    const parameterPercentage = (id: number) =>
+      parameter(id)?.percentage ?? 0;
+    const points = (percentage: number, maxScore: number) =>
+      Math.round((Math.max(0, Math.min(100, percentage)) / 100) * maxScore);
+    const mandatorySkillPercentage = parameter(8)?.applicable === false
+      ? categoryPercentage('Other Hard Skills')
+      : categoryPercentage('Mandatory JD Skills');
+
+    const scores: ATSScore16Parameter['scores'] = {
+      keywordMatch: points((mandatorySkillPercentage + categoryPercentage('Other Hard Skills')) / 2, 25),
+      skillsAlignment: points(categoryPercentage('Other Hard Skills'), 20),
+      experienceRelevance: points(categoryPercentage('Project/Experience Evidence'), 15),
+      technicalCompetencies: points(parameterPercentage(7), 12),
+      educationScore: points(parameterPercentage(29), 10),
+      quantifiedAchievements: points(parameterPercentage(11), 8),
+      employmentHistory: points(categoryPercentage('Project/Experience Evidence'), 8),
+      industryExperience: points(parameterPercentage(28), 7),
+      jobTitleMatch: points(parameterPercentage(9), 6),
+      careerProgression: points(categoryPercentage('Content Quality'), 6),
+      certifications: points(parameterPercentage(30), 5),
+      formatting: points(categoryPercentage('ATS Structure and Parsing'), 5),
+      contentQuality: points(categoryPercentage('Content Quality'), 4),
+      grammar: points(parameterPercentage(12), 3),
+      resumeLength: points(categoryPercentage('ATS Structure and Parsing'), 2),
+      filenameQuality: points(categoryPercentage('ATS Structure and Parsing'), 2),
+    };
+
+    const strengths = result.parameters
+      .filter(parameter => parameter.percentage >= 80 && parameter.score > 0)
+      .sort((left, right) => right.percentage - left.percentage)
+      .slice(0, 5)
+      .map(parameter => parameter.name);
+    const areasToImprove = [...new Set(
+      result.parameters
+        .filter(parameter => parameter.percentage < 80)
+        .flatMap(parameter => parameter.suggestions),
+    )].slice(0, 8);
+
+    const keywordsFrom = (ids: number[]) => [...new Set(
+      result.parameters
+        .filter(parameter => ids.includes(parameter.id))
+        .flatMap(parameter => parameter.suggestions)
+        .flatMap(suggestion => {
+          const detail = suggestion.includes(':') ? suggestion.split(':').slice(1).join(':') : '';
+          return detail.split(',').map(value => value.trim()).filter(Boolean);
+        }),
+    )].slice(0, 10);
+
+    return {
+      overallScore: result.overallScore,
+      confidence: 'High',
+      matchQuality: this.getMatchQuality(result.overallScore),
+      interviewChance: this.getInterviewChance(result.overallScore),
+      canonicalInterviewProbability: result.interviewProbability,
+      scores,
+      canonicalParameters: result.parameters,
+      canonicalCategories: result.categories,
+      summary: `${result.matchBand}. ${result.fixableCount} evidence-backed checks can be improved.`,
+      strengths,
+      areasToImprove,
+      missingKeywords: {
+        critical: keywordsFrom([8]),
+        important: keywordsFrom([6, 7, 9]),
+        optional: keywordsFrom([28]),
+      },
+    };
   }
 
   /**

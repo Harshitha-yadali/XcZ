@@ -33,7 +33,7 @@ import { InputWizard } from './InputWizard';
 import { LoadingAnimation } from './LoadingAnimation';
 import { optimizeResume, generateAtsOptimizedSection, generateMultipleAtsVariations } from '../services/geminiService';
 import { generateBeforeScore, generateAfterScore, getDetailedResumeScore, reconstructResumeText } from '../services/scoringService';
-import { paymentService } from '../services/paymentService';
+import { getOptimizationTierRemaining, paymentService } from '../services/paymentService';
 import { authService } from '../services/authService';
 import { ResumeData, UserType, MatchScore, DetailedScore, ExtractionResult, ScoringMode } from '../types/resume';
 import { ExportOptions, defaultExportOptions } from '../types/export';
@@ -624,10 +624,10 @@ const asText = (v: any): string => {
         onShowAuth();
         return;
       }
-      if (!userSubscription || (userSubscription.optimizationsTotal - userSubscription.optimizationsUsed) <= 0) {
+      if (!userSubscription || getOptimizationTierRemaining(userSubscription, 'quick') <= 0) {
         // Re-fetch userSubscription here to ensure it's the absolute latest before checking credits
         const latestUserSubscription = await paymentService.getUserSubscription(user.id);
-        if (!latestUserSubscription || (latestUserSubscription.optimizationsTotal - latestUserSubscription.optimizationsUsed) <= 0) {
+        if (!latestUserSubscription || getOptimizationTierRemaining(latestUserSubscription, 'quick') <= 0) {
         onShowPlanSelection('optimizer');
         return;
         }
@@ -701,7 +701,7 @@ const asText = (v: any): string => {
   useEffect(() => {
     // This useEffect should now primarily reset the flag, not re-trigger the process
     // The actual re-triggering will be handled by toolProcessTrigger from App.tsx
-    if (optimizationInterrupted && userSubscription && (userSubscription.optimizationsTotal - userSubscription.optimizationsUsed) > 0) {
+    if (optimizationInterrupted && userSubscription && getOptimizationTierRemaining(userSubscription, 'quick') > 0) {
       console.log('ResumeOptimizer: Optimization was interrupted, credits now available. Resetting flag.');
       setOptimizationInterrupted(false); // Reset the flag
     }

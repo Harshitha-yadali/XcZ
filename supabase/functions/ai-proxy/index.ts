@@ -14,6 +14,10 @@ const jsonResponse = (data: any, status = 200) =>
 
 const DEFAULT_OPENROUTER_MODEL =
   Deno.env.get("OPENROUTER_DEFAULT_MODEL")?.trim() || "openrouter/free";
+const MODELS_WITH_FIXED_SAMPLING = new Set(["anthropic/claude-opus-4.8"]);
+
+const withSupportedSampling = (model: string, temperature: number) =>
+  MODELS_WITH_FIXED_SAMPLING.has(model) ? {} : { temperature };
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -53,7 +57,7 @@ async function handleOpenRouter(action: string, params: any) {
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: prompt }],
-          temperature,
+          ...withSupportedSampling(model, temperature),
           max_tokens: maxTokens,
         }),
       });
@@ -74,7 +78,7 @@ async function handleOpenRouter(action: string, params: any) {
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          temperature,
+          ...withSupportedSampling(model, temperature),
         }),
       });
       return jsonResponse(await res.json(), res.status);

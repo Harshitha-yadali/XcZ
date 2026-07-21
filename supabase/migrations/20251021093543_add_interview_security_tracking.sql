@@ -1,0 +1,17 @@
+/*\n  # Add Security Tracking to Mock Interview Sessions\n\n  1. New Columns Added to `mock_interview_sessions` table:\n    - `tab_switches_count` (integer) - Number of times user switched tabs during interview\n    - `fullscreen_exits_count` (integer) - Number of times user exited full-screen mode\n    - `total_violation_time` (integer) - Total time spent away from interview in seconds\n    - `violations_log` (jsonb) - Detailed log of all violations with timestamps\n    - `security_score` (integer) - Overall security compliance score (0-100)\n\n  2. Purpose:\n    - Track interview integrity and prevent cheating\n    - Monitor user behavior during mock interviews\n    - Provide security metrics in interview reports\n    - Help employers trust interview results\n\n  3. Notes:\n    - All new fields are nullable for backward compatibility\n    - Default values are set to 0 for count fields\n    - Security score defaults to 100 (perfect score)\n    - Violations log is stored as JSONB for flexibility\n*/\n\n-- Add security tracking columns to mock_interview_sessions table\nDO $$\nBEGIN\n  -- Add tab switches count\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'tab_switches_count'\n  ) THEN\n    ALTER TABLE mock_interview_sessions\n    ADD COLUMN tab_switches_count integer DEFAULT 0;
+\n  END IF;
+\n\n  -- Add fullscreen exits count\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'fullscreen_exits_count'\n  ) THEN\n    ALTER TABLE mock_interview_sessions\n    ADD COLUMN fullscreen_exits_count integer DEFAULT 0;
+\n  END IF;
+\n\n  -- Add total violation time\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'total_violation_time'\n  ) THEN\n    ALTER TABLE mock_interview_sessions\n    ADD COLUMN total_violation_time integer DEFAULT 0;
+\n  END IF;
+\n\n  -- Add violations log\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'violations_log'\n  ) THEN\n    ALTER TABLE mock_interview_sessions\n    ADD COLUMN violations_log jsonb DEFAULT '[]'::jsonb;
+\n  END IF;
+\n\n  -- Add security score\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'mock_interview_sessions' AND column_name = 'security_score'\n  ) THEN\n    ALTER TABLE mock_interview_sessions\n    ADD COLUMN security_score integer DEFAULT 100;
+\n  END IF;
+\nEND $$;
+\n\n-- Add comments to document the new columns\nCOMMENT ON COLUMN mock_interview_sessions.tab_switches_count IS 'Number of times user switched browser tabs during the interview';
+\nCOMMENT ON COLUMN mock_interview_sessions.fullscreen_exits_count IS 'Number of times user exited full-screen mode during the interview';
+\nCOMMENT ON COLUMN mock_interview_sessions.total_violation_time IS 'Total time in seconds that user spent away from the interview (switched tabs or window blur)';
+\nCOMMENT ON COLUMN mock_interview_sessions.violations_log IS 'Detailed JSON log of all security violations with type, timestamp, and duration';
+\nCOMMENT ON COLUMN mock_interview_sessions.security_score IS 'Security compliance score from 0-100, calculated based on violations (100 = perfect, no violations)';
+;

@@ -1,0 +1,18 @@
+\n\n-- Create profiles table\nCREATE TABLE IF NOT EXISTS profiles (\n  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,\n  name text NOT NULL,\n  phone text,\n  created_at timestamptz DEFAULT now() NOT NULL,\n  updated_at timestamptz DEFAULT now() NOT NULL\n);
+\n\n-- Enable Row Level Security\nALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+\n\n-- Create policies for profiles table\nCREATE POLICY "Users can read own profile"\n  ON profiles\n  FOR SELECT\n  TO authenticated\n  USING (auth.uid() = id);
+\n\nCREATE POLICY "Users can insert own profile"\n  ON profiles\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (auth.uid() = id);
+\n\nCREATE POLICY "Users can update own profile"\n  ON profiles\n  FOR UPDATE\n  TO authenticated\n  USING (auth.uid() = id)\n  WITH CHECK (auth.uid() = id);
+\n\n-- Create function to automatically update updated_at timestamp\nCREATE OR REPLACE FUNCTION update_updated_at_column()\nRETURNS TRIGGER AS $$\nBEGIN\n  NEW.updated_at = now();
+\n  RETURN NEW;
+\nEND;
+\n$$ language 'plpgsql';
+\n\n-- Create trigger to automatically update updated_at\nCREATE TRIGGER update_profiles_updated_at\n  BEFORE UPDATE ON profiles\n  FOR EACH ROW\n  EXECUTE FUNCTION update_updated_at_column();
+\n\n-- Create function to handle new user signup\nCREATE OR REPLACE FUNCTION public.handle_new_user()\nRETURNS TRIGGER AS $$\nBEGIN\n  INSERT INTO public.profiles (id, name, phone)\n  VALUES (\n    NEW.id,\n    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),\n    NEW.raw_user_meta_data->>'phone'\n  );
+\n  RETURN NEW;
+\nEND;
+\n$$ LANGUAGE plpgsql SECURITY DEFINER;
+\n\n-- Create trigger to automatically create profile on user signup\nCREATE TRIGGER on_auth_user_created\n  AFTER INSERT ON auth.users\n  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+\n\n-- Create indexes for better performance\nCREATE INDEX IF NOT EXISTS profiles_id_idx ON profiles(id);
+\nCREATE INDEX IF NOT EXISTS profiles_created_at_idx ON profiles(created_at);
+;

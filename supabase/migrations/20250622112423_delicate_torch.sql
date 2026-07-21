@@ -1,0 +1,13 @@
+\n\n-- Remove phone column if it exists (based on current schema)\nALTER TABLE profiles DROP COLUMN IF EXISTS phone;
+\n\n-- Ensure RLS is enabled\nALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+\n\n-- Recreate policies (drop and recreate to ensure they're correct)\nDROP POLICY IF EXISTS "Users can read own profile" ON profiles;
+\nDROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+\nDROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+\n\nCREATE POLICY "Users can read own profile"\n  ON profiles\n  FOR SELECT\n  TO authenticated\n  USING (auth.uid() = id);
+\n\nCREATE POLICY "Users can insert own profile"\n  ON profiles\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (auth.uid() = id);
+\n\nCREATE POLICY "Users can update own profile"\n  ON profiles\n  FOR UPDATE\n  TO authenticated\n  USING (auth.uid() = id)\n  WITH CHECK (auth.uid() = id);
+\n\n-- Update the handle_new_user function to not include phone\nCREATE OR REPLACE FUNCTION public.handle_new_user()\nRETURNS TRIGGER AS $$\nBEGIN\n  INSERT INTO public.profiles (id, name, created_at, updated_at)\n  VALUES (\n    NEW.id,\n    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1), 'User'),\n    now(),\n    now()\n  )\n  ON CONFLICT (id) DO UPDATE SET\n    name = COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1), profiles.name),\n    updated_at = now();
+\n  RETURN NEW;
+\nEND;
+\n$$ LANGUAGE plpgsql SECURITY DEFINER;
+;

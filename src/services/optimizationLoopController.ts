@@ -1,7 +1,13 @@
-import { ResumeData } from '../types/resume';
-import { scoreResumeAgainstJD, JDScoringResult, ParameterScore } from './jdScoringEngine';
+import { ResumeData, type UserType } from '../types/resume';
+import type { JDScoringResult, ParameterScore } from './jdScoringEngine';
 import { classifyGaps, GapClassification } from './gapClassificationEngine';
-import { optimizeByParameter, OptimizationChange, TargetedOptimizationResult } from './targetedParameterOptimizer';
+import { optimizeByParameter, OptimizationChange } from './targetedParameterOptimizer';
+import { validateAndRepairResume, type EvidenceViolation } from './resumeEvidenceValidator';
+import {
+  CanonicalJdScoringService,
+  type CanonicalScoreContext,
+} from './canonicalJdScoringService';
+import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 export interface LoopIterationResult {
   iteration: number;
@@ -21,6 +27,12 @@ export interface OptimizationSessionResult {
   categoryDeltas: CategoryDelta[];
   reachedTarget: boolean;
   processingTimeMs: number;
+  evidenceViolations: EvidenceViolation[];
+  scoringVersion: string;
+  beforeScoreId: string;
+  afterScoreId: string;
+  beforeInputHash: string;
+  afterInputHash: string;
 }
 
 export interface ParameterDelta {
@@ -42,6 +54,14 @@ export interface CategoryDelta {
   afterPercentage: number;
   delta: number;
   weight: number;
+}
+
+export interface OptimizationLoopOptions {
+  maxLoops?: number;
+  modelSequence?: string[];
+  candidateType?: UserType;
+  optimizationTier?: JdOptimizationTierId;
+  runId?: string;
 }
 
 const MAX_LOOPS = 6;
@@ -80,26 +100,55 @@ export async function runOptimizationLoop(
   resume: ResumeData,
   jobDescription: string,
   onProgress?: (message: string, progress: number) => void,
-  baselineResume?: ResumeData
+  baselineResume?: ResumeData,
+  options: OptimizationLoopOptions = {},
 ): Promise<OptimizationSessionResult> {
   const startTime = Date.now();
   const iterations: LoopIterationResult[] = [];
   const allChanges: OptimizationChange[] = [];
+  const evidenceViolations: EvidenceViolation[] = [];
 
   onProgress?.('Scoring your resume against the job description...', 10);
   const baseline = baselineResume
     ? JSON.parse(JSON.stringify(baselineResume)) as ResumeData
     : JSON.parse(JSON.stringify(resume)) as ResumeData;
-  const beforeScore = scoreResumeAgainstJD(baseline, jobDescription);
+  const candidateType = options.candidateType || 'fresher';
+  const optimizationTier = options.optimizationTier || 'smart';
+  const beforeContext: CanonicalScoreContext = optimizationTier === 'quick'
+    ? 'quick_scan'
+    : `${optimizationTier}_before`;
+  const afterContext: CanonicalScoreContext = optimizationTier === 'quick'
+    ? 'quick_scan'
+    : `${optimizationTier}_after`;
+  const beforeCanonical = await CanonicalJdScoringService.score({
+    resumeData: baseline,
+    jobDescription,
+    candidateType,
+    context: beforeContext,
+    runId: options.runId,
+  });
+  const beforeScore = beforeCanonical.scoreResult;
 
   let currentResume = JSON.parse(JSON.stringify(resume)) as ResumeData;
-  let currentScore = scoreResumeAgainstJD(currentResume, jobDescription);
+  const sameAsBaseline = JSON.stringify(currentResume) === JSON.stringify(baseline);
+  let latestAfterCanonical = sameAsBaseline
+    ? beforeCanonical
+    : await CanonicalJdScoringService.score({
+        resumeData: currentResume,
+        jobDescription,
+        candidateType,
+        context: afterContext,
+        runId: options.runId,
+      });
+  let currentScore = latestAfterCanonical.scoreResult;
   let currentGaps = classifyGaps(currentScore.parameters, currentScore.overallScore);
+  const maxLoops = Math.max(0, Math.min(MAX_LOOPS, Math.floor(options.maxLoops ?? MAX_LOOPS)));
+  const modelSequence = options.modelSequence || [];
 
-  for (let loop = 0; loop < MAX_LOOPS; loop++) {
+  for (let loop = 0; loop < maxLoops; loop++) {
     if (currentGaps.fixableGaps.length === 0) break;
 
-    const progressBase = Math.min(80, 20 + loop * Math.max(8, Math.floor(50 / MAX_LOOPS)));
+    const progressBase = Math.min(80, 20 + loop * Math.max(8, Math.floor(50 / Math.max(1, maxLoops))));
     const selectedGaps = prioritizeFixableGaps(currentScore.parameters, currentGaps.fixableGaps);
     onProgress?.(
       `Optimization pass ${loop + 1}: targeting ${selectedGaps.length} lowest-scoring fixable parameters...`,
@@ -111,26 +160,37 @@ export async function runOptimizationLoop(
     let optimizationResult = await optimizeByParameter(
       currentResume,
       jobDescription,
-      selectedGaps
+      selectedGaps,
+      { model: modelSequence[loop] || modelSequence[modelSequence.length - 1] },
     );
 
     if (optimizationResult.changes.length === 0) {
       optimizationResult = await optimizeByParameter(
         currentResume,
         jobDescription,
-        currentGaps.fixableGaps
+        currentGaps.fixableGaps,
+        { model: modelSequence[loop] || modelSequence[modelSequence.length - 1] },
       );
       if (optimizationResult.changes.length === 0) {
         break;
       }
     }
 
-    currentResume = optimizationResult.optimizedResume;
+    const evidenceValidation = validateAndRepairResume(baseline, optimizationResult.optimizedResume);
+    currentResume = evidenceValidation.resume;
+    evidenceViolations.push(...evidenceValidation.violations);
 
     onProgress?.(`Re-scoring after pass ${loop + 1}...`, Math.min(88, progressBase + 8));
     const previousOverall = currentScore.overallScore;
     const previousFixableCount = currentGaps.fixableGaps.length;
-    currentScore = scoreResumeAgainstJD(currentResume, jobDescription);
+    latestAfterCanonical = await CanonicalJdScoringService.score({
+      resumeData: currentResume,
+      jobDescription,
+      candidateType,
+      context: afterContext,
+      runId: options.runId,
+    });
+    currentScore = latestAfterCanonical.scoreResult;
     currentGaps = classifyGaps(currentScore.parameters, currentScore.overallScore);
 
     const selectedIds = new Set(selectedGaps.map(g => g.parameterId));
@@ -193,6 +253,12 @@ export async function runOptimizationLoop(
     categoryDeltas,
     reachedTarget: currentScore.overallScore >= TARGET_SCORE && currentGaps.fixableGaps.length === 0,
     processingTimeMs: Date.now() - startTime,
+    evidenceViolations,
+    scoringVersion: beforeCanonical.scoringVersion,
+    beforeScoreId: beforeCanonical.scoreId,
+    afterScoreId: latestAfterCanonical.scoreId,
+    beforeInputHash: beforeCanonical.inputHash,
+    afterInputHash: latestAfterCanonical.inputHash,
   };
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Crown, Calendar, Zap, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 import { Subscription } from '../../types/payment';
-import { paymentService } from '../../services/paymentService';
+import { getOptimizationTierRemaining, paymentService } from '../../services/paymentService';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   formatSubscriptionEndDate,
@@ -131,13 +131,17 @@ export const SubscriptionStatus: React.FC<SubscriptionStatusProps> = ({ onUpgrad
       {/* Usage Stats */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          {/* Credits Left */}
+          {/* Tiered optimization credits */}
           <div className="text-center">
             <div className="bg-blue-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
               <Zap className="w-6 h-6 text-blue-600" />
             </div>
-            <div className="text-2xl font-bold text-gray-900">{remaining}</div>
-            <div className="text-sm text-gray-600">Credits Left</div>
+            <div className="grid grid-cols-3 gap-1 text-xs">
+              <div><strong className="block text-cyan-600">{getOptimizationTierRemaining(subscription, 'quick')}</strong><span className="text-gray-500">Quick</span></div>
+              <div><strong className="block text-emerald-600">{getOptimizationTierRemaining(subscription, 'smart')}</strong><span className="text-gray-500">Smart</span></div>
+              <div><strong className="block text-violet-600">{getOptimizationTierRemaining(subscription, 'deep')}</strong><span className="text-gray-500">Deep</span></div>
+            </div>
+            <div className="mt-2 text-sm text-gray-600">Optimization Credits</div>
           </div>
 
           {/* Days Remaining */}

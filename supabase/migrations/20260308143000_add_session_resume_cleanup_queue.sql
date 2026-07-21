@@ -1,0 +1,4 @@
+alter table if exists public.session_bookings add column if not exists resume_upload_expires_at timestamptz, add column if not exists resume_deleted_at timestamptz;;
+create table if not exists public.session_resume_cleanup_queue (id uuid primary key default gen_random_uuid(), booking_id text not null, bucket_id text not null, storage_path text not null, delete_after timestamptz not null, deleted_at timestamptz, attempts integer not null default 0, last_error text, created_at timestamptz not null default now(), updated_at timestamptz not null default now());;
+create unique index if not exists session_resume_cleanup_queue_booking_id_idx on public.session_resume_cleanup_queue (booking_id);;
+create index if not exists session_resume_cleanup_queue_delete_after_idx on public.session_resume_cleanup_queue (delete_after) where deleted_at is null;;

@@ -415,10 +415,10 @@ export class ATSSimulator {
   private static validateSpecialCharacters(text: string): { hasProblematicChars: boolean; chars: string[] } {
     const problematicChars: string[] = [];
     const problematicPatterns = [
-      { char: '"', name: 'Smart quotes' },
-      { char: '"', name: 'Smart quotes' },
-      { char: ''', name: 'Smart apostrophe' },
-      { char: ''', name: 'Smart apostrophe' },
+      { char: '\u201c', name: 'Smart quotes' },
+      { char: '\u201d', name: 'Smart quotes' },
+      { char: '\u2018', name: 'Smart apostrophe' },
+      { char: '\u2019', name: 'Smart apostrophe' },
       { char: '—', name: 'Em dash (use - instead)' },
       { char: '–', name: 'En dash (use - instead)' }
     ];

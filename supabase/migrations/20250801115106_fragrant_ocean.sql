@@ -1,0 +1,17 @@
+\n\n-- Step 1: Add new columns to subscriptions table\n-- Using IF NOT EXISTS makes this part of the script idempotent\nALTER TABLE public.subscriptions\nADD COLUMN IF NOT EXISTS score_checks_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS score_checks_total INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS linkedin_messages_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS linkedin_messages_total INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS guided_builds_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS guided_builds_total INTEGER DEFAULT 0 NOT NULL;
+\n\n---\n\n-- Step 2: Add indexes for performance\n-- Using IF NOT EXISTS makes this part of the script idempotent\nCREATE INDEX IF NOT EXISTS idx_subscriptions_score_checks ON public.subscriptions(score_checks_used, score_checks_total);
+\nCREATE INDEX IF NOT EXISTS idx_subscriptions_linkedin_messages ON public.subscriptions(linkedin_messages_used, linkedin_messages_total);
+\nCREATE INDEX IF NOT EXISTS idx_subscriptions_guided_builds ON public.subscriptions(guided_builds_used, guided_builds_total);
+\n\n---\n\n-- Step 3: Add check constraints to ensure data integrity\n-- Wrap each constraint addition in a DO block to handle duplicates gracefully.\n\n-- Constraint: Used counts don't exceed total counts for score checks\nDO $$\nBEGIN\n    ALTER TABLE public.subscriptions\n    ADD CONSTRAINT check_score_checks_usage CHECK (score_checks_used <= score_checks_total);
+\nEXCEPTION\n    WHEN duplicate_object THEN NULL;
+ -- Ignore if constraint already exists\nEND $$;
+\n\n-- Constraint: Used counts don't exceed total counts for LinkedIn messages\nDO $$\nBEGIN\n    ALTER TABLE public.subscriptions\n    ADD CONSTRAINT check_linkedin_messages_usage CHECK (linkedin_messages_used <= linkedin_messages_total);
+\nEXCEPTION\n    WHEN duplicate_object THEN NULL;
+ -- Ignore if constraint already exists\nEND $$;
+\n\n-- Constraint: Used counts don't exceed total counts for guided builds\nDO $$\nBEGIN\n    ALTER TABLE public.subscriptions\n    ADD CONSTRAINT check_guided_builds_usage CHECK (guided_builds_used <= guided_builds_total);
+\nEXCEPTION\n    WHEN duplicate_object THEN NULL;
+ -- Ignore if constraint already exists\nEND $$;
+\n\n-- Constraint: All usage and total counts must be non-negative\nDO $$\nBEGIN\n    ALTER TABLE public.subscriptions\n    ADD CONSTRAINT check_non_negative_usage CHECK (\n        score_checks_used >= 0 AND score_checks_total >= 0 AND\n        linkedin_messages_used >= 0 AND linkedin_messages_total >= 0 AND\n        guided_builds_used >= 0 AND guided_builds_total >= 0\n    );
+\nEXCEPTION\n    WHEN duplicate_object THEN NULL;
+ -- Ignore if constraint already exists\nEND $$;
+\n;

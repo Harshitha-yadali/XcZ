@@ -1,4 +1,5 @@
 export type PlanCategory = 'combined' | 'jd_only' | 'score_only' | 'combo';
+export type OptimizationCreditTier = 'quick' | 'smart' | 'deep';
 
 export interface SubscriptionPlan {
   id: string;
@@ -20,6 +21,7 @@ export interface SubscriptionPlan {
   features: string[];
   popular?: boolean;
   durationInHours: number;
+  optimizationTier?: OptimizationCreditTier;
 }
 
 
@@ -72,5 +74,10 @@ export interface Subscription {
   linkedinMessagesTotal: number;
   guidedBuildsUsed: number;
   guidedBuildsTotal: number;
+  quickOptimizationsUsed: number;
+  quickOptimizationsTotal: number;
+  smartOptimizationsUsed: number;
+  smartOptimizationsTotal: number;
+  deepOptimizationsUsed: number;
+  deepOptimizationsTotal: number;
 }
-

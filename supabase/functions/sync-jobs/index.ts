@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const HARDCODED_CONFIG = {
-  apifyToken: 'apify_api_eF2gvPqJlLnUWFQVgYLZLN2WXMYRiO2JKrPD',
+  apifyToken: Deno.env.get('APIFY_API_TOKEN')?.trim() || '',
   actorId: 'curious_coder/linkedin-jobs-search-scraper',
   platformName: 'LinkedIn',
   searchConfig: {
@@ -64,6 +64,10 @@ Deno.serve(async (req: Request) => {
   const startTime = new Date().toISOString();
 
   try {
+    if (!HARDCODED_CONFIG.apifyToken) {
+      throw new Error('APIFY_API_TOKEN is not configured');
+    }
+
     await supabase.from('job_sync_logs').insert({
       id: logId,
       platform_name: HARDCODED_CONFIG.platformName,

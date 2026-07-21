@@ -7,8 +7,13 @@ import {
   Certification,
 } from '../types/resume';
 import { openrouter } from './aiProxyService';
-import { DEFAULT_OPENROUTER_MODEL } from './openrouterModelConfig';
+import {
+  PINNED_RESUME_PARSER_MODEL,
+  RESUME_PARSER_ESCALATION_MODEL,
+} from './openrouterModelConfig';
 import { parseResumeText as parseResumeTextHeuristically } from './resumeScoringFixes';
+import { BULLET_PATTERN, parseResumeEvidence } from './resumeEvidenceExtractor';
+import type { ResumeEvidenceDocument } from '../types/resumeEvidence';
 
 export interface ParsedResume extends ResumeData {
   parsedText: string;
@@ -19,7 +24,7 @@ export interface ParsedResume extends ResumeData {
 const MAX_PARSED_TEXT_LENGTH = 45000;
 const MAX_AI_INPUT_LENGTH = 9000;
 const MAX_RETRIES = 1;
-const RESUME_PARSER_MODEL = DEFAULT_OPENROUTER_MODEL;
+const RESUME_PARSER_MODEL = PINNED_RESUME_PARSER_MODEL;
 
 const RESUME_PARSER_SYSTEM_PROMPT = `You are an enterprise-grade resume parsing and structuring engine.
 
@@ -129,13 +134,17 @@ function normalizeResumeTextForAI(text: string): string {
     .trim();
 }
 
-async function extractWithGemini(text: string): Promise<any> {
+async function extractWithGemini(
+  text: string,
+  model = RESUME_PARSER_MODEL,
+  temperature = 0.1,
+): Promise<any> {
   const userPrompt = `Resume Text:\n"""\n${normalizeResumeTextForAI(text).slice(0, MAX_AI_INPUT_LENGTH)}\n"""`;
 
   const response = await openrouter.chatWithSystem(
     RESUME_PARSER_SYSTEM_PROMPT,
     userPrompt,
-    { model: RESUME_PARSER_MODEL, temperature: 0.1 }
+    { model, temperature }
   );
 
   if (!response) {
@@ -163,7 +172,7 @@ async function extractWithRetry(text: string): Promise<any> {
         const response = await openrouter.chatWithSystem(
           RESUME_PARSER_SYSTEM_PROMPT,
           retryPrompt,
-          { model: RESUME_PARSER_MODEL, temperature: 0.05 }
+          { model: RESUME_PARSER_ESCALATION_MODEL, temperature: 0.05 }
         );
 
         const parsed = safeParseJSON(response);
@@ -195,6 +204,7 @@ function isInternshipEntry(entry: any): boolean {
 }
 
 function mapHeuristicFallbackToResume(rawText: string, failureReason: string): ParsedResume | null {
+  const evidenceDocument = parseResumeEvidence(rawText);
   const heuristicResult = parseResumeTextHeuristically(rawText);
   const { data } = heuristicResult;
   const fallbackWorkExperience = data.workExperience.length > 0
@@ -232,17 +242,19 @@ function mapHeuristicFallbackToResume(rawText: string, failureReason: string): P
     bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
   }));
 
-  const projects: Project[] = data.projects.map((entry) => ({
-    title: entry.title || '',
-    bullets: Array.isArray(entry.bullets) ? entry.bullets : [],
-    githubUrl: '',
-  }));
+  const projects: Project[] = data.projects.map((entry, index) => {
+    const groundedProject = findGroundedProject(evidenceDocument, entry.title || '', index);
+    return {
+      title: entry.title || groundedProject?.title || '',
+      bullets: groundedProject?.bullets.length
+        ? groundedProject.bullets.map(bullet => bullet.text)
+        : (Array.isArray(entry.bullets) ? entry.bullets : []),
+      techStack: groundedProject?.technologies.map(skill => skill.canonicalSkill) || [],
+      githubUrl: '',
+    };
+  });
 
-  const skills: Skill[] = data.skills.map((entry) => ({
-    category: entry.category || 'Skills',
-    count: Array.isArray(entry.list) ? entry.list.length : 0,
-    list: Array.isArray(entry.list) ? entry.list : [],
-  }));
+  const skills = buildGroundedSkillGroups(evidenceDocument);
 
   const certifications: Certification[] = data.certifications.map((entry) => ({
     title: entry,
@@ -264,6 +276,7 @@ function mapHeuristicFallbackToResume(rawText: string, failureReason: string): P
     projects,
     skills,
     certifications,
+    evidenceDocument,
     parsedText: truncatedText,
     parsingConfidence: Math.max(0.35, heuristicResult.confidence / 100),
     rawResponse: {
@@ -284,7 +297,7 @@ function extractSimpleWorkExperienceFallback(text: string): WorkExperience[] {
     .map((line) => line.trim())
     .filter(Boolean);
   const yearPattern = /(\d{4}\s*[-–]\s*(?:\d{4}|present|current|now))/i;
-  const bulletPattern = /^[-*•]\s*/;
+  const bulletPattern = BULLET_PATTERN;
   const experiences: WorkExperience[] = [];
   let current: WorkExperience | null = null;
 
@@ -327,6 +340,7 @@ function extractSimpleWorkExperienceFallback(text: string): WorkExperience[] {
 }
 
 function mapToResume(parsed: any, rawText: string): ParsedResume {
+  const evidenceDocument = parseResumeEvidence(rawText);
   const truncatedText = rawText.length > MAX_PARSED_TEXT_LENGTH
     ? rawText.substring(0, MAX_PARSED_TEXT_LENGTH) + '... [truncated]'
     : rawText;
@@ -371,19 +385,20 @@ function mapToResume(parsed: any, rawText: string): ParsedResume {
     bullets: Array.isArray(w.bullets) ? w.bullets : [],
   }));
 
-  const projects: Project[] = (parsed.projects || []).map((p: any) => ({
-    title: p.name || p.title || '',
-    bullets: Array.isArray(p.bullets) ? p.bullets : [],
-    githubUrl: p.github_url || p.githubUrl || '',
-  }));
-
-  const rawSkills = parsed.skills || [];
-  const skills: Skill[] = rawSkills.map((s: any) => {
-    if (typeof s === 'string') return { category: 'Skills', count: 1, list: [s] };
-    if (Array.isArray(s)) return { category: 'Skills', count: s.length, list: s };
-    const list = Array.isArray(s.list) ? s.list : (Array.isArray(s.skills) ? s.skills : []);
-    return { category: s.category || 'Skills', count: list.length, list };
+  const projects: Project[] = (parsed.projects || []).map((p: any, index: number) => {
+    const title = p.name || p.title || '';
+    const groundedProject = findGroundedProject(evidenceDocument, title, index);
+    return {
+      title: title || groundedProject?.title || '',
+      bullets: groundedProject?.bullets.length
+        ? groundedProject.bullets.map(bullet => bullet.text)
+        : (Array.isArray(p.bullets) ? p.bullets : []),
+      techStack: groundedProject?.technologies.map(skill => skill.canonicalSkill) || [],
+      githubUrl: p.github_url || p.githubUrl || '',
+    };
   });
+
+  const skills = buildGroundedSkillGroups(evidenceDocument);
 
   const certifications: Certification[] = (parsed.certifications || []).map((c: any) => {
     if (typeof c === 'string') return { title: c, description: '' };
@@ -405,11 +420,28 @@ function mapToResume(parsed: any, rawText: string): ParsedResume {
     projects,
     skills,
     certifications,
+    evidenceDocument,
     parsedText: truncatedText,
     parsingConfidence: 0.95,
     rawResponse: parsed,
     origin: 'gemini_parsed',
   };
+}
+
+function findGroundedProject(evidence: ResumeEvidenceDocument, title: string, index: number) {
+  const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return evidence.projects.find(project => {
+    const groundedTitle = project.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return normalizedTitle && (groundedTitle.includes(normalizedTitle) || normalizedTitle.includes(groundedTitle));
+  }) || evidence.projects[index];
+}
+
+function buildGroundedSkillGroups(evidence: ResumeEvidenceDocument): Skill[] {
+  const skills = evidence.skills
+    .filter(skill => skill.sourceSection === 'skills')
+    .map(skill => skill.canonicalSkill);
+  const unique = [...new Map(skills.map(skill => [skill.toLowerCase(), skill])).values()];
+  return unique.length > 0 ? [{ category: 'Technical Skills', count: unique.length, list: unique }] : [];
 }
 
 export const parseResumeFromFile = async (file: File): Promise<ParsedResume> => {

@@ -1,0 +1,4 @@
+/*\n  # Add slot_type to referral consultation slots\n\n  1. Modified Tables\n    - `referral_consultation_slots`\n      - Added `slot_type` column (text) to distinguish between query, profile, and consultation slots\n      - Default value is 'consultation' to preserve existing data\n  \n  2. Changes\n    - Allows booking different types of sessions:\n      - 'query' = Referral Query (15-min slots)\n      - 'profile' = Profile Monetization (60-min slots)\n      - 'consultation' = Consultation Slot (15-min slots)\n    - All existing rows default to 'consultation'\n*/\n\nDO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns\n    WHERE table_name = 'referral_consultation_slots' AND column_name = 'slot_type'\n  ) THEN\n    ALTER TABLE referral_consultation_slots ADD COLUMN slot_type text NOT NULL DEFAULT 'consultation';
+\n  END IF;
+\nEND $$;
+\n;

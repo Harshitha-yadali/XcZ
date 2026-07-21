@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Subscription } from '../../types/payment';
+import { getOptimizationTierRemaining } from '../../services/paymentService';
 
 interface ToolsAndPagesNavigationProps {
   onPageChange: (page: string) => void;
@@ -74,9 +75,11 @@ const FeatureCard: React.FC<FeatureCardProps> = ({
 
     switch (id) {
       case 'optimizer':
-        used = userSubscription.optimizationsUsed;
-        total = userSubscription.optimizationsTotal;
-        break;
+        return (
+          <span className="text-xs font-medium text-emerald-400">
+            Q {getOptimizationTierRemaining(userSubscription, 'quick')} · S {getOptimizationTierRemaining(userSubscription, 'smart')} · D {getOptimizationTierRemaining(userSubscription, 'deep')}
+          </span>
+        );
       case 'score-checker':
         used = userSubscription.scoreChecksUsed;
         total = userSubscription.scoreChecksTotal;

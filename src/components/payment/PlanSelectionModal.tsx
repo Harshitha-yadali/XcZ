@@ -14,7 +14,7 @@ interface PlanSelectionModalProps {
   onShowAlert: (title: string, message: string, type?: 'info' | 'success' | 'warning' | 'error', actionText?: string, onAction?: () => void) => void;
   triggeredByFeatureId?: string;
   // NEW PROP: Callback for successful add-on purchase
-  onAddonPurchaseSuccess?: (featureId: string) => void;
+  onAddonPurchaseSuccess?: (featureId: string) => void | Promise<void>;
 }
 
 export const PlanSelectionModal: React.FC<PlanSelectionModalProps> = ({
@@ -76,14 +76,14 @@ export const PlanSelectionModal: React.FC<PlanSelectionModalProps> = ({
         };
       default: // This will be for 'optimizer' by default
         return {
-          title: 'Get JD-Based Optimization',
-          description: 'Purchase a single resume optimization',
+          title: 'Quick 5 Package',
+          description: 'Purchase 5 Quick Scan credits',
           icon: <Target className="w-5 h-5" />,
-          addOnId: 'jd_optimization_single_purchase',
+          addOnId: 'jd_optimization_quick_5',
           redirectPath: '/optimizer',
-          price: 19, // New discounted price
-          mrp: 49, // Original price
-          discountPercentage: ((49 - 19) / 49 * 100).toFixed(0), // Calculate discount
+          price: 89,
+          mrp: 245,
+          discountPercentage: 64,
         };
     }
   };
@@ -132,21 +132,19 @@ export const PlanSelectionModal: React.FC<PlanSelectionModalProps> = ({
       );
 
       if (result.success) {
-        onSubscriptionSuccess();
         onShowAlert('Purchase Successful!', `Your ${featureConfig.title} credit has been added.`, 'success');
 
-        // Check if it was a single-use add-on purchase (triggeredByFeatureId is present)
         if (triggeredByFeatureId) {
-            // Call the new callback for add-on purchase success
-            if (onAddonPurchaseSuccess) {
-                console.log("PlanSelectionModal: Calling onAddonPurchaseSuccess for feature:", triggeredByFeatureId); // ADD LOG
-                onAddonPurchaseSuccess(triggeredByFeatureId);
-            }
-            onClose(); // CRITICAL: Close the modal after successful purchase and callback
+          // Add-on purchases have one refresh/restart path. Calling both success
+          // callbacks previously restarted tools twice and could spend two credits.
+          if (onAddonPurchaseSuccess) {
+            await onAddonPurchaseSuccess(triggeredByFeatureId);
+          }
+          onClose();
         } else {
-            // For full plan purchases or general plan selection, navigate to pricing page
-            navigate('/pricing');
-            onClose(); // CRITICAL: Close the modal
+          onSubscriptionSuccess();
+          navigate('/pricing');
+          onClose();
         }
       } else {
         setError(result.error || 'Payment failed. Please try again.');

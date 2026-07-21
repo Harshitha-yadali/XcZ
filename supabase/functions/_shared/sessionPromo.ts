@@ -14,7 +14,7 @@ export function parseSessionPromoCodes(raw: unknown): SessionPromoCodeConfig[] {
   }
 
   return raw
-    .map((entry) => {
+    .map<SessionPromoCodeConfig | null>((entry) => {
       if (!entry || typeof entry !== 'object') {
         return null;
       }
@@ -34,7 +34,7 @@ export function parseSessionPromoCodes(raw: unknown): SessionPromoCodeConfig[] {
         description,
       } satisfies SessionPromoCodeConfig;
     })
-    .filter((entry): entry is SessionPromoCodeConfig => Boolean(entry));
+    .filter((entry): entry is SessionPromoCodeConfig => entry !== null);
 }
 
 export function findSessionPromo(

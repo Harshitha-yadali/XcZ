@@ -15,7 +15,6 @@ import {
   CheckCircle,
   AlertCircle,
   Wallet,
-  TrendingUp,
   Layers,
   ChevronLeft,
   ChevronRight
@@ -23,7 +22,7 @@ import {
 import { paymentService } from '../../services/paymentService';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
-import type { PlanCategory } from '../../types/payment';
+import type { OptimizationCreditTier } from '../../types/payment';
 
 interface SubscriptionPlansProps {
   isOpen: boolean;
@@ -39,11 +38,10 @@ type AppliedCoupon = {
   finalAmount: number;
 };
 
-const CATEGORY_CONFIG: { key: PlanCategory; label: string; icon: React.ReactNode }[] = [
-  { key: 'jd_only', label: 'JD Optimizer', icon: <Target className="w-3.5 h-3.5" /> },
-  { key: 'score_only', label: 'Score Checker', icon: <TrendingUp className="w-3.5 h-3.5" /> },
-  { key: 'combo', label: 'JD + Score', icon: <Layers className="w-3.5 h-3.5" /> },
-  { key: 'combined', label: 'Combined Premium', icon: <Crown className="w-3.5 h-3.5" /> },
+const CATEGORY_CONFIG: { key: OptimizationCreditTier; label: string; icon: React.ReactNode }[] = [
+  { key: 'quick', label: 'Quick Scan', icon: <Target className="w-3.5 h-3.5" /> },
+  { key: 'smart', label: 'Smart Optimize', icon: <Zap className="w-3.5 h-3.5" /> },
+  { key: 'deep', label: 'Deep Optimize', icon: <Layers className="w-3.5 h-3.5" /> },
 ];
 
 const getPlanIcon = (iconType: string) => {
@@ -100,7 +98,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   onShowAlert,
 }) => {
   const { user } = useAuth();
-  const [activeCategory, setActiveCategory] = useState<PlanCategory>('jd_only');
+  const [activeCategory, setActiveCategory] = useState<OptimizationCreditTier>('quick');
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [couponCode, setCouponCode] = useState('');
@@ -113,7 +111,9 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   const [dragStart, setDragStart] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const categoryPlans = paymentService.getPlansByCategory(activeCategory);
+  const categoryPlans = paymentService
+    .getPlansByCategory('jd_only')
+    .filter((plan) => plan.optimizationTier === activeCategory);
 
   useEffect(() => {
     if (user && isOpen) fetchWalletBalance();
@@ -338,7 +338,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
 
         {/* Category Selector - Horizontal scroll on mobile, grid on desktop */}
         <div className="lg:hidden mb-6">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {CATEGORY_CONFIG.map((cat) => (
               <button
                 key={cat.key}
@@ -357,7 +357,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
           </div>
         </div>
 
-        <div className="hidden lg:grid lg:grid-cols-4 gap-3 mb-8">
+        <div className="hidden lg:grid lg:grid-cols-3 gap-3 mb-8">
           {CATEGORY_CONFIG.map((cat) => (
             <button
               key={cat.key}

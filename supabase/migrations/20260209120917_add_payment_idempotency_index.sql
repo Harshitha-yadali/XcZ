@@ -1,0 +1,2 @@
+/*\n  # Add payment idempotency constraint\n\n  1. Changes\n    - Add unique index on `payment_transactions` for `payment_id` where payment_id \n      is a real Razorpay payment ID (starts with 'pay_'), preventing duplicate verification\n\n  2. Security\n    - Prevents replay attacks where the same Razorpay payment is verified multiple times\n*/\n\nCREATE UNIQUE INDEX IF NOT EXISTS idx_unique_payment_id\n  ON payment_transactions (payment_id)\n  WHERE payment_id IS NOT NULL \n    AND payment_id LIKE 'pay_%';
+\n;

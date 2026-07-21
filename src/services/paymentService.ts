@@ -1,12 +1,13 @@
 // src/services/paymentService.ts
 import { supabase } from '../lib/supabaseClient';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import { JD_OPTIMIZATION_TIERS } from '../config/jdOptimizationTiers';
 import { LIFETIME_PLAN_END_DATE_ISO } from '../utils/subscriptionLifetime';
 
 // ---------- Types ----------
 export type { PlanCategory } from '../types/payment';
 export type { SubscriptionPlan } from '../types/payment';
-import type { SubscriptionPlan, PlanCategory } from '../types/payment';
+import type { SubscriptionPlan, PlanCategory, OptimizationCreditTier } from '../types/payment';
 
 export interface PaymentData {
   planId: string;
@@ -63,7 +64,27 @@ export interface Subscription {
   linkedinMessagesTotal: number;
   guidedBuildsUsed: number;
   guidedBuildsTotal: number;
+  quickOptimizationsUsed: number;
+  quickOptimizationsTotal: number;
+  smartOptimizationsUsed: number;
+  smartOptimizationsTotal: number;
+  deepOptimizationsUsed: number;
+  deepOptimizationsTotal: number;
 }
+
+export const getOptimizationTierRemaining = (
+  subscription: Subscription | null | undefined,
+  tier: OptimizationCreditTier,
+): number => {
+  if (!subscription) return 0;
+  const fields: Record<OptimizationCreditTier, { total: keyof Subscription; used: keyof Subscription }> = {
+    quick: { total: 'quickOptimizationsTotal', used: 'quickOptimizationsUsed' },
+    smart: { total: 'smartOptimizationsTotal', used: 'smartOptimizationsUsed' },
+    deep: { total: 'deepOptimizationsTotal', used: 'deepOptimizationsUsed' },
+  };
+  const selected = fields[tier];
+  return Math.max(0, Number(subscription[selected.total] || 0) - Number(subscription[selected.used] || 0));
+};
 
 // Credit types map 1:1 with addon_types.type_key and with our internal useCredit API
 type CreditType = 'optimization' | 'score_check' | 'linkedin_messages' | 'guided_build';
@@ -73,6 +94,38 @@ const TEMPORARY_PRICING_PLAN_COUPON_MESSAGE =
   "Coupon system isn't fully configured right now. Please contact support or try again later.";
 const EXPIRED_SESSION_MESSAGE =
   'Your session has expired. Please sign in again.';
+
+const JD_OPTIMIZATION_PRICING_PLANS: SubscriptionPlan[] = JD_OPTIMIZATION_TIERS.flatMap((tier) =>
+  tier.packages.map((optimizationPackage) => ({
+    id: `jd_${tier.id}_${optimizationPackage.size}`,
+    name: `${tier.id === 'quick' ? 'Quick' : tier.id === 'smart' ? 'Smart' : 'Deep'} ${optimizationPackage.size}`,
+    price: optimizationPackage.offerPrice,
+    mrp: optimizationPackage.regularValue,
+    discountPercentage: optimizationPackage.discountPercentage,
+    duration: 'Lifetime Access',
+    optimizations: optimizationPackage.credits,
+    scoreChecks: 0,
+    linkedinMessages: 0,
+    guidedBuilds: 0,
+    sessions: 0,
+    category: 'jd_only' as const,
+    tag: tier.badge,
+    tagColor: tier.id === 'smart' ? 'text-emerald-800 bg-emerald-100' : '',
+    gradient: tier.id === 'quick'
+      ? 'from-cyan-500 to-sky-500'
+      : tier.id === 'smart'
+        ? 'from-emerald-500 to-cyan-500'
+        : 'from-violet-500 to-blue-500',
+    icon: 'target',
+    features: [
+      `${optimizationPackage.size} ${tier.name}${optimizationPackage.size === 1 ? '' : tier.id === 'quick' ? 's' : ' runs'}`,
+      `₹${optimizationPackage.perOptimization.toFixed(2)} per ${tier.unitLabel}`,
+    ],
+    popular: tier.id === 'smart' && optimizationPackage.size === 25,
+    durationInHours: 0,
+    optimizationTier: tier.id,
+  })),
+);
 
 // ---------- Service ----------
 class PaymentService {
@@ -130,90 +183,7 @@ class PaymentService {
       durationInHours: 0,
     },
     // JD-BASED OPTIMIZER ONLY
-    {
-      id: 'jd_starter',
-      name: 'JD Starter',
-      price: 89,
-      mrp: 245,
-      discountPercentage: Math.round((1 - 89 / 245) * 100),
-      duration: 'Lifetime Access',
-      optimizations: 5,
-      scoreChecks: 0,
-      linkedinMessages: 0,
-      guidedBuilds: 0,
-      sessions: 0,
-      category: 'jd_only',
-      tag: '',
-      tagColor: '',
-      gradient: 'from-teal-500 to-emerald-500',
-      icon: 'target',
-      features: ['5 JD-Based Resume Optimizations'],
-      popular: false,
-      durationInHours: 0,
-    },
-    {
-      id: 'jd_basic',
-      name: 'JD Basic',
-      price: 169,
-      mrp: 490,
-      discountPercentage: Math.round((1 - 169 / 490) * 100),
-      duration: 'Lifetime Access',
-      optimizations: 10,
-      scoreChecks: 0,
-      linkedinMessages: 0,
-      guidedBuilds: 0,
-      sessions: 0,
-      category: 'jd_only',
-      tag: '',
-      tagColor: '',
-      gradient: 'from-teal-500 to-emerald-500',
-      icon: 'target',
-      features: ['10 JD-Based Resume Optimizations'],
-      popular: false,
-      durationInHours: 0,
-    },
-    {
-      id: 'jd_advanced',
-      name: 'JD Advanced',
-      price: 799,
-      mrp: 2450,
-      discountPercentage: Math.round((1 - 799 / 2450) * 100),
-      duration: 'Lifetime Access',
-      optimizations: 50,
-      scoreChecks: 0,
-      linkedinMessages: 0,
-      guidedBuilds: 0,
-      sessions: 0,
-      category: 'jd_only',
-      tag: '',
-      tagColor: '',
-      gradient: 'from-teal-500 to-emerald-500',
-      icon: 'target',
-      features: ['50 JD-Based Resume Optimizations'],
-      popular: false,
-      durationInHours: 0,
-    },
-    {
-      id: 'jd_pro',
-      name: 'JD Pro',
-      price: 1499,
-      mrp: 4900,
-      discountPercentage: Math.round((1 - 1499 / 4900) * 100),
-      duration: 'Lifetime Access',
-      optimizations: 100,
-      scoreChecks: 0,
-      linkedinMessages: 0,
-      guidedBuilds: 0,
-      sessions: 0,
-      category: 'jd_only',
-      tag: '',
-      tagColor: '',
-      gradient: 'from-teal-500 to-emerald-500',
-      icon: 'target',
-      features: ['100 JD-Based Resume Optimizations'],
-      popular: false,
-      durationInHours: 0,
-    },
+    ...JD_OPTIMIZATION_PRICING_PLANS,
     // RESUME SCORE CHECKER ONLY
     {
       id: 'score_starter',
@@ -331,8 +301,24 @@ class PaymentService {
 
   // ----- Add-ons (static catalog) -----
   private addOns = [
-    // Purchasable singles
-    { id: 'jd_optimization_single_purchase',   name: 'JD-Based Optimization (1 Use)',     price: 19,  type: 'optimization',      quantity: 1 },
+    // JD optimization bundles. Each purchased run belongs to exactly one tier.
+    { id: 'jd_optimization_quick_5',           name: 'Quick 5',                           price: 89,   type: 'optimization',      quantity: 5,  optimizationTier: 'quick' },
+    { id: 'jd_optimization_quick_10',          name: 'Quick 10',                          price: 169,  type: 'optimization',      quantity: 10, optimizationTier: 'quick' },
+    { id: 'jd_optimization_quick_25',          name: 'Quick 25',                          price: 399,  type: 'optimization',      quantity: 25, optimizationTier: 'quick' },
+    { id: 'jd_optimization_quick_50',          name: 'Quick 50',                          price: 749,  type: 'optimization',      quantity: 50, optimizationTier: 'quick' },
+    { id: 'jd_optimization_smart_5',           name: 'Smart 5',                           price: 239,  type: 'optimization',      quantity: 5,  optimizationTier: 'smart' },
+    { id: 'jd_optimization_smart_10',          name: 'Smart 10',                          price: 469,  type: 'optimization',      quantity: 10, optimizationTier: 'smart' },
+    { id: 'jd_optimization_smart_25',          name: 'Smart 25',                          price: 999,  type: 'optimization',      quantity: 25, optimizationTier: 'smart' },
+    { id: 'jd_optimization_smart_50',          name: 'Smart 50',                          price: 1889, type: 'optimization',      quantity: 50, optimizationTier: 'smart' },
+    { id: 'jd_optimization_deep_5',            name: 'Deep 5',                            price: 489,  type: 'optimization',      quantity: 5,  optimizationTier: 'deep' },
+    { id: 'jd_optimization_deep_10',           name: 'Deep 10',                           price: 899,  type: 'optimization',      quantity: 10, optimizationTier: 'deep' },
+    { id: 'jd_optimization_deep_25',           name: 'Deep 25',                           price: 1999, type: 'optimization',      quantity: 25, optimizationTier: 'deep' },
+    { id: 'jd_optimization_deep_50',           name: 'Deep 50',                           price: 3899, type: 'optimization',      quantity: 50, optimizationTier: 'deep' },
+    // Single-use products shown in the optimizer quality picker.
+    { id: 'jd_optimization_quick',             name: 'Quick Scan',                        price: 19,  type: 'optimization',      quantity: 1, optimizationTier: 'quick' },
+    { id: 'jd_optimization_smart',             name: 'Smart Optimize',                    price: 49,  type: 'optimization',      quantity: 1, optimizationTier: 'smart' },
+    { id: 'jd_optimization_deep',              name: 'Deep Optimize',                     price: 99,  type: 'optimization',      quantity: 1, optimizationTier: 'deep' },
+    { id: 'jd_optimization_single_purchase',   name: 'JD-Based Optimization (1 Use)',     price: 19,  type: 'optimization',      quantity: 1, optimizationTier: 'quick' },
     { id: 'resume_score_check_single_purchase',  name: 'Resume Score Check (1 Use)',      price: 9,   type: 'score_check',       quantity: 1 },
     { id: 'guided_resume_build_single_purchase', name: 'Guided Resume Build (1 Use)',     price: 29,  type: 'guided_build',      quantity: 1 },
     { id: 'linkedin_messages_50_purchase',       name: 'LinkedIn Messages (50 Uses)',     price: 29,  type: 'linkedin_messages', quantity: 50 },
@@ -412,6 +398,12 @@ class PaymentService {
       // Cumulate credits across *all* active subscriptions
       let cumulativeOptimizationsUsed = 0;
       let cumulativeOptimizationsTotal = 0;
+      let cumulativeQuickOptimizationsUsed = 0;
+      let cumulativeQuickOptimizationsTotal = 0;
+      let cumulativeSmartOptimizationsUsed = 0;
+      let cumulativeSmartOptimizationsTotal = 0;
+      let cumulativeDeepOptimizationsUsed = 0;
+      let cumulativeDeepOptimizationsTotal = 0;
       let cumulativeScoreChecksUsed = 0;
       let cumulativeScoreChecksTotal = 0;
       let cumulativeLinkedinMessagesUsed = 0;
@@ -429,8 +421,20 @@ class PaymentService {
 
       if (subscriptions && subscriptions.length > 0) {
         subscriptions.forEach((sub: any) => {
-          cumulativeOptimizationsUsed  += Number(sub.optimizations_used  ?? 0);
-          cumulativeOptimizationsTotal += Number(sub.optimizations_total ?? 0);
+          const quickTotal = Number(sub.quick_optimizations_total ?? 0);
+          const quickUsed = Number(sub.quick_optimizations_used ?? 0);
+          const smartTotal = Number(sub.smart_optimizations_total ?? 0);
+          const smartUsed = Number(sub.smart_optimizations_used ?? 0);
+          const deepTotal = Number(sub.deep_optimizations_total ?? 0);
+          const deepUsed = Number(sub.deep_optimizations_used ?? 0);
+          const hasTieredBalance = quickTotal + smartTotal + deepTotal > 0;
+
+          cumulativeQuickOptimizationsTotal += hasTieredBalance ? quickTotal : Number(sub.optimizations_total ?? 0);
+          cumulativeQuickOptimizationsUsed += hasTieredBalance ? quickUsed : Number(sub.optimizations_used ?? 0);
+          cumulativeSmartOptimizationsTotal += smartTotal;
+          cumulativeSmartOptimizationsUsed += smartUsed;
+          cumulativeDeepOptimizationsTotal += deepTotal;
+          cumulativeDeepOptimizationsUsed += deepUsed;
           cumulativeScoreChecksUsed    += Number(sub.score_checks_used   ?? 0);
           cumulativeScoreChecksTotal   += Number(sub.score_checks_total  ?? 0);
           cumulativeLinkedinMessagesUsed  += Number(sub.linkedin_messages_used  ?? 0);
@@ -452,14 +456,7 @@ class PaymentService {
       // Include ALL user add-on credits (used + remaining), for accurate "used" derivation
       const { data: addonCreditsData, error: addonCreditsError } = await supabase
         .from('user_addon_credits')
-        .select(`
-          id,
-          user_id,
-          addon_type_id,
-          quantity_purchased,
-          quantity_remaining,
-          addon_types(type_key)
-        `)
+        .select('*, addon_types(type_key)')
         .eq('user_id', userId); // IMPORTANT: scope to user
 
       console.log('PaymentService: Fetched raw add-on credits data:', addonCreditsData);
@@ -475,6 +472,11 @@ class PaymentService {
         linkedin_messages: { total: 0, used: 0 },
         guided_build: { total: 0, used: 0 },
       };
+      const tieredAddonOptimizations: Record<OptimizationCreditTier, { total: number; used: number }> = {
+        quick: { total: 0, used: 0 },
+        smart: { total: 0, used: 0 },
+        deep: { total: 0, used: 0 },
+      };
 
       (addonCreditsData || []).forEach((credit: any) => {
         const typeKey = (credit.addon_types as { type_key: string })?.type_key;
@@ -484,6 +486,12 @@ class PaymentService {
           aggregatedAddonCredits[typeKey].total += purchased;
           aggregatedAddonCredits[typeKey].used  += Math.max(0, purchased - remaining);
         }
+        if (typeKey === 'optimization') {
+          const tier = (credit.optimization_tier || 'quick') as OptimizationCreditTier;
+          const resolvedTier = tieredAddonOptimizations[tier] ? tier : 'quick';
+          tieredAddonOptimizations[resolvedTier].total += purchased;
+          tieredAddonOptimizations[resolvedTier].used += Math.max(0, purchased - remaining);
+        }
         console.log(
           `PaymentService: Processing add-on credit - typeKey: ${typeKey}, purchased: ${purchased}, remaining: ${remaining}`
         );
@@ -491,12 +499,20 @@ class PaymentService {
 
       console.log('PaymentService: Aggregated add-on credits:', aggregatedAddonCredits);
 
-      const finalOptimizationsTotal   = cumulativeOptimizationsTotal   + aggregatedAddonCredits.optimization.total;
+      const finalQuickOptimizationsTotal = cumulativeQuickOptimizationsTotal + tieredAddonOptimizations.quick.total;
+      const finalQuickOptimizationsUsed = cumulativeQuickOptimizationsUsed + tieredAddonOptimizations.quick.used;
+      const finalSmartOptimizationsTotal = cumulativeSmartOptimizationsTotal + tieredAddonOptimizations.smart.total;
+      const finalSmartOptimizationsUsed = cumulativeSmartOptimizationsUsed + tieredAddonOptimizations.smart.used;
+      const finalDeepOptimizationsTotal = cumulativeDeepOptimizationsTotal + tieredAddonOptimizations.deep.total;
+      const finalDeepOptimizationsUsed = cumulativeDeepOptimizationsUsed + tieredAddonOptimizations.deep.used;
+      cumulativeOptimizationsTotal = finalQuickOptimizationsTotal + finalSmartOptimizationsTotal + finalDeepOptimizationsTotal;
+      cumulativeOptimizationsUsed = finalQuickOptimizationsUsed + finalSmartOptimizationsUsed + finalDeepOptimizationsUsed;
+      const finalOptimizationsTotal = cumulativeOptimizationsTotal;
       const finalScoreChecksTotal     = cumulativeScoreChecksTotal     + aggregatedAddonCredits.score_check.total;
       const finalLinkedinMessagesTotal= cumulativeLinkedinMessagesTotal+ aggregatedAddonCredits.linkedin_messages.total;
       const finalGuidedBuildsTotal    = cumulativeGuidedBuildsTotal    + aggregatedAddonCredits.guided_build.total;
 
-      const finalOptimizationsUsed    = cumulativeOptimizationsUsed    + aggregatedAddonCredits.optimization.used;
+      const finalOptimizationsUsed = cumulativeOptimizationsUsed;
       const finalScoreChecksUsed      = cumulativeScoreChecksUsed      + aggregatedAddonCredits.score_check.used;
       const finalLinkedinMessagesUsed = cumulativeLinkedinMessagesUsed + aggregatedAddonCredits.linkedin_messages.used;
       const finalGuidedBuildsUsed     = cumulativeGuidedBuildsUsed     + aggregatedAddonCredits.guided_build.used;
@@ -525,6 +541,12 @@ class PaymentService {
 
         optimizationsUsed: finalOptimizationsUsed,
         optimizationsTotal: finalOptimizationsTotal,
+        quickOptimizationsUsed: finalQuickOptimizationsUsed,
+        quickOptimizationsTotal: finalQuickOptimizationsTotal,
+        smartOptimizationsUsed: finalSmartOptimizationsUsed,
+        smartOptimizationsTotal: finalSmartOptimizationsTotal,
+        deepOptimizationsUsed: finalDeepOptimizationsUsed,
+        deepOptimizationsTotal: finalDeepOptimizationsTotal,
 
         scoreChecksUsed: finalScoreChecksUsed,
         scoreChecksTotal: finalScoreChecksTotal,
@@ -603,8 +625,87 @@ class PaymentService {
   // ---------- Generic credit use (prefers add-ons) ----------
   private async useCredit(
     userId: string,
-    creditField: CreditType
+    creditField: CreditType,
+    quantity: number = 1,
+    optimizationTier?: OptimizationCreditTier,
   ): Promise<{ success: boolean; remaining?: number; error?: string }> {
+    const requestedQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+
+    // Prefer the transactional database function so multi-credit services are
+    // all-or-nothing and concurrent runs cannot spend the same balance.
+    const { data: atomicResult, error: atomicError } = await supabase.rpc('consume_user_credits', {
+      p_credit_type: creditField,
+      p_quantity: requestedQuantity,
+      p_optimization_tier: creditField === 'optimization' ? (optimizationTier || 'quick') : null,
+    });
+
+    if (!atomicError) {
+      const result = atomicResult as {
+        success?: boolean;
+        remaining?: number;
+        error?: string;
+      } | null;
+
+      if (!result || typeof result.success !== 'boolean') {
+        return { success: false, error: 'The credit service returned an invalid response.' };
+      }
+
+      return {
+        success: result.success,
+        remaining: Number.isFinite(Number(result.remaining)) ? Number(result.remaining) : undefined,
+        error: result.error,
+      };
+    }
+
+    const atomicFunctionMissing =
+      atomicError.code === 'PGRST202' ||
+      atomicError.code === '42883' ||
+      /could not find the function|consume_user_credits.*schema cache/i.test(atomicError.message || '');
+
+    if (!atomicFunctionMissing) {
+      console.error('PaymentService: Atomic credit consumption failed:', atomicError);
+      return { success: false, error: 'Failed to update your credit balance safely.' };
+    }
+
+    // Temporary compatibility path for environments where the migration has
+    // not been deployed yet. It can be removed after every environment has the
+    // consume_user_credits function.
+    console.warn('PaymentService: Atomic credit function is not deployed; using legacy credit consumption.');
+
+    if (creditField === 'optimization' && optimizationTier && optimizationTier !== 'quick') {
+      return {
+        success: false,
+        remaining: 0,
+        error: 'Tiered optimization credits are not configured yet. Please deploy the latest credit migration.',
+      };
+    }
+
+    if (requestedQuantity > 1) {
+      const availableBeforeUse = await this.computeRemainingFromTables(userId, creditField);
+      if (availableBeforeUse < requestedQuantity) {
+        return {
+          success: false,
+          remaining: availableBeforeUse,
+          error: `This optimization requires ${requestedQuantity} credits, but only ${availableBeforeUse} are available.`,
+        };
+      }
+
+      let remaining = availableBeforeUse;
+      for (let index = 0; index < requestedQuantity; index += 1) {
+        const result = await this.useCredit(userId, creditField, 1, optimizationTier);
+        if (!result.success) {
+          return {
+            success: false,
+            remaining: result.remaining ?? remaining,
+            error: result.error || `Failed while using credit ${index + 1} of ${requestedQuantity}.`,
+          };
+        }
+        remaining = result.remaining ?? Math.max(0, remaining - 1);
+      }
+
+      return { success: true, remaining };
+    }
+
     const dbCreditFieldMap: Record<CreditType, string> = {
       optimization: 'optimizations',
       score_check: 'score_checks',
@@ -784,11 +885,60 @@ class PaymentService {
   }
 
   // ---------- Public credit-usage APIs ----------
-  async useOptimization(userId: string) {
-    return this.useCredit(userId, 'optimization');
+  async useOptimization(userId: string, tier: OptimizationCreditTier = 'quick', quantity: number = 1) {
+    return this.useCredit(userId, 'optimization', quantity, tier);
   }
   async useScoreCheck(userId: string) {
     return this.useCredit(userId, 'score_check');
+  }
+
+  async reserveOptimization(userId: string, tier: OptimizationCreditTier, requestKey: string) {
+    void userId; // RPC binds the authenticated user with auth.uid().
+    return this.reserveCredit('optimization', requestKey, tier);
+  }
+
+  async reserveScoreCheck(userId: string, requestKey: string) {
+    void userId;
+    return this.reserveCredit('score_check', requestKey);
+  }
+
+  private async reserveCredit(
+    creditType: 'optimization' | 'score_check',
+    requestKey: string,
+    optimizationTier?: OptimizationCreditTier,
+  ): Promise<{ success: boolean; reservationId?: string; remaining?: number; error?: string }> {
+    const { data, error } = await supabase.rpc('reserve_user_credit', {
+      p_request_key: requestKey,
+      p_credit_type: creditType,
+      p_quantity: 1,
+      p_optimization_tier: creditType === 'optimization' ? (optimizationTier || 'quick') : null,
+    });
+    if (error) return { success: false, error: `Unable to reserve usage safely: ${error.message}` };
+    const result = data as { success?: boolean; reservation_id?: string; remaining?: number; error?: string } | null;
+    return {
+      success: result?.success === true,
+      reservationId: result?.reservation_id,
+      remaining: Number.isFinite(Number(result?.remaining)) ? Number(result?.remaining) : undefined,
+      error: result?.error,
+    };
+  }
+
+  async finalizeCreditReservation(reservationId: string): Promise<{ success: boolean; error?: string }> {
+    const { data, error } = await supabase.rpc('finalize_user_credit_reservation', {
+      p_reservation_id: reservationId,
+    });
+    if (error) return { success: false, error: error.message };
+    const result = data as { success?: boolean; error?: string } | null;
+    return { success: result?.success === true, error: result?.error };
+  }
+
+  async refundCreditReservation(reservationId: string): Promise<{ success: boolean; error?: string }> {
+    const { data, error } = await supabase.rpc('refund_user_credit_reservation', {
+      p_reservation_id: reservationId,
+    });
+    if (error) return { success: false, error: error.message };
+    const result = data as { success?: boolean; error?: string } | null;
+    return { success: result?.success === true, error: result?.error };
   }
   async useLinkedInMessage(userId: string) {
     return this.useCredit(userId, 'linkedin_messages');
@@ -832,6 +982,12 @@ class PaymentService {
         end_date: new Date(Date.now() + freePlan.durationInHours * 60 * 60 * 1000).toISOString(),
         optimizations_used: 0,
         optimizations_total: freePlan.optimizations,
+        quick_optimizations_used: 0,
+        quick_optimizations_total: freePlan.optimizations,
+        smart_optimizations_used: 0,
+        smart_optimizations_total: 0,
+        deep_optimizations_used: 0,
+        deep_optimizations_total: 0,
         score_checks_used: 0,
         score_checks_total: freePlan.scoreChecks,
         linkedin_messages_used: 0,

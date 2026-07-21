@@ -64,9 +64,63 @@ import { paymentService } from '../services/paymentService';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSEO } from '../hooks/useSEO';
-import { runPremiumScoreEngine, PremiumScoreResult } from '../services/premiumScoreEngine';
+import type { PremiumScoreResult } from '../services/premiumScoreEngine';
 import { PremiumResultsDashboard } from './score/PremiumResultsDashboard';
-import { supabase } from '../lib/supabaseClient';
+
+interface VisibleScoreParameter {
+  key: string;
+  name: string;
+  score: number;
+  maxScore: number;
+  percentage: number;
+  evidence: string[];
+  applicable: boolean;
+}
+
+const getVisibleScoreParameters = (result: ATSScore16Parameter): VisibleScoreParameter[] => {
+  if (result.canonicalParameters?.length) {
+    return result.canonicalParameters.map(parameter => ({
+      key: `canonical-${parameter.id}`,
+      name: parameter.name,
+      score: parameter.score,
+      maxScore: parameter.maxScore,
+      percentage: parameter.percentage,
+      evidence: parameter.evidence || [],
+      applicable: parameter.applicable !== false,
+    }));
+  }
+
+  const maxScores: Record<string, number> = {
+    keywordMatch: 25, skillsAlignment: 20, experienceRelevance: 15,
+    technicalCompetencies: 12, educationScore: 10, quantifiedAchievements: 8,
+    employmentHistory: 8, industryExperience: 7, jobTitleMatch: 6,
+    careerProgression: 6, certifications: 5, formatting: 5,
+    contentQuality: 4, grammar: 3, resumeLength: 2, filenameQuality: 2,
+  };
+  const displayNames: Record<string, string> = {
+    keywordMatch: 'Keyword Match', skillsAlignment: 'Skills Alignment',
+    experienceRelevance: 'Experience Relevance', technicalCompetencies: 'Technical Competencies',
+    educationScore: 'Education Score', quantifiedAchievements: 'Quantified Achievements',
+    employmentHistory: 'Employment History', industryExperience: 'Industry Experience',
+    jobTitleMatch: 'Job Title Match', careerProgression: 'Career Progression',
+    certifications: 'Certifications', formatting: 'Formatting',
+    contentQuality: 'Content Quality', grammar: 'Grammar',
+    resumeLength: 'Resume Length', filenameQuality: 'Filename Quality',
+  };
+
+  return Object.entries(result.scores).map(([key, score]) => {
+    const maxScore = maxScores[key] || 5;
+    return {
+      key,
+      name: displayNames[key] || key,
+      score,
+      maxScore,
+      percentage: (score / maxScore) * 100,
+      evidence: [],
+      applicable: true,
+    };
+  });
+};
 
 interface ResumeScoreCheckerProps {
   onNavigateBack: () => void;
@@ -87,10 +141,10 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
   onShowAuth,
   userSubscription, // Keep this prop, but we'll fetch fresh data inside _analyzeResumeInternal
   onShowSubscriptionPlans,
-  onShowSubscriptionPlansDirectly,
+  onShowSubscriptionPlansDirectly: _onShowSubscriptionPlansDirectly,
   onShowAlert, // This is the prop in question
   refreshUserSubscription,
-  toolProcessTrigger,
+  toolProcessTrigger: _toolProcessTrigger,
   setToolProcessTrigger,
 }) => {
   // CRITICAL DEBUGGING STEP: Verify onShowAlert is a function immediately
@@ -105,7 +159,7 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
 
   useSEO({
     title: 'ATS Resume Score Checker - Free Resume Analysis & ATS Compatibility Test',
-    description: 'Check your resume ATS score instantly with our AI-powered 16-parameter ATS resume checker. Get detailed keyword analysis, formatting validation, and actionable improvement suggestions to pass ATS screening.',
+    description: 'Check your resume ATS score against 30 deterministic, evidence-backed checks. Get detailed keyword analysis, formatting validation, and actionable improvement suggestions.',
     keywords: 'ATS resume score, ATS resume checker, ATS resume score checker, ATS resume analysis, ATS resume scan, ATS resume test, ATS resume compatibility, ATS resume screening, ATS resume parsing test, ATS resume keyword checker, ATS resume keyword analysis, ATS resume keyword optimization, ATS resume scoring system, ATS resume AI, resume score checker, resume keyword score, resume keyword heatmap, resume keyword report, resume ATS compatibility test, resume optimization score, ATS resume India, ATS resume fresher, ATS resume experienced, PrimoBoost AI',
     canonical: '/score-checker',
   });
@@ -190,42 +244,43 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
     setScoreResult(null);
     setIsAnalyzing(true);
     setLoadingStep('Extracting & cleaning your resume...');
+    const scoreRunId = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `score-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let creditReservationId: string | null = null;
+    let creditFinalized = false;
 
     try {
-      const usageResult = await paymentService.useScoreCheck(user.id);
-      if (!usageResult.success) {
-        console.error('Failed to deduct score check credit:', usageResult.error);
+      const reservation = await paymentService.reserveScoreCheck(user.id, scoreRunId);
+      if (!reservation.success || !reservation.reservationId) {
+        console.error('Failed to reserve score check credit:', reservation.error);
         onShowAlert('Credits Exhausted', 'No score credits available. Please upgrade.', 'error', 'Upgrade Plan', () => onShowSubscriptionPlans('score-checker'));
         setIsAnalyzing(false);
         setLoadingStep('');
         return;
       }
+      creditReservationId = reservation.reservationId;
       await refreshUserSubscription();
       if (scoringMode === 'jd_based') {
         setLoadingStep(`Comparing with Job Title: ${jobTitle}...`);
       }
       
-      setLoadingStep('Scoring across 16 ATS parameters...');
+      setLoadingStep('Scoring across 30 evidence-backed ATS checks...');
 
       let result: ATSScore16Parameter;
       
-      // Use UNIFIED 16-parameter ATS scoring (same as JD Optimizer) when JD is provided
+      // Use the canonical JD scoring engine when a job description is provided.
       if (scoringMode === 'jd_based' && jobDescription.trim()) {
-        // Use parsed resume data if available for more accurate scoring
-        if (parsedResumeData) {
-          result = await ATSScoreChecker16Parameter.evaluateWithUnified16AndParsedData(
-            extractionResult.text,
-            jobDescription,
-            parsedResumeData,
-            jobTitle || undefined
-          );
-        } else {
-          result = await ATSScoreChecker16Parameter.evaluateWithUnified16(
-            extractionResult.text,
-            jobDescription,
-            jobTitle || undefined
-          );
+        if (!parsedResumeData) {
+          throw new Error('The parsed resume is required for canonical JD scoring. Please upload the resume again.');
         }
+        result = await ATSScoreChecker16Parameter.evaluateWithUnified16AndParsedData(
+          extractionResult.text,
+          jobDescription,
+          parsedResumeData,
+          jobTitle || undefined,
+          userType || 'fresher',
+        );
       } else {
         // Use legacy scoring for general mode
         result = await ATSScoreChecker16Parameter.evaluateResume(
@@ -237,66 +292,29 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
         );
       }
       
-      setScoreResult(result);
+      // The canonical backend now owns both the official score and the visible
+      // parameter breakdown. Do not mix in a second premium/legacy scorer.
+      setPremiumResult(null);
 
-      if (scoringMode === 'jd_based' && jobDescription.trim()) {
-        setLoadingStep('Running premium analysis engine...');
-        const resolvedUserType = userType || 'fresher';
-        const resumeDataForEngine = parsedResumeData ? {
-          name: parsedResumeData.name || '',
-          phone: parsedResumeData.phone || '',
-          email: parsedResumeData.email || '',
-          linkedin: parsedResumeData.linkedin || '',
-          github: parsedResumeData.github || '',
-          location: parsedResumeData.location || '',
-          summary: parsedResumeData.summary || '',
-          education: parsedResumeData.education || [],
-          workExperience: parsedResumeData.workExperience || [],
-          projects: parsedResumeData.projects || [],
-          skills: parsedResumeData.skills || [],
-          certifications: parsedResumeData.certifications || [],
-        } : undefined;
-
-        const premResult = runPremiumScoreEngine(
-          extractionResult.text,
-          jobDescription,
-          resolvedUserType,
-          resumeDataForEngine
-        );
-        setPremiumResult(premResult);
-
-        try {
-          const jdHash = btoa(jobDescription.slice(0, 100)).slice(0, 40);
-          await supabase.from('premium_score_history').insert({
-            user_id: user!.id,
-            user_type: resolvedUserType,
-            overall_score: premResult.overallScore,
-            projected_score: premResult.projectedScore,
-            match_quality: premResult.matchQuality,
-            shortlist_chance: premResult.shortlistChance,
-            job_title: jobTitle || '',
-            job_description_hash: jdHash,
-            category_scores: premResult.categories.map(c => ({
-              id: c.id, name: c.name, weight: c.weight,
-              score: c.score, maxScore: c.maxScore, percentage: c.percentage, status: c.status,
-            })),
-            skill_buckets: {
-              mustHave: premResult.skillBuckets.mustHave.length,
-              supporting: premResult.skillBuckets.supporting.length,
-              missing: premResult.skillBuckets.missing.length,
-              irrelevant: premResult.skillBuckets.irrelevant.length,
-            },
-            red_flags_count: premResult.redFlags.length,
-            quick_wins_count: premResult.quickWins.length,
-          });
-        } catch (dbErr) {
-          console.warn('Failed to save premium score history:', dbErr);
-        }
+      const finalized = await paymentService.finalizeCreditReservation(creditReservationId);
+      if (!finalized.success) {
+        throw new Error(finalized.error || 'Unable to finalize the reserved score-check usage.');
       }
+      creditFinalized = true;
+      await refreshUserSubscription();
 
+      setScoreResult(result);
       setCurrentStep(2);
     } catch (error: any) {
       console.error('_analyzeResumeInternal: Error in try block:', error);
+      if (creditReservationId && !creditFinalized) {
+        const refund = await paymentService.refundCreditReservation(creditReservationId);
+        if (!refund.success) {
+          console.error('Failed to restore reserved score-check usage:', refund.error);
+        } else {
+          await refreshUserSubscription();
+        }
+      }
       onShowAlert('Analysis Failed', `Failed to analyze resume: ${error.message || 'Unknown error'}. Please try again.`, 'error');
     } finally {
       setIsAnalyzing(false);
@@ -1160,7 +1178,9 @@ if (hasScoreCheckCredits) {
                                 </div>
                                 <span className="text-slate-400 text-sm">Shortlist Chances</span>
                               </div>
-                              <div className="text-2xl font-bold text-emerald-400">{scoreResult.interviewChance}</div>
+                              <div className="text-2xl font-bold text-emerald-400">
+                                {scoreResult.canonicalInterviewProbability || scoreResult.interviewChance}
+                              </div>
                             </div>
                           </motion.div>
 
@@ -1204,37 +1224,20 @@ if (hasScoreCheckCredits) {
                       </div>
                       <div className="p-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {Object.entries(scoreResult.scores).map(([parameterName, score], index) => {
-                            const maxScores: Record<string, number> = {
-                              keywordMatch: 25, skillsAlignment: 20, experienceRelevance: 15,
-                              technicalCompetencies: 12, educationScore: 10, quantifiedAchievements: 8,
-                              employmentHistory: 8, industryExperience: 7, jobTitleMatch: 6,
-                              careerProgression: 6, certifications: 5, formatting: 5,
-                              contentQuality: 4, grammar: 3, resumeLength: 2, filenameQuality: 2
-                            };
-                            const displayNames: Record<string, string> = {
-                              keywordMatch: 'Keyword Match', skillsAlignment: 'Skills Alignment',
-                              experienceRelevance: 'Experience Relevance', technicalCompetencies: 'Technical Competencies',
-                              educationScore: 'Education Score', quantifiedAchievements: 'Quantified Achievements',
-                              employmentHistory: 'Employment History', industryExperience: 'Industry Experience',
-                              jobTitleMatch: 'Job Title Match', careerProgression: 'Career Progression',
-                              certifications: 'Certifications', formatting: 'Formatting',
-                              contentQuality: 'Content Quality', grammar: 'Grammar',
-                              resumeLength: 'Resume Length', filenameQuality: 'Filename Quality'
-                            };
-                            const maxScore = maxScores[parameterName] || 5;
-                            const percentage = (score / maxScore) * 100;
+                          {getVisibleScoreParameters(scoreResult).map((parameter, index) => {
+                            const { key, name, score, maxScore, percentage, evidence, applicable } = parameter;
                             return (
                               <motion.div
-                                key={parameterName}
+                                key={key}
                                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.3, delay: 0.4 + index * 0.05 }}
                                 className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 hover:border-cyan-400/30 transition-colors"
                               >
                                 <div className="flex items-center justify-between mb-2">
-                                  <h4 className="font-semibold text-slate-200 text-sm">{displayNames[parameterName] || parameterName}</h4>
-                                  <span className="text-xs text-slate-500">{maxScore} pts max</span>
+                                  <h4 className="font-semibold text-slate-200 text-sm">{name}</h4>
+                                  <span className="text-xs text-slate-500">{applicable ? `${maxScore} pts max` : 'Not Applicable'}</span>
                                 </div>
+                                {applicable ? <>
                                 <div className="flex items-center gap-2 mb-3">
                                   <span className={`text-xl font-bold ${
                                     percentage >= 80 ? 'text-emerald-400' : percentage >= 60 ? 'text-amber-400' : 'text-red-400'
@@ -1252,6 +1255,21 @@ if (hasScoreCheckCredits) {
                                     }`}
                                   />
                                 </div>
+                                </> : (
+                                  <div className="mb-3 rounded-lg bg-slate-700/30 px-3 py-2 text-sm font-medium text-slate-400">
+                                    N/A — excluded from the final score
+                                  </div>
+                                )}
+                                {evidence.length > 0 && (
+                                  <div className="mt-3 border-t border-slate-700/50 pt-3">
+                                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Evidence</p>
+                                    {evidence.slice(0, 2).map((excerpt, evidenceIndex) => (
+                                      <p key={`${key}-evidence-${evidenceIndex}`} className="text-xs leading-5 text-slate-400">
+                                        “{excerpt}”
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                               </motion.div>
                             );
                           })}

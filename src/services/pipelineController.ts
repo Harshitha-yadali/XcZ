@@ -400,7 +400,12 @@ export class PipelineController {
         gapAnalysis = await GapAnalyzerService.analyzeGaps(
           resumeData, 
           resumeText, 
-          this.context.jobDescription
+          this.context.jobDescription,
+          {
+            candidateType: resumeData.workExperience?.length ? 'experienced' : 'fresher',
+            optimizationTier: 'smart',
+            runId: this.context.sessionId,
+          },
         );
         beforeScore = gapAnalysis.beforeScore;
         
@@ -837,7 +842,12 @@ export class PipelineController {
         newGapAnalysis = await GapAnalyzerService.analyzeGaps(
           resumeData, 
           resumeText, 
-          this.context.jobDescription
+          this.context.jobDescription,
+          {
+            candidateType: resumeData.workExperience?.length ? 'experienced' : 'fresher',
+            optimizationTier: 'smart',
+            runId: this.context.sessionId,
+          },
         );
         newScore = newGapAnalysis.beforeScore;
         
@@ -3005,10 +3015,26 @@ export class PipelineController {
     analysisType: string
   ): Promise<{ score: number; breakdown: any; issues: string[] }> {
     try {
-      // Import scoring service
-      const { EnhancedScoringService } = await import('./enhancedScoringService');
-      
       const resumeText = this.resumeDataToText(resumeData);
+      if (analysisType === 'jd_analysis') {
+        const { CanonicalJdScoringService } = await import('./canonicalJdScoringService');
+        const canonical = await CanonicalJdScoringService.score({
+          resumeData,
+          jobDescription,
+          candidateType: resumeData.workExperience?.length ? 'experienced' : 'fresher',
+          context: 'smart_after',
+          runId: this.context.sessionId,
+        });
+        return {
+          score: canonical.scoreResult.overallScore,
+          breakdown: canonical.scoreResult.categories,
+          issues: canonical.scoreResult.parameters
+            .filter((parameter) => parameter.percentage < 80)
+            .map((parameter) => parameter.name),
+        };
+      }
+
+      const { EnhancedScoringService } = await import('./enhancedScoringService');
       const scoringInput = {
         resumeText,
         resumeData,
@@ -3024,7 +3050,8 @@ export class PipelineController {
         issues: finalScore.red_flags?.map((rf: any) => rf.name) || []
       };
     } catch (error) {
-      console.warn('Final validation failed, using estimated score:', error);
+      if (analysisType === 'jd_analysis') throw error;
+      console.warn('Final general validation failed, using estimated score:', error);
       return {
         score: 85, // Estimated score
         breakdown: {},

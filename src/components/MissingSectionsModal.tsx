@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Plus,
@@ -111,6 +111,60 @@ export const MissingSectionsModal: React.FC<MissingSectionsModalProps> = ({
   // NEW: State for work experience dates (when only dates are missing)
   const [workExperienceDates, setWorkExperienceDates] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const resume = currentResumeData || {};
+    const existingWork = Array.isArray(resume.workExperience) ? resume.workExperience : [];
+    const existingProjects = Array.isArray(resume.projects) ? resume.projects : [];
+    const existingSkills = Array.isArray(resume.skills) ? resume.skills : [];
+    const existingEducation = Array.isArray(resume.education) ? resume.education : [];
+    const existingCertifications = Array.isArray(resume.certifications) ? resume.certifications : [];
+
+    setCurrentStep(0);
+    setWorkExperience(existingWork.length > 0
+      ? existingWork.map((entry: any) => ({
+          role: entry.role || '',
+          company: entry.company || '',
+          year: entry.year || entry.duration || '',
+          bullets: Array.isArray(entry.bullets) && entry.bullets.length > 0 ? entry.bullets : [''],
+        }))
+      : [{ role: '', company: '', year: '', bullets: [''] }]);
+    setProjects(existingProjects.length > 0
+      ? existingProjects.map((entry: any) => ({
+          title: entry.title || entry.name || '',
+          bullets: Array.isArray(entry.bullets) && entry.bullets.length > 0 ? entry.bullets : [''],
+        }))
+      : [{ title: '', bullets: [''] }]);
+    setSkills(existingSkills.length > 0
+      ? existingSkills.map((entry: any) => {
+          const list = Array.isArray(entry.list) ? entry.list : Array.isArray(entry.skills) ? entry.skills : [];
+          return { category: entry.category || 'Skills', count: list.length, list };
+        })
+      : [{ category: '', count: 0, list: [] }]);
+    setSkillInputs(existingSkills.length > 0 ? existingSkills.map(() => '') : ['']);
+    setEducation(existingEducation.length > 0
+      ? existingEducation.map((entry: any) => ({
+          degree: entry.degree || '',
+          school: entry.school || entry.institution || '',
+          year: entry.year || '',
+          cgpa: entry.cgpa || entry.gpa || '',
+          location: entry.location || '',
+        }))
+      : [{ degree: '', school: '', year: '', cgpa: '', location: '' }]);
+    setCertifications(existingCertifications.length > 0
+      ? existingCertifications.map((entry: any) => typeof entry === 'string' ? entry : entry.title || entry.name || '')
+      : ['']);
+    setContactDetails({
+      name: resume.name || '',
+      phone: resume.phone || '',
+      email: resume.email || '',
+      linkedin: resume.linkedin || '',
+      github: resume.github || '',
+    });
+    setWorkExperienceDates({});
+  }, [currentResumeData, isOpen]);
 
   if (!isOpen) return null;
 

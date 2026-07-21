@@ -1,10 +1,9 @@
 // Razorpay Configuration
 export const RAZORPAY_CONFIG = {
   // Live keys (use only in production over HTTPS)
-  KEY_ID: 'rzp_live_U7N6E8ot31tiej',
-  KEY_SECRET: 'HG2iWDiXa39rXibjCYQYxDs5', // Should stay on backend only
+  KEY_ID: import.meta.env.VITE_RAZORPAY_KEY_ID || '',
   // Test key for local/staging
-  TEST_KEY_ID: 'rzp_test_1DP5mmOlF5G5ag',
+  TEST_KEY_ID: import.meta.env.VITE_RAZORPAY_TEST_KEY_ID || '',
   CURRENCY: 'INR',
   COMPANY_NAME: 'PrimoJobs',
   COMPANY_LOGO: '/favicon.ico',

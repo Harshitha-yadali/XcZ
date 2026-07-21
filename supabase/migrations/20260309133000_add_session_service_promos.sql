@@ -6,4 +6,4 @@ alter table if exists public.session_services
 
 update public.session_services
 set regular_price = coalesce(regular_price, price)
-where regular_price is null;
+where regular_price is null;;

@@ -53,7 +53,7 @@ export class SkillsOptimizerService {
     const originalSkillsCount = originalSkills.length;
 
     // Step 1: Remove duplicates and normalize
-    const normalizedSkills = this.normalizeSk ills(originalSkills);
+    const normalizedSkills = this.normalizeSkills(originalSkills);
 
     // Step 2: Categorize skills
     const categorizedSkills = this.categorizeSkills(normalizedSkills);

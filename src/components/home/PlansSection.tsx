@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { getOptimizationTierRemaining } from '../../services/paymentService';
 
 interface PlansSectionProps {
   isAuthenticated: boolean;
@@ -34,10 +35,9 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                 <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-300 mr-2" />
                 {userSubscription ? (
                   <span>
-                    Credits Left:{' '}
-                    <span className="font-bold">
-                      {userSubscription.optimizationsTotal - userSubscription.optimizationsUsed}
-                    </span>
+                    Quick <span className="font-bold">{getOptimizationTierRemaining(userSubscription, 'quick')}</span>
+                    {' · '}Smart <span className="font-bold">{getOptimizationTierRemaining(userSubscription, 'smart')}</span>
+                    {' · '}Deep <span className="font-bold">{getOptimizationTierRemaining(userSubscription, 'deep')}</span>
                   </span>
                 ) : (
                   <span>No Active Plan. Upgrade to use all features.</span>
@@ -70,14 +70,9 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                         </div>
                         <hr className="my-1 border-white/10" />
                         <div className="px-4 py-2 text-sm text-slate-200 space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span>Resume Credits:</span>
-                            <span className="font-medium">
-                              {userSubscription.optimizationsTotal -
-                                userSubscription.optimizationsUsed}{' '}
-                              / {userSubscription.optimizationsTotal}
-                            </span>
-                          </div>
+                          <div className="flex justify-between items-center"><span>Quick Scan:</span><span className="font-medium">{getOptimizationTierRemaining(userSubscription, 'quick')}</span></div>
+                          <div className="flex justify-between items-center"><span>Smart Optimize:</span><span className="font-medium">{getOptimizationTierRemaining(userSubscription, 'smart')}</span></div>
+                          <div className="flex justify-between items-center"><span>Deep Optimize:</span><span className="font-medium">{getOptimizationTierRemaining(userSubscription, 'deep')}</span></div>
                           <div className="flex justify-between items-center">
                             <span>Score Credits:</span>
                             <span className="font-medium">

@@ -1,0 +1,7 @@
+/*\n  # ATS Optimization Tracking System\n\n  1. New Tables\n    - `ats_optimization_logs` - Track bullet length fixes and methodology alignments\n\n  2. Security\n    - Enable RLS on table\n    - Add policies for authenticated users\n\n  3. Purpose\n    - Track ATS optimization effectiveness\n    - Store before/after metrics\n    - Monitor feature flag usage\n*/\n\nCREATE TABLE IF NOT EXISTS ats_optimization_logs (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,\n  bullet_fixes jsonb DEFAULT '[]'::jsonb,\n  methodology_alignments jsonb DEFAULT '{}'::jsonb,\n  length_violations_before integer NOT NULL DEFAULT 0,\n  length_violations_after integer NOT NULL DEFAULT 0,\n  methodology_coverage_before decimal(5, 4) DEFAULT 0,\n  methodology_coverage_after decimal(5, 4) DEFAULT 0,\n  feature_flags jsonb DEFAULT '{}'::jsonb,\n  created_at timestamptz DEFAULT now()\n);
+\n\nALTER TABLE ats_optimization_logs ENABLE ROW LEVEL SECURITY;
+\n\nCREATE POLICY "Users can view own ATS logs"\n  ON ats_optimization_logs FOR SELECT\n  TO authenticated\n  USING (auth.uid() = user_id);
+\n\nCREATE POLICY "Users can insert own ATS logs"\n  ON ats_optimization_logs FOR INSERT\n  TO authenticated\n  WITH CHECK (auth.uid() = user_id);
+\n\nCREATE INDEX IF NOT EXISTS idx_ats_logs_user_created\n  ON ats_optimization_logs(user_id, created_at DESC);
+\n\nCREATE INDEX IF NOT EXISTS idx_ats_logs_violations\n  ON ats_optimization_logs(length_violations_before, length_violations_after);
+\n;

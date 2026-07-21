@@ -38,6 +38,7 @@ import { JobListing } from '../../types/jobs';
 import { ImageUpload } from './ImageUpload';
 import { useJobFormAutoSave } from '../../hooks/useJobFormAutoSave';
 import { openrouter } from '../../services/aiProxyService';
+import { QUICK_OPTIMIZATION_MODEL } from '../../services/openrouterModelConfig';
 import { jobExtractionService, type ExtractedJobFromUrl } from '../../services/jobExtractionService';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -1528,6 +1529,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
       const parsed = directJsonFields ?? await (async () => {
         const aiResponse = await openrouter.chatWithSystem(systemPrompt, userPrompt, {
+          model: QUICK_OPTIMIZATION_MODEL,
           temperature: 0.1,
         });
         return parseAiJsonObject(aiResponse) as AiJobFieldMap;

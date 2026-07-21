@@ -1,5 +1,6 @@
 // src/services/geminiService.ts
 import { ResumeData, UserType, AdditionalSection } from '../types/resume'; // Import AdditionalSection
+import type { OptimizationMode } from '../types/optimizer';
 import { cleanResumeTextForAI, stripVersionFromSkill, deduplicateSkills } from '../utils/skillsVersionStripper';
 import {
   PROGRAMMING_LANGUAGES,
@@ -23,6 +24,7 @@ export const MAX_INPUT_LENGTH = 50000;
 export const MAX_RETRIES = 3;
 export const INITIAL_RETRY_DELAY_MS = 1000;
 export const JD_OPTIMIZER_MODEL = 'google/gemini-2.5-flash';
+const ALLOW_UNSUPPORTED_POST_PROCESSING = false;
 // --- END ---
 
 const deepCleanComments = (val: any): any => {
@@ -110,6 +112,63 @@ const safeFetch = async (
 };
 // --- END ---
 
+export interface QuickScanInsight {
+  category: 'keywords' | 'skills' | 'experience' | 'quantification' | 'grammar' | 'certifications' | 'projects';
+  priority: 'critical' | 'high' | 'medium';
+  title: string;
+  description: string;
+  suggestions: string[];
+}
+
+/** Gemini Flash analysis-only path. It returns recommendations and never a resume. */
+export const analyzeResumeForQuickScan = async (
+  resume: string,
+  jobDescription: string,
+  modelOverride?: string,
+): Promise<QuickScanInsight[]> => {
+  if (resume.length + jobDescription.length > MAX_INPUT_LENGTH) {
+    throw new Error(`Input too long. Combined resume and job description exceed ${MAX_INPUT_LENGTH} characters.`);
+  }
+
+  const prompt = `Analyze the resume against the job description. This is a diagnostic scan only.
+
+RESUME:
+${cleanResumeTextForAI(resume)}
+
+JOB DESCRIPTION:
+${cleanResumeTextForAI(jobDescription)}
+
+Return a JSON object with an "insights" array. Each insight must contain:
+- category: one of keywords, skills, experience, quantification, grammar, certifications, projects
+- priority: one of critical, high, medium
+- title: short diagnostic title
+- description: explain the gap without claiming the candidate has missing experience
+- suggestions: 1-3 concrete actions the candidate can take
+
+Rules:
+- Do not rewrite or return the resume.
+- Never invent skills, projects, credentials, employers, dates, metrics, or achievements.
+- Treat a JD-only requirement as missing evidence, not candidate experience.
+- Return at most 8 insights and valid JSON only.`;
+
+  const response = await safeFetch({ prompt, model: modelOverride || JD_OPTIMIZER_MODEL });
+  const cleaned = response.content.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
+  const parsed = JSON.parse(cleaned) as { insights?: QuickScanInsight[] };
+  const allowedCategories = new Set(['keywords', 'skills', 'experience', 'quantification', 'grammar', 'certifications', 'projects']);
+  const allowedPriorities = new Set(['critical', 'high', 'medium']);
+
+  return (Array.isArray(parsed.insights) ? parsed.insights : [])
+    .filter((item) => item && allowedCategories.has(item.category) && allowedPriorities.has(item.priority))
+    .slice(0, 8)
+    .map((item) => ({
+      category: item.category,
+      priority: item.priority,
+      title: String(item.title || 'Resume improvement opportunity').slice(0, 120),
+      description: String(item.description || '').slice(0, 500),
+      suggestions: (Array.isArray(item.suggestions) ? item.suggestions : []).map(String).slice(0, 3),
+    }));
+};
+
 export const optimizeResume = async (
   resume: string,
   jobDescription: string,
@@ -124,7 +183,9 @@ export const optimizeResume = async (
   githubUrl?: string,
   targetRole?: string,
   additionalSections?: AdditionalSection[], // NEW: Add additionalSections parameter
-  jdSummary?: string // NEW: Optional JD summary from EdenAI for better alignment
+  jdSummary?: string, // NEW: Optional JD summary from EdenAI for better alignment
+  modelOverride?: string,
+  optimizationMode: OptimizationMode = 'standard',
 ): Promise<ResumeData> => {
   // Log optimization start
   console.log('═══════════════════════════════════════════════════════════');
@@ -220,7 +281,24 @@ SECTION ORDER FOR FRESHERS:
     }
   };
 
+  const modeInstructions: Record<OptimizationMode, string> = {
+    light: `HIGHEST PRIORITY — QUICK SCAN MODE:
+- Preserve the candidate's original wording, section content, skills, experience, projects, education, and metrics.
+- Do not add, remove, rewrite, or infer any candidate claim.
+- Only normalize the supplied content into the required JSON schema.
+- Missing JD keywords must remain missing; never insert them in Quick Scan mode.`,
+    standard: `SMART OPTIMIZE MODE:
+- Improve summary, experience, projects, section clarity, and JD alignment.
+- Use only facts supported by the supplied resume. Never invent skills, employers, metrics, dates, or achievements.`,
+    aggressive: `DEEP OPTIMIZE MODE:
+- Perform the deepest evidence-constrained rewrite and role alignment.
+- Use only facts supported by the supplied resume. Never invent skills, employers, metrics, dates, or achievements.
+- Prefer explicit user-action suggestions over adding any unsupported claim.`,
+  };
+
   const promptContent = `${getPromptForUserType(userType)}
+
+${modeInstructions[optimizationMode]}
 
 CRITICAL REQUIREMENTS FOR BULLET POINTS:
 1. Each bullet point MUST be concise, containing maximum 10 words only.
@@ -257,9 +335,9 @@ METRIC RULES - REALISTIC AND SPARSE (CRITICAL):
 15. All section titles MUST be in ALL CAPS.
 16. Dates should use the exact format "Jan 2023 - Mar 2024".
 17. Integrate keywords naturally and contextually, avoiding keyword stuffing.
-18. Ensure at least 70% of resume keywords match the job description.
+18. Improve keyword alignment only with skills and experience already evidenced in the original resume.
 19. NEVER use subjective adjectives like "passionate", "dedicated", "hardworking", "dynamic", "results-driven".
-20. If user provides minimal info, EXPAND with SPECIFIC technical details, not generic impact phrases.
+20. If the user provides minimal information, preserve it and flag the gap; do not add technical details.
 
 BANNED PHRASES (NEVER USE THESE):
 - "successfully enhancing overall outcomes"
@@ -292,9 +370,10 @@ WORD VARIETY - NO REPETITION (CRITICAL):
 4. Each bullet MUST feel distinct in both vocabulary and structure
 
 HALLUCINATION PREVENTION:
-1. ONLY use technologies mentioned in the original resume OR job description
-2. DO NOT invent project names, company names, or technical terms
-3. Stick to facts from the original resume - enhance presentation, not content
+1. ONLY use candidate technologies and skills explicitly supported by the original resume.
+2. A technology mentioned only in the job description is missing evidence and MUST NOT be added.
+3. DO NOT invent project names, projects, company names, credentials, dates, metrics, achievements, or technical terms.
+4. Stick to facts from the original resume - enhance presentation, not content.
 
 PROJECT STRUCTURING REQUIREMENTS:
 1. Project Title (e.g., "E-commerce Platform")
@@ -306,8 +385,8 @@ CERTIFICATION EXPANSION REQUIREMENTS:
 2. Include certification provider in the title
 
 JOB TITLE PLACEMENT REQUIREMENTS:
-1. Job title from JD MUST appear in targetRole field and Professional Summary
-2. Use exact job title wording from the JD when possible
+1. The targetRole field may use the requested JD title because it describes the application target.
+2. Do not change any past or current role title to match the JD.
 
 KEYWORD FREQUENCY REQUIREMENTS:
 1. Extract top 5-10 technical skills from the job description
@@ -379,15 +458,15 @@ Rules:
 1. Only respond with valid JSON
 2. Use the exact structure provided below
 3. Rewrite bullet points following the CRITICAL REQUIREMENTS above
-4. Generate comprehensive skills section based on resume and job description
+4. Reorder and categorize only the skills already supported by the original resume
 5. Only include sections that have meaningful content
 6. If optional sections don't exist in original resume, set them as empty arrays or omit
 7. Ensure all dates are in proper format (e.g., "Jan 2023 – Mar 2024")
 8. Use professional language and industry-specific keywords from the job description
 9. For LinkedIn and GitHub, use EXACTLY what is provided - empty string if not provided
 10. The "name" field in the JSON should ONLY contain the user's name. The "email", "phone", "linkedin", "github", and "location" fields MUST NOT contain the user's name or any part of it. The user's name should appear ONLY in the dedicated "name" field.
-11. CRITICAL: ALWAYS include the "projects" section in your response. If the original resume has projects, optimize them. If no projects exist, create 1-2 relevant projects based on the skills and job description.
-12. CRITICAL: The "projects" array MUST NOT be empty. Every resume needs at least 1 project to demonstrate practical skills.
+11. Include only projects present in the original resume. If none exist, return an empty projects array.
+12. Never create a project or project detail from the job description.
 11. NEW: If 'additionalSections' are provided, include them in the output JSON with their custom titles and optimized bullet points. Apply all bullet point optimization rules to these sections as well.
 
 JSON Structure:
@@ -473,7 +552,7 @@ LinkedIn URL provided: ${linkedinUrl || 'NONE - leave empty'}
 GitHub URL provided: ${githubUrl || 'NONE - leave empty'}
 ${additionalSections && additionalSections.length > 0 ? `Additional Sections Provided: ${JSON.stringify(additionalSections)}` : ''}`;
 
-  const response = await safeFetch({ prompt: promptContent, model: JD_OPTIMIZER_MODEL });
+  const response = await safeFetch({ prompt: promptContent, model: modelOverride || JD_OPTIMIZER_MODEL });
   let raw = response.content;
   if (!raw) throw new Error("No content returned from EdenAI");
 
@@ -733,7 +812,8 @@ ${additionalSections && additionalSections.length > 0 ? `Additional Sections Pro
         .filter(Boolean);
     }
 
-    if (parsedResult.workExperience && Array.isArray(parsedResult.workExperience)) {
+    // Evidence safety: never synthesize missing work bullets after generation.
+    if (ALLOW_UNSUPPORTED_POST_PROCESSING && parsedResult.workExperience && Array.isArray(parsedResult.workExperience)) {
       console.log('📝 Processing work experience bullets...');
       
       // Filter valid entries and ensure minimum 3 bullets per work experience
@@ -833,7 +913,8 @@ ${additionalSections && additionalSections.length > 0 ? `Additional Sections Pro
         });
     }
 
-    if (parsedResult.projects && Array.isArray(parsedResult.projects)) {
+    // Evidence safety: never synthesize projects or project bullets.
+    if (ALLOW_UNSUPPORTED_POST_PROCESSING && parsedResult.projects && Array.isArray(parsedResult.projects)) {
       // Filter valid entries and ensure minimum 2 bullets per project
       parsedResult.projects = parsedResult.projects
         .filter((project: any) => project && project.title)
@@ -890,7 +971,7 @@ ${additionalSections && additionalSections.length > 0 ? `Additional Sections Pro
     let metricIdx = 0;
     
     // Add metrics to work experience bullets that don't have them
-    if (parsedResult.workExperience && Array.isArray(parsedResult.workExperience)) {
+    if (ALLOW_UNSUPPORTED_POST_PROCESSING && parsedResult.workExperience && Array.isArray(parsedResult.workExperience)) {
       parsedResult.workExperience.forEach((exp: any) => {
         if (exp.bullets && Array.isArray(exp.bullets)) {
           exp.bullets = exp.bullets.map((bullet: string) => {
@@ -909,7 +990,7 @@ ${additionalSections && additionalSections.length > 0 ? `Additional Sections Pro
     }
     
     // Add metrics to project bullets that don't have them
-    if (parsedResult.projects && Array.isArray(parsedResult.projects)) {
+    if (ALLOW_UNSUPPORTED_POST_PROCESSING && parsedResult.projects && Array.isArray(parsedResult.projects)) {
       parsedResult.projects.forEach((project: any) => {
         if (project.bullets && Array.isArray(project.bullets)) {
           project.bullets = project.bullets.map((bullet: string) => {

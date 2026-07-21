@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createHmac } from "node:crypto";
-import { findSubscriptionPlan, resolveSubscriptionEndDateIso } from "../_shared/paymentCatalog.ts";
+import { findPaymentAddOn, findSubscriptionPlan, getAddOnBundleCount, resolveSubscriptionEndDateIso } from "../_shared/paymentCatalog.ts";
 import { sendPurchaseConfirmationEmail } from "../_shared/purchaseNotifications.ts";
 
 const corsHeaders = {
@@ -9,13 +9,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
-
-const addOns = [
-  { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1 },
-  { id: 'resume_score_check_single_purchase', name: 'Resume Score Check (1 Use)', price: 9, type: 'score_check', quantity: 1 },
-  { id: 'guided_resume_build_single_purchase', name: 'Guided Resume Build (1 Use)', price: 29, type: 'guided_build', quantity: 1 },
-  { id: 'linkedin_messages_50_purchase', name: 'LinkedIn Messages (50 Uses)', price: 29, type: 'linkedin_messages', quantity: 50 },
-];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -68,21 +61,23 @@ Deno.serve(async (req: Request) => {
 
     const { data: existingTx, error: existingTxError } = await supabase
       .from("payment_transactions")
-      .select("id, status, payment_id")
+      .select("id, status, payment_id, order_id")
       .eq("id", transactionId)
+      .eq("user_id", user.id)
       .single();
 
     if (existingTxError || !existingTx) throw new Error("Transaction not found.");
-
-    if (existingTx.status === "success") {
-      return new Response(
-        JSON.stringify({ success: true, verified: true, transactionId, message: "Payment already verified." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
-      );
+    if (existingTx.order_id && existingTx.order_id !== razorpay_order_id) {
+      throw new Error("Payment order does not match this transaction.");
     }
-    if (existingTx.status !== "pending") throw new Error("Transaction is not in a verifiable state.");
+
+    const transactionAlreadySuccessful = existingTx.status === "success";
+    if (!transactionAlreadySuccessful && existingTx.status !== "pending") {
+      throw new Error("Transaction is not in a verifiable state.");
+    }
 
     if (
+      !transactionAlreadySuccessful &&
       couponCode &&
       paymentType !== 'webinar' &&
       paymentType !== 'session_booking' &&
@@ -106,7 +101,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (walletDeduction > 0) {
+    if (!transactionAlreadySuccessful && walletDeduction > 0) {
       const { data: walletRows, error: walletBalanceError } = await supabase
         .from("wallet_transactions").select("amount").eq("user_id", user.id).eq("status", "completed");
       if (walletBalanceError) throw new Error("Failed to verify wallet balance.");
@@ -114,21 +109,24 @@ Deno.serve(async (req: Request) => {
       if (currentBalance < walletDeduction) throw new Error("Insufficient wallet balance for deduction.");
     }
 
-    const { data: updatedTransaction, error: updateTransactionError } = await supabase
-      .from("payment_transactions")
-      .update({ payment_id: razorpay_payment_id, status: "success", order_id: razorpay_order_id, wallet_deduction_amount: walletDeduction, coupon_code: couponCode, discount_amount: discountAmount })
-      .eq("id", transactionId)
-      .eq("status", "pending")
-      .select()
-      .single();
+    if (!transactionAlreadySuccessful) {
+      const { error: updateTransactionError } = await supabase
+        .from("payment_transactions")
+        .update({ payment_id: razorpay_payment_id, status: "success", order_id: razorpay_order_id, wallet_deduction_amount: walletDeduction, coupon_code: couponCode, discount_amount: discountAmount })
+        .eq("id", transactionId)
+        .eq("status", "pending");
 
-    if (updateTransactionError) throw new Error("Failed to update payment transaction status.");
+      if (updateTransactionError) throw new Error("Failed to update payment transaction status.");
+    }
 
     if (Object.keys(selectedAddOns).length > 0) {
       for (const addOnKey in selectedAddOns) {
-        const quantity = selectedAddOns[addOnKey];
-        const addOn = addOns.find((a) => a.id === addOnKey);
-        if (!addOn) continue;
+        const requestedQuantity = Number(selectedAddOns[addOnKey]);
+        const addOn = findPaymentAddOn(addOnKey);
+        if (!addOn) throw new Error(`Unsupported add-on in verified order: ${addOnKey}`);
+        const bundleCount = getAddOnBundleCount(addOn, requestedQuantity);
+        if (bundleCount <= 0) throw new Error(`Invalid add-on quantity in verified order: ${addOnKey}`);
+        const quantity = bundleCount * addOn.quantity;
 
         let { data: addonType, error: addonTypeError } = await supabase
           .from("addon_types").select("id").eq("type_key", addOn.type).single();
@@ -142,10 +140,31 @@ Deno.serve(async (req: Request) => {
           addonType = newAddonType;
         }
 
-        await supabase.from("user_addon_credits").insert({
-          user_id: user.id, addon_type_id: addonType.id, quantity_purchased: quantity, quantity_remaining: quantity, payment_transaction_id: transactionId,
-        });
+        const { data: existingCredit, error: existingCreditError } = await supabase
+          .from("user_addon_credits")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("addon_type_id", addonType.id)
+          .eq("payment_transaction_id", transactionId)
+          .maybeSingle();
+        if (existingCreditError) throw new Error(`Failed to verify ${addOn.name} credit fulfillment.`);
+
+        if (!existingCredit) {
+          const { error: creditInsertError } = await supabase.from("user_addon_credits").insert({
+            user_id: user.id, addon_type_id: addonType.id, quantity_purchased: quantity, quantity_remaining: quantity,
+            optimization_tier: addOn.type === 'optimization' ? (addOn.optimizationTier || 'quick') : null,
+            payment_transaction_id: transactionId,
+          });
+          if (creditInsertError) throw new Error(`Failed to grant ${addOn.name} credits.`);
+        }
       }
+    }
+
+    if (transactionAlreadySuccessful) {
+      return new Response(
+        JSON.stringify({ success: true, verified: true, transactionId, message: "Payment already verified and credits confirmed." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
     }
 
     if (isWebinarPayment && webinarId && registrationId) {
@@ -164,16 +183,9 @@ Deno.serve(async (req: Request) => {
       paymentType !== 'session_booking' &&
       paymentType !== 'referral_booking'
     ) {
-      const { data: existingSubscription } = await supabase
-        .from("subscriptions").select("*").eq("user_id", user.id).eq("status", "active")
-        .gt("end_date", new Date().toISOString()).order("end_date", { ascending: false }).limit(1).maybeSingle();
-
-      if (existingSubscription) {
-        await supabase.from("subscriptions").update({ status: "upgraded", updated_at: new Date().toISOString() }).eq("id", existingSubscription.id);
-      }
-
       const plan = findSubscriptionPlan(planId);
       if (!plan) throw new Error("Invalid plan");
+      const optimizationTier = plan.optimizations > 0 ? (plan.optimizationTier || 'quick') : null;
 
       const subscriptionStartDate = new Date();
 
@@ -184,6 +196,12 @@ Deno.serve(async (req: Request) => {
           start_date: subscriptionStartDate.toISOString(),
           end_date: resolveSubscriptionEndDateIso(plan, subscriptionStartDate),
           optimizations_used: 0, optimizations_total: plan.optimizations,
+          quick_optimizations_used: 0,
+          quick_optimizations_total: optimizationTier === 'quick' ? plan.optimizations : 0,
+          smart_optimizations_used: 0,
+          smart_optimizations_total: optimizationTier === 'smart' ? plan.optimizations : 0,
+          deep_optimizations_used: 0,
+          deep_optimizations_total: optimizationTier === 'deep' ? plan.optimizations : 0,
           score_checks_used: 0, score_checks_total: plan.scoreChecks,
           linkedin_messages_used: 0, linkedin_messages_total: plan.linkedinMessages,
           guided_builds_used: 0, guided_builds_total: plan.guidedBuilds,

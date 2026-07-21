@@ -1,0 +1,13 @@
+\n\n-- Drop all existing policies on user_profiles to start fresh\nDROP POLICY IF EXISTS "Admins can insert user profiles" ON user_profiles;
+\nDROP POLICY IF EXISTS "Users can create own profile" ON user_profiles;
+\nDROP POLICY IF EXISTS "Users can modify own profile" ON user_profiles;
+\nDROP POLICY IF EXISTS "Users can update their own profile" ON user_profiles;
+\nDROP POLICY IF EXISTS "Users can view own profile" ON user_profiles;
+\nDROP POLICY IF EXISTS "Users can view their own profile" ON user_profiles;
+\n\n-- Create new simplified policies without recursive references\n\n-- Allow users to read their own profile\nCREATE POLICY "Users can read own profile"\n  ON user_profiles\n  FOR SELECT\n  TO authenticated\n  USING (id = auth.uid());
+\n\n-- Allow users to update their own profile\nCREATE POLICY "Users can update own profile"\n  ON user_profiles\n  FOR UPDATE\n  TO authenticated\n  USING (id = auth.uid())\n  WITH CHECK (id = auth.uid());
+\n\n-- Allow users to insert their own profile\nCREATE POLICY "Users can insert own profile"\n  ON user_profiles\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (id = auth.uid());
+\n\n-- Allow admins to read all profiles (simple role check without recursion)\nCREATE POLICY "Admins can read all profiles"\n  ON user_profiles\n  FOR SELECT\n  TO authenticated\n  USING (\n    EXISTS (\n      SELECT 1 FROM auth.users \n      WHERE auth.users.id = auth.uid() \n      AND auth.users.raw_user_meta_data->>'role' = 'admin'\n    )\n  );
+\n\n-- Allow admins to update all profiles\nCREATE POLICY "Admins can update all profiles"\n  ON user_profiles\n  FOR UPDATE\n  TO authenticated\n  USING (\n    EXISTS (\n      SELECT 1 FROM auth.users \n      WHERE auth.users.id = auth.uid() \n      AND auth.users.raw_user_meta_data->>'role' = 'admin'\n    )\n  )\n  WITH CHECK (\n    EXISTS (\n      SELECT 1 FROM auth.users \n      WHERE auth.users.id = auth.uid() \n      AND auth.users.raw_user_meta_data->>'role' = 'admin'\n    )\n  );
+\n\n-- Allow admins to insert profiles for other users\nCREATE POLICY "Admins can insert profiles"\n  ON user_profiles\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (\n    EXISTS (\n      SELECT 1 FROM auth.users \n      WHERE auth.users.id = auth.uid() \n      AND auth.users.raw_user_meta_data->>'role' = 'admin'\n    )\n  );
+;

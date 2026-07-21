@@ -1,0 +1,10 @@
+/*\n  # Add Security Tracking Columns to Realistic Interview Sessions\n\n  1. Changes\n    - Add security_score column to track overall interview integrity\n    - Add tab_switches_count to track tab switch violations\n    - Add fullscreen_exits_count to track fullscreen exit violations\n    - Add total_violation_time to track cumulative time spent away from interview\n  \n  2. Notes\n    - These columns support the interview integrity monitoring system\n    - All columns are nullable with default values for backward compatibility\n    - Security score defaults to 100 (perfect score)\n*/\n\nDO $$ \nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns \n    WHERE table_schema = 'public' \n    AND table_name = 'realistic_interview_sessions' \n    AND column_name = 'security_score'\n  ) THEN\n    ALTER TABLE realistic_interview_sessions \n    ADD COLUMN security_score numeric DEFAULT 100;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns \n    WHERE table_schema = 'public' \n    AND table_name = 'realistic_interview_sessions' \n    AND column_name = 'tab_switches_count'\n  ) THEN\n    ALTER TABLE realistic_interview_sessions \n    ADD COLUMN tab_switches_count integer DEFAULT 0;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns \n    WHERE table_schema = 'public' \n    AND table_name = 'realistic_interview_sessions' \n    AND column_name = 'fullscreen_exits_count'\n  ) THEN\n    ALTER TABLE realistic_interview_sessions \n    ADD COLUMN fullscreen_exits_count integer DEFAULT 0;
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.columns \n    WHERE table_schema = 'public' \n    AND table_name = 'realistic_interview_sessions' \n    AND column_name = 'total_violation_time'\n  ) THEN\n    ALTER TABLE realistic_interview_sessions \n    ADD COLUMN total_violation_time integer DEFAULT 0;
+\n  END IF;
+\nEND $$;
+;

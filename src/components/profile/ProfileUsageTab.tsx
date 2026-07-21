@@ -9,6 +9,7 @@ import {
   Crown,
   TrendingUp,
   BarChart3,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { paymentService } from '../../services/paymentService';
@@ -166,11 +167,25 @@ export const ProfileUsageTab: React.FC = () => {
 
   const creditTypes = [
     {
-      label: 'Resume Credits',
-      used: subscription.optimizationsUsed,
-      total: subscription.optimizationsTotal,
+      label: 'Quick Scan',
+      used: subscription.quickOptimizationsUsed,
+      total: subscription.quickOptimizationsTotal,
       icon: <Zap className="w-5 h-5" />,
-      color: '#00E6B8',
+      color: '#22d3ee',
+    },
+    {
+      label: 'Smart Optimize',
+      used: subscription.smartOptimizationsUsed,
+      total: subscription.smartOptimizationsTotal,
+      icon: <Sparkles className="w-5 h-5" />,
+      color: '#34d399',
+    },
+    {
+      label: 'Deep Optimize',
+      used: subscription.deepOptimizationsUsed,
+      total: subscription.deepOptimizationsTotal,
+      icon: <TrendingUp className="w-5 h-5" />,
+      color: '#a78bfa',
     },
     {
       label: 'Score Credits',

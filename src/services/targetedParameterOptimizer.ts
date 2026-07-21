@@ -1,5 +1,5 @@
 import { ResumeData } from '../types/resume';
-import { ParameterScore, scoreResumeAgainstJD, JDScoringResult } from './jdScoringEngine';
+import { ParameterScore } from './jdScoringEngine';
 import { GapItem } from './gapClassificationEngine';
 import { openrouter } from './aiProxyService';
 import {
@@ -46,6 +46,10 @@ export interface TargetedOptimizationResult {
   optimizedResume: ResumeData;
   changes: OptimizationChange[];
   parametersFixed: number[];
+}
+
+export interface TargetedOptimizationOptions {
+  model?: string;
 }
 
 const MAX_BULLET_WORDS = 12;
@@ -367,7 +371,7 @@ function alignRoleTitleWithJD(resume: ResumeData, jobDescription: string): Optim
   return changes;
 }
 
-async function addMetricsWithAI(resume: ResumeData): Promise<OptimizationChange[]> {
+async function addMetricsWithAI(resume: ResumeData, modelOverride?: string): Promise<OptimizationChange[]> {
   const changes: OptimizationChange[] = [];
   const metricPattern = /\d+%|\$\d+|\d+\s*(users?|customers?|clients?|million|k\b|x\b|hrs?|hours?|days?|requests?)/i;
 
@@ -402,7 +406,7 @@ Rules:
     const response = await openrouter.chatWithSystem(
       'You are a resume optimization expert. Return only valid JSON.',
       prompt,
-      { temperature: 0.3 }
+      { model: modelOverride, temperature: 0.3 }
     );
 
     const cleaned = response.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
@@ -869,7 +873,7 @@ function ensureSkillCategory(resume: ResumeData, bucket: SkillBucketName) {
 
 const VALID_SKILL_BUCKETS = new Set<SkillBucketName>(SKILL_BUCKET_ORDER);
 
-async function reorganizeSkillsForATS(resume: ResumeData, jobDescription: string): Promise<OptimizationChange[]> {
+async function reorganizeSkillsForATS(resume: ResumeData, jobDescription: string, modelOverride?: string): Promise<OptimizationChange[]> {
   const changes: OptimizationChange[] = [];
   const existingCategories = resume.skills || [];
   if (existingCategories.length === 0) return changes;
@@ -924,7 +928,7 @@ async function reorganizeSkillsForATS(resume: ResumeData, jobDescription: string
     const response = await openrouter.chatWithSystem(
       'You are an ATS skill categorization engine. Output strict JSON only.',
       prompt,
-      { temperature: 0.1 }
+      { model: modelOverride, temperature: 0.1 }
     );
 
     const cleaned = response.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
@@ -1464,7 +1468,8 @@ function autoFillOnlinePresence(resume: ResumeData): OptimizationChange[] {
 export async function optimizeByParameter(
   resume: ResumeData,
   jobDescription: string,
-  gaps: GapItem[]
+  gaps: GapItem[],
+  options: TargetedOptimizationOptions = {},
 ): Promise<TargetedOptimizationResult> {
   const optimized = JSON.parse(JSON.stringify(resume)) as ResumeData;
   const allChanges: OptimizationChange[] = [];
@@ -1472,25 +1477,8 @@ export async function optimizeByParameter(
 
   const gapIds = new Set(gaps.map(g => g.parameterId));
 
-  if (gapIds.has(17)) {
-    allChanges.push(...autoAlignYearsToJD(optimized, jobDescription));
-    parametersFixed.push(17);
-  }
-
-  if (gapIds.has(18)) {
-    allChanges.push(...autoAlignSeniorityWithJD(optimized, jobDescription));
-    parametersFixed.push(18);
-  }
-
-  if (gapIds.has(21)) {
-    allChanges.push(...autoFillOnlinePresence(optimized));
-    parametersFixed.push(21);
-  }
-
-  if (gapIds.has(24) || gapIds.has(19) || gapIds.has(20) || gapIds.has(25) || gapIds.has(26) || gapIds.has(27)) {
-    allChanges.push(...autoEnsureProjectCount(optimized, jobDescription));
-    parametersFixed.push(24);
-  }
+  // Evidence-only pipeline: gaps in years, seniority, contact details, and
+  // project count require candidate input and must never be auto-filled.
 
   if (gapIds.has(12) || gapIds.has(13) || gapIds.has(14) || gapIds.has(16)) {
     allChanges.push(...removeVaguePhrases(optimized));
@@ -1515,11 +1503,7 @@ export async function optimizeByParameter(
     parametersFixed.push(9);
   }
 
-  if (gapIds.has(11)) {
-    const metricChanges = await addMetricsWithAI(optimized);
-    allChanges.push(...metricChanges);
-    parametersFixed.push(11);
-  }
+  // Missing metrics require candidate-provided evidence. Never generate them.
 
   if (gapIds.has(4)) {
     allChanges.push(...fixBulletFormatting(optimized));
@@ -1527,6 +1511,8 @@ export async function optimizeByParameter(
   }
 
   if (gapIds.has(19) || gapIds.has(20) || gapIds.has(25)) {
+    // This helper extracts technologies from the candidate's own project text;
+    // JD-only tools are deliberately excluded.
     allChanges.push(...addProjectTechStacks(optimized, jobDescription));
     parametersFixed.push(19, 20, 25);
   }
@@ -1536,17 +1522,10 @@ export async function optimizeByParameter(
     parametersFixed.push(22, 23);
   }
 
-  if (gapIds.has(26) || gapIds.has(27)) {
-    allChanges.push(...addProjectImpactAndMetrics(optimized));
-    parametersFixed.push(26, 27);
-  }
+  // Project technologies, impact, metrics, and JD-only industry terms are
+  // reported as user actions instead of being inserted automatically.
 
-  if (gapIds.has(28)) {
-    allChanges.push(...addIndustryKeywords(optimized, jobDescription));
-    parametersFixed.push(28);
-  }
-
-  const aiSkillReorgChanges = await reorganizeSkillsForATS(optimized, jobDescription);
+  const aiSkillReorgChanges = await reorganizeSkillsForATS(optimized, jobDescription, options.model);
   allChanges.push(...aiSkillReorgChanges);
   allChanges.push(...pruneIrrelevantSkillsToJD(optimized, jobDescription));
   parametersFixed.push(22, 23);

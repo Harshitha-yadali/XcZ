@@ -5,7 +5,6 @@ import {
   SOFT_SKILLS,
   CONTACT_PROFILE_WORDS,
 } from '../constants/skillsTaxonomy';
-import { scoreResumeAgainstJD } from './jdScoringEngine';
 
 export interface CategoryScore {
   id: string;
@@ -1484,7 +1483,8 @@ export function runPremiumScoreEngine(
   resumeText: string,
   jobDescription: string,
   userType: UserType,
-  resumeData?: ResumeData
+  resumeData: ResumeData | undefined,
+  canonicalOverallScore: number,
 ): PremiumScoreResult {
   const skillBuckets = buildSkillBuckets(resumeText, jobDescription, resumeData);
   const onlinePresence = scoreOnlinePresence(resumeText, resumeData);
@@ -1579,28 +1579,7 @@ export function runPremiumScoreEngine(
 
   const quickWins = buildQuickWins(categories, redFlags);
 
-  const fallbackResumeData: ResumeData = resumeData || {
-    name: '',
-    phone: '',
-    email: '',
-    linkedin: '',
-    github: '',
-    education: [],
-    workExperience: [],
-    projects: [],
-    skills: [],
-    certifications: [],
-  };
-
-  let overallScore: number;
-  try {
-    const jdResult = scoreResumeAgainstJD(fallbackResumeData, jobDescription);
-    overallScore = jdResult.overallScore;
-  } catch {
-    overallScore = Math.round(
-      categories.reduce((sum, c) => sum + (c.percentage * c.weight / 100), 0)
-    );
-  }
+  const overallScore = Math.max(0, Math.min(100, Math.round(canonicalOverallScore)));
 
   const quickWinBoost = quickWins.reduce((sum, w) => sum + w.impact, 0);
   const projectedScore = Math.min(100, Math.round(overallScore + quickWinBoost * 0.5));

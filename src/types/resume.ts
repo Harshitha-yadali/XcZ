@@ -59,6 +59,7 @@ export interface ResumeData {
   additionalSections?: AdditionalSection[];
   achievements?: string[];
   origin?: string;
+  evidenceDocument?: import('./resumeEvidence').ResumeEvidenceDocument;
 }
 
 export type UserType = 'fresher' | 'experienced' | 'student';

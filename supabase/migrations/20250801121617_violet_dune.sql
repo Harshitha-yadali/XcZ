@@ -1,0 +1,14 @@
+\n\n-- Add new columns for granular subscription tracking\nALTER TABLE public.subscriptions\nADD COLUMN IF NOT EXISTS score_checks_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS score_checks_total INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS linkedin_messages_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS linkedin_messages_total INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS guided_builds_used INTEGER DEFAULT 0 NOT NULL,\nADD COLUMN IF NOT EXISTS guided_builds_total INTEGER DEFAULT 0 NOT NULL;
+\n\n-- Add indexes for performance\nDO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_indexes \n    WHERE tablename = 'subscriptions' AND indexname = 'idx_subscriptions_usage_tracking'\n  ) THEN\n    CREATE INDEX idx_subscriptions_usage_tracking ON public.subscriptions \n    (user_id, status, score_checks_used, linkedin_messages_used, guided_builds_used);
+\n  END IF;
+\nEND $$;
+\n\n-- Add check constraints to ensure data integrity\nDO $$\nBEGIN\n  -- Check if constraint doesn't already exist before adding\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.table_constraints \n    WHERE constraint_name = 'check_score_checks_usage' AND table_name = 'subscriptions'\n  ) THEN\n    ALTER TABLE public.subscriptions \n    ADD CONSTRAINT check_score_checks_usage CHECK (score_checks_used <= score_checks_total);
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.table_constraints \n    WHERE constraint_name = 'check_linkedin_messages_usage' AND table_name = 'subscriptions'\n  ) THEN\n    ALTER TABLE public.subscriptions \n    ADD CONSTRAINT check_linkedin_messages_usage CHECK (linkedin_messages_used <= linkedin_messages_total);
+\n  END IF;
+\n\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.table_constraints \n    WHERE constraint_name = 'check_guided_builds_usage' AND table_name = 'subscriptions'\n  ) THEN\n    ALTER TABLE public.subscriptions \n    ADD CONSTRAINT check_guided_builds_usage CHECK (guided_builds_used <= guided_builds_total);
+\n  END IF;
+\n\n  -- Ensure non-negative values\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.table_constraints \n    WHERE constraint_name = 'check_non_negative_usage' AND table_name = 'subscriptions'\n  ) THEN\n    ALTER TABLE public.subscriptions \n    ADD CONSTRAINT check_non_negative_usage CHECK (\n      score_checks_used >= 0 AND score_checks_total >= 0 AND\n      linkedin_messages_used >= 0 AND linkedin_messages_total >= 0 AND\n      guided_builds_used >= 0 AND guided_builds_total >= 0\n    );
+\n  END IF;
+\nEND $$;
+;

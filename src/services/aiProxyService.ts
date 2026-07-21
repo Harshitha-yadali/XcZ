@@ -6,6 +6,7 @@ import {
 } from '../config/env';
 import {
   DEFAULT_OPENROUTER_MODEL,
+  getOpenRouterTemperature,
   getOpenRouterModelsToTry,
   shouldRetryWithNextOpenRouterModel,
 } from './openrouterModelConfig';
@@ -116,11 +117,12 @@ export const openrouter = {
 
     for (let i = 0; i < modelsToTry.length; i += 1) {
       try {
+        const temperature = getOpenRouterTemperature(modelsToTry[i], options.temperature);
         const result = await callProxy('openrouter', 'chat', {
           prompt,
           model: modelsToTry[i],
-          temperature: options.temperature || 0.3,
-          maxTokens: options.maxTokens || 4000,
+          ...(temperature === undefined ? {} : { temperature }),
+          maxTokens: options.maxTokens ?? 4000,
         });
 
         return result.choices?.[0]?.message?.content || '';
@@ -140,11 +142,12 @@ export const openrouter = {
 
     for (let i = 0; i < modelsToTry.length; i += 1) {
       try {
+        const temperature = getOpenRouterTemperature(modelsToTry[i], options.temperature);
         const result = await callProxy('openrouter', 'chat_with_system', {
           systemPrompt,
           userPrompt,
           model: modelsToTry[i],
-          temperature: options.temperature || 0.3,
+          ...(temperature === undefined ? {} : { temperature }),
         });
 
         return result.choices?.[0]?.message?.content || '';

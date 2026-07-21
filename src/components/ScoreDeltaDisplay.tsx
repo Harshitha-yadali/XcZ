@@ -20,9 +20,10 @@ interface ScoreDeltaDisplayProps {
   result: OptimizationSessionResult;
   userActionCards?: UserActionCard[];
   scoreSummaryOverride?: ScoreSummaryOverride;
+  mode?: 'comparison' | 'scan';
 }
 
-const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride }) => {
+const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison' }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [showAllParameters, setShowAllParameters] = useState(false);
 
@@ -39,6 +40,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
   };
   const displayedDelta = displayAfter.score - displayBefore.score;
   const showReachedTarget = reachedTarget || displayAfter.score >= 90;
+  const isScan = mode === 'scan';
 
   const toggleCategory = (name: string) => {
     setExpandedCategory(expandedCategory === name ? null : name);
@@ -46,22 +48,32 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <ScoreCard label="Before" score={displayBefore.score} band={displayBefore.band} probability={displayBefore.probability} variant="before" />
-        <div className="flex items-center justify-center">
-          <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-950/50 px-6 py-8 flex flex-col items-center gap-2 text-center shadow-[0_20px_45px_-30px_rgba(0,0,0,0.7)]">
-            <ArrowRight className="w-8 h-8 text-slate-400 hidden md:block" />
-            <span className={`text-3xl font-bold ${displayedDelta > 0 ? 'text-emerald-400' : displayedDelta < 0 ? 'text-red-400' : 'text-slate-300'}`}>
-              {displayedDelta > 0 ? '+' : ''}{displayedDelta}
-            </span>
-            <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">ATS points</span>
-            <span className="text-sm text-slate-400">Saved before and final after optimization</span>
+      {!isScan && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ScoreCard label="Before" score={displayBefore.score} band={displayBefore.band} probability={displayBefore.probability} variant="before" />
+          <div className="flex items-center justify-center">
+            <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-950/50 px-6 py-8 flex flex-col items-center gap-2 text-center shadow-[0_20px_45px_-30px_rgba(0,0,0,0.7)]">
+              <ArrowRight className="w-8 h-8 text-slate-400 hidden md:block" />
+              <span className={`text-3xl font-bold ${displayedDelta > 0 ? 'text-emerald-400' : displayedDelta < 0 ? 'text-red-400' : 'text-slate-300'}`}>
+                {displayedDelta > 0 ? '+' : ''}{displayedDelta}
+              </span>
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">ATS points</span>
+              <span className="text-sm text-slate-400">Saved before and final after optimization</span>
+            </div>
+          </div>
+          <ScoreCard label="After" score={displayAfter.score} band={displayAfter.band} probability={displayAfter.probability} variant="after" />
+        </div>
+      )}
+
+      {isScan ? (
+        <div className="flex items-center gap-3 p-4 bg-cyan-500/10 border border-cyan-400/30 rounded-xl">
+          <Target className="w-5 h-5 text-cyan-300 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-cyan-100">Quick Scan Complete</p>
+            <p className="text-sm text-cyan-200/80">Review the matched areas and gaps below. Your resume was analyzed but not rewritten.</p>
           </div>
         </div>
-        <ScoreCard label="After" score={displayAfter.score} band={displayAfter.band} probability={displayAfter.probability} variant="after" />
-      </div>
-
-      {showReachedTarget ? (
+      ) : showReachedTarget ? (
         <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-400/30 rounded-xl">
           <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
           <div>
@@ -82,7 +94,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
       <div className="space-y-3">
         <div className="flex items-center gap-2 mb-2">
           <BarChart3 className="w-5 h-5 text-cyan-300" />
-          <h3 className="font-semibold text-white text-lg">Category Breakdown</h3>
+          <h3 className="font-semibold text-white text-lg">{isScan ? 'Scan Findings' : 'Category Breakdown'}</h3>
         </div>
         {categoryDeltas.map(cat => {
           const isExpanded = expandedCategory === cat.name;
@@ -94,18 +106,18 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                 className="w-full flex items-center justify-between p-4 hover:bg-slate-900/70 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-slate-400 w-10">{cat.weight}%</span>
+                  {!isScan && <span className="text-sm font-medium text-slate-400 w-10">{cat.weight}%</span>}
                   <span className="font-medium text-slate-100">{cat.name}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 text-sm">
+                  {!isScan && <div className="flex items-center gap-2 text-sm">
                     <span className="text-slate-500">{cat.beforePercentage}%</span>
                     <ArrowRight className="w-3 h-3 text-slate-500" />
                     <span className={`font-semibold ${cat.afterPercentage >= 80 ? 'text-emerald-400' : cat.afterPercentage >= 60 ? 'text-amber-300' : 'text-red-400'}`}>
                       {cat.afterPercentage}%
                     </span>
-                  </div>
-                  <DeltaBadge delta={cat.delta} />
+                  </div>}
+                  {!isScan && <DeltaBadge delta={cat.delta} />}
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                 </div>
               </button>
@@ -118,7 +130,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                         <span className="text-sm text-slate-200">{param.name}</span>
                         {!param.fixable && <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-200 rounded">Manual</span>}
                       </div>
-                      <div className="flex items-center gap-3">
+                      {!isScan && <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5 text-sm">
                           <span className="text-slate-500 tabular-nums">{param.beforePercentage}%</span>
                           <ArrowRight className="w-3 h-3 text-slate-600" />
@@ -127,7 +139,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                           </span>
                         </div>
                         <DeltaBadge delta={param.delta} small />
-                      </div>
+                      </div>}
                     </div>
                   ))}
                 </div>
@@ -150,10 +162,10 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                   <span className="text-sm text-slate-200 truncate">{param.name}</span>
                   <span className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded flex-shrink-0">{param.category}</span>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
+                {!isScan && <div className="flex items-center gap-3 flex-shrink-0">
                   <ProgressBar before={param.beforePercentage} after={param.afterPercentage} />
                   <DeltaBadge delta={param.delta} small />
-                </div>
+                </div>}
               </div>
             ))}
           </div>
@@ -171,7 +183,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
         <div className="space-y-3">
           <h3 className="font-semibold text-white text-lg flex items-center gap-2">
             <Target className="w-5 h-5" />
-            Actions Required for 90+
+            {isScan ? 'Recommended Actions' : 'Actions Required for 90+'}
           </h3>
           {userActionCards.map(card => (
             <div key={card.parameterId} className={`p-4 rounded-xl border ${
@@ -197,7 +209,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
         </div>
       )}
 
-      {totalChanges.length > 0 && (
+      {!isScan && totalChanges.length > 0 && (
         <div className="text-center text-sm text-slate-400">
           {totalChanges.length} improvements applied across {result.iterations.length} optimization pass{result.iterations.length !== 1 ? 'es' : ''}
           {result.processingTimeMs > 0 && ` in ${(result.processingTimeMs / 1000).toFixed(1)}s`}
@@ -216,7 +228,7 @@ const ScoreCard: React.FC<{ label: string; score: number; band: string; probabil
 
   return (
     <div className={`p-5 rounded-2xl border ${bgColor} text-center shadow-[0_20px_45px_-30px_rgba(0,0,0,0.7)]`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">{label} Optimization</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">{label}{label === 'Current Match' ? '' : ' Optimization'}</p>
       <div className="relative w-24 h-24 mx-auto mb-3">
         <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 36 36">
           <path className="text-slate-700" strokeDasharray="100, 100" d="M18 2.0845a15.9155 15.9155 0 0 1 0 31.831a15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />

@@ -1,13 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResumeData } from '../types/resume';
 
-const { optimizeByParameterMock } = vi.hoisted(() => ({
+const { optimizeByParameterMock, canonicalScoreMock } = vi.hoisted(() => ({
   optimizeByParameterMock: vi.fn(),
+  canonicalScoreMock: vi.fn(),
 }));
 
 vi.mock('./targetedParameterOptimizer', () => ({
   optimizeByParameter: optimizeByParameterMock,
 }));
+
+vi.mock('./canonicalJdScoringService', async () => {
+  const actualEngine = await vi.importActual<typeof import('./jdScoringEngine')>('./jdScoringEngine');
+  return {
+    CanonicalJdScoringService: {
+      score: canonicalScoreMock.mockImplementation(async ({ resumeData, jobDescription }) => ({
+        scoreResult: actualEngine.scoreResumeAgainstJD(resumeData, jobDescription),
+        scoreId: `score-${JSON.stringify(resumeData).length}`,
+        inputHash: `hash-${JSON.stringify(resumeData).length}`,
+        scoringVersion: 'pb-jd-v1.0.0',
+        cacheHit: false,
+      })),
+    },
+  };
+});
 
 import { scoreResumeAgainstJD } from './jdScoringEngine';
 import { runOptimizationLoop } from './optimizationLoopController';
@@ -19,6 +35,7 @@ function cloneResume(resume: ResumeData): ResumeData {
 describe('optimizationLoopController', () => {
   beforeEach(() => {
     optimizeByParameterMock.mockReset();
+    canonicalScoreMock.mockClear();
     optimizeByParameterMock.mockImplementation(async (resume: ResumeData) => ({
       optimizedResume: cloneResume(resume),
       changes: [],
@@ -104,5 +121,29 @@ describe('optimizationLoopController', () => {
 
     expect(result.beforeScore.overallScore).toBe(baselineScore.overallScore);
     expect(result.afterScore.overallScore).toBe(optimizedScore.overallScore);
+    expect(canonicalScoreMock.mock.calls[0][0].context).toBe('smart_before');
+    expect(canonicalScoreMock.mock.calls[1][0].context).toBe('smart_after');
+
+    const quick = await runOptimizationLoop(
+      baselineResume,
+      jobDescription,
+      undefined,
+      baselineResume,
+      { maxLoops: 0, candidateType: 'fresher', optimizationTier: 'quick' },
+    );
+    const deep = await runOptimizationLoop(
+      optimizedResume,
+      jobDescription,
+      undefined,
+      baselineResume,
+      { maxLoops: 0, candidateType: 'fresher', optimizationTier: 'deep' },
+    );
+
+    expect(quick.beforeScore.overallScore).toBe(baselineScore.overallScore);
+    expect(deep.beforeScore.overallScore).toBe(baselineScore.overallScore);
+    expect(deep.afterScore.overallScore).toBe(optimizedScore.overallScore);
+    expect(canonicalScoreMock.mock.calls[2][0].context).toBe('quick_scan');
+    expect(canonicalScoreMock.mock.calls[3][0].context).toBe('deep_before');
+    expect(canonicalScoreMock.mock.calls[4][0].context).toBe('deep_after');
   });
 });

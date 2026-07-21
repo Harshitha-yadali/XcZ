@@ -17,6 +17,7 @@ export interface PaymentPlanConfig {
   icon: string;
   features: string[];
   popular?: boolean;
+  optimizationTier?: 'quick' | 'smart' | 'deep';
 }
 
 export const LIFETIME_PLAN_END_DATE_ISO = '9999-12-31T23:59:59.999Z';
@@ -40,7 +41,47 @@ export interface PaymentAddOnConfig {
   price: number;
   type: 'optimization' | 'score_check' | 'guided_build' | 'linkedin_messages';
   quantity: number;
+  optimizationTier?: 'quick' | 'smart' | 'deep';
 }
+
+const jdOptimizationPaymentPlans: PaymentPlanConfig[] = [
+  ['quick', 'Quick', 5, 89, 245, 17.80, 64, 5],
+  ['quick', 'Quick', 10, 169, 490, 16.90, 66, 10],
+  ['quick', 'Quick', 25, 399, 1225, 15.96, 67, 25],
+  ['quick', 'Quick', 50, 749, 2450, 14.98, 69, 50],
+  ['smart', 'Smart', 5, 239, 495, 47.80, 52, 5],
+  ['smart', 'Smart', 10, 469, 990, 46.90, 53, 10],
+  ['smart', 'Smart', 25, 999, 2475, 39.96, 60, 25],
+  ['smart', 'Smart', 50, 1889, 4950, 37.78, 62, 50],
+  ['deep', 'Deep', 5, 489, 995, 97.80, 51, 5],
+  ['deep', 'Deep', 10, 899, 1990, 89.90, 55, 10],
+  ['deep', 'Deep', 25, 1999, 4975, 79.96, 60, 25],
+  ['deep', 'Deep', 50, 3899, 9950, 77.98, 61, 50],
+].map(([tierId, tierName, size, price, mrp, perUnit, discountPercentage, credits]) => ({
+  id: `jd_${tierId}_${size}`,
+  name: `${tierName} ${size}`,
+  price: Number(price),
+  mrp: Number(mrp),
+  discountPercentage: Number(discountPercentage),
+  duration: 'Lifetime Access',
+  optimizations: Number(credits),
+  scoreChecks: 0,
+  linkedinMessages: 0,
+  guidedBuilds: 0,
+  sessions: 0,
+  tag: tierId === 'smart' ? 'Recommended' : tierId === 'deep' ? 'Premium' : 'Fastest',
+  tagColor: tierId === 'smart' ? 'text-emerald-800 bg-emerald-100' : '',
+  gradient: tierId === 'quick'
+    ? 'from-cyan-500 to-sky-500'
+    : tierId === 'smart'
+      ? 'from-emerald-500 to-cyan-500'
+      : 'from-violet-500 to-blue-500',
+  icon: 'target',
+  features: [`${size} ${tierName} ${tierId === 'quick' ? 'Scans' : 'Optimize runs'}`, `₹${Number(perUnit).toFixed(2)} per ${tierId === 'quick' ? 'scan' : 'optimization'}`],
+  popular: tierId === 'smart' && size === 25,
+  durationInHours: 0,
+  optimizationTier: tierId as 'quick' | 'smart' | 'deep',
+}));
 
 export const paymentPlans: PaymentPlanConfig[] = [
   {
@@ -83,6 +124,8 @@ export const paymentPlans: PaymentPlanConfig[] = [
     popular: true,
     durationInHours: 0,
   },
+  ...jdOptimizationPaymentPlans,
+  // Legacy JD plan IDs remain server-side so pre-existing orders can still be verified.
   {
     id: 'jd_starter',
     name: 'JD Starter',
@@ -266,7 +309,23 @@ export const paymentPlans: PaymentPlanConfig[] = [
 ];
 
 export const paymentAddOns: PaymentAddOnConfig[] = [
-  { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1 },
+  { id: 'jd_optimization_quick_5', name: 'Quick 5', price: 89, type: 'optimization', quantity: 5, optimizationTier: 'quick' },
+  { id: 'jd_optimization_quick_10', name: 'Quick 10', price: 169, type: 'optimization', quantity: 10, optimizationTier: 'quick' },
+  { id: 'jd_optimization_quick_25', name: 'Quick 25', price: 399, type: 'optimization', quantity: 25, optimizationTier: 'quick' },
+  { id: 'jd_optimization_quick_50', name: 'Quick 50', price: 749, type: 'optimization', quantity: 50, optimizationTier: 'quick' },
+  { id: 'jd_optimization_smart_5', name: 'Smart 5', price: 239, type: 'optimization', quantity: 5, optimizationTier: 'smart' },
+  { id: 'jd_optimization_smart_10', name: 'Smart 10', price: 469, type: 'optimization', quantity: 10, optimizationTier: 'smart' },
+  { id: 'jd_optimization_smart_25', name: 'Smart 25', price: 999, type: 'optimization', quantity: 25, optimizationTier: 'smart' },
+  { id: 'jd_optimization_smart_50', name: 'Smart 50', price: 1889, type: 'optimization', quantity: 50, optimizationTier: 'smart' },
+  { id: 'jd_optimization_deep_5', name: 'Deep 5', price: 489, type: 'optimization', quantity: 5, optimizationTier: 'deep' },
+  { id: 'jd_optimization_deep_10', name: 'Deep 10', price: 899, type: 'optimization', quantity: 10, optimizationTier: 'deep' },
+  { id: 'jd_optimization_deep_25', name: 'Deep 25', price: 1999, type: 'optimization', quantity: 25, optimizationTier: 'deep' },
+  { id: 'jd_optimization_deep_50', name: 'Deep 50', price: 3899, type: 'optimization', quantity: 50, optimizationTier: 'deep' },
+  // Legacy products retained for pending orders created by older clients.
+  { id: 'jd_optimization_quick', name: 'Quick Scan', price: 19, type: 'optimization', quantity: 1, optimizationTier: 'quick' },
+  { id: 'jd_optimization_smart', name: 'Smart Optimize', price: 49, type: 'optimization', quantity: 1, optimizationTier: 'smart' },
+  { id: 'jd_optimization_deep', name: 'Deep Optimize', price: 99, type: 'optimization', quantity: 1, optimizationTier: 'deep' },
+  { id: 'jd_optimization_single_purchase', name: 'JD-Based Optimization (1 Use)', price: 19, type: 'optimization', quantity: 1, optimizationTier: 'quick' },
   { id: 'resume_score_check_single_purchase', name: 'Resume Score Check (1 Use)', price: 9, type: 'score_check', quantity: 1 },
   { id: 'guided_resume_build_single_purchase', name: 'Guided Resume Build (1 Use)', price: 29, type: 'guided_build', quantity: 1 },
   { id: 'linkedin_messages_50_purchase', name: 'LinkedIn Messages (50 Uses)', price: 29, type: 'linkedin_messages', quantity: 50 },
@@ -282,13 +341,17 @@ export const getAddOnBundleCount = (
   addOn: PaymentAddOnConfig,
   requestedQuantity: number,
 ): number => {
-  const safeRequestedQuantity = Math.max(0, Number(requestedQuantity || 0));
-  if (!safeRequestedQuantity) {
+  const safeRequestedQuantity = Number(requestedQuantity || 0);
+  const bundleSize = Math.max(1, Number(addOn.quantity || 1));
+  if (
+    !Number.isInteger(safeRequestedQuantity) ||
+    safeRequestedQuantity <= 0 ||
+    safeRequestedQuantity % bundleSize !== 0
+  ) {
     return 0;
   }
 
-  const bundleSize = Math.max(1, Number(addOn.quantity || 1));
-  return Math.max(1, Math.round(safeRequestedQuantity / bundleSize));
+  return safeRequestedQuantity / bundleSize;
 };
 
 export const calculateSelectedAddOnsTotal = (

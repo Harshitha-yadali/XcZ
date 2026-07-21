@@ -79,19 +79,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       const subscription = await paymentService.getUserSubscription(userId);
       
       if (creditType === 'optimization') {
-        const subscriptionCredits = subscription 
+        const subscriptionCredits = subscription
           ? subscription.optimizationsTotal - subscription.optimizationsUsed 
           : 0;
-        const addOnCredits = await paymentService.getAddOnCreditsByType(userId, 'optimization');
-        const totalCredits = Math.max(0, subscriptionCredits) + addOnCredits;
-        return totalCredits > 0;
+        return Math.max(0, subscriptionCredits) > 0;
       } else if (creditType === 'score_check') {
         const subscriptionCredits = subscription 
           ? subscription.scoreChecksTotal - subscription.scoreChecksUsed 
           : 0;
-        const addOnCredits = await paymentService.getAddOnCreditsByType(userId, 'score_check');
-        const totalCredits = Math.max(0, subscriptionCredits) + addOnCredits;
-        return totalCredits > 0;
+        return Math.max(0, subscriptionCredits) > 0;
       }
       
       return true;

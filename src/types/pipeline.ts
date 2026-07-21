@@ -175,7 +175,7 @@ export const PIPELINE_CONFIG = {
   },
   STEP_DESCRIPTIONS: {
     [PipelineStep.PARSE_RESUME]: 'Extracting information from your resume using AI',
-    [PipelineStep.ANALYZE_AGAINST_JD]: 'Analyzing your resume against the job description using 220+ metrics',
+    [PipelineStep.ANALYZE_AGAINST_JD]: 'Analyzing your resume against the job description using 30 evidence-backed checks',
     [PipelineStep.MISSING_SECTIONS_MODAL]: 'Please provide any missing information to complete your resume',
     [PipelineStep.PROJECT_ANALYSIS]: 'Analyzing your projects for alignment with job requirements',
     [PipelineStep.RE_ANALYSIS]: 'Re-analyzing your updated projects for better alignment',

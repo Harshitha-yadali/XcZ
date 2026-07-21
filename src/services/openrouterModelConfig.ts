@@ -1,4 +1,9 @@
 export const DEFAULT_OPENROUTER_MODEL = 'openrouter/free';
+export const PINNED_RESUME_PARSER_MODEL = 'google/gemini-3.1-flash-lite';
+export const RESUME_PARSER_ESCALATION_MODEL = 'google/gemini-3.5-flash';
+export const QUICK_OPTIMIZATION_MODEL = 'google/gemini-3.5-flash';
+export const SMART_OPTIMIZATION_MODEL = 'openai/gpt-5.6-terra';
+export const DEEP_OPTIMIZATION_MODEL = 'anthropic/claude-opus-4.8';
 
 const SHARED_FREE_OPENROUTER_MODELS = [
   'nvidia/nemotron-3-nano-30b-a3b:free',
@@ -36,6 +41,17 @@ const MODEL_UNAVAILABLE_ERROR_PATTERNS = [
 ] as const;
 
 const normalizeModelId = (model?: string) => model?.trim() || '';
+
+export const supportsCustomSamplingParameters = (model?: string) =>
+  normalizeModelId(model) !== DEEP_OPTIMIZATION_MODEL;
+
+export const getOpenRouterTemperature = (
+  model: string | undefined,
+  requestedTemperature: number | undefined,
+  fallbackTemperature = 0.3,
+) => supportsCustomSamplingParameters(model)
+  ? requestedTemperature ?? fallbackTemperature
+  : undefined;
 
 const dedupeModels = (models: readonly string[]) =>
   Array.from(new Set(models.map(normalizeModelId).filter(Boolean)));

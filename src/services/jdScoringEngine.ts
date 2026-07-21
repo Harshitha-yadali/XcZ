@@ -1,10 +1,12 @@
-import { ResumeData } from '../types/resume';
+import type { ResumeData, UserType } from '../types/canonicalResume.ts';
 import {
   ALL_HARD_SKILLS,
   ALL_TOOL_SKILLS,
   SOFT_SKILLS as TAXONOMY_SOFT_SKILLS,
   CONTACT_PROFILE_WORDS,
-} from '../constants/skillsTaxonomy';
+} from '../constants/skillsTaxonomy.ts';
+import { SKILL_ALIASES } from './resumeEvidenceExtractor.ts';
+import type { ResumeSectionKind } from '../types/resumeEvidence.ts';
 
 export interface ParameterScore {
   id: number;
@@ -14,8 +16,13 @@ export interface ParameterScore {
   maxScore: number;
   percentage: number;
   suggestions: string[];
+  /** Resume excerpts that justify the awarded score. */
+  evidence?: string[];
   fixable: boolean;
   fixType: 'ai' | 'user_input' | 'none';
+  applicable?: boolean;
+  earnedPoints?: number;
+  weightedMaxPoints?: number;
 }
 
 export interface CategoryScore {
@@ -29,6 +36,8 @@ export interface CategoryScore {
 
 export interface JDScoringResult {
   overallScore: number;
+  candidateType: UserType;
+  scoringProfile: string;
   categories: CategoryScore[];
   parameters: ParameterScore[];
   matchBand: string;
@@ -45,6 +54,9 @@ interface JDAnalysis {
   seniorityLevel: string;
   yearsRequired: number;
   responsibilities: string[];
+  mandatorySkills: string[];
+  preferredSkills: string[];
+  contextualSkills: string[];
 }
 
 const TECH_SKILLS = new Set(
@@ -106,6 +118,7 @@ interface KeywordSkillScoringContext {
   resumeLower: string;
   jdKeywords: JDKeywordExtraction;
   skillBuckets: SkillBucketAnalysis;
+  groundedSkillKeys: Set<string>;
 }
 
 function escapeRegExp(value: string): string {
@@ -130,38 +143,6 @@ function extractJDKeywords(jobDescription: string): JDKeywordExtraction {
   };
 
   const hardFound = extractMatches(hardSkillPatterns);
-  if (hardFound.length < 3) {
-    const techWordRegex = /\b([A-Z][a-zA-Z0-9+#.]+(?:\.[jJ][sS])?)\b/g;
-    const nonTechWords = new Set([
-      'the', 'this', 'our', 'we', 'you', 'your', 'they', 'their', 'with', 'for', 'and', 'but',
-      'can', 'will', 'must', 'have', 'has', 'are', 'is', 'an', 'in', 'on', 'of', 'to', 'as',
-      'at', 'by', 'do', 'be', 'it', 'if', 'or', 'not', 'from', 'that', 'which', 'about',
-      'after', 'before', 'under', 'above', 'into', 'through', 'over', 'between', 'within',
-      'without', 'during', 'against', 'along', 'across', 'behind', 'beyond', 'including',
-      'role', 'company', 'team', 'work', 'working', 'digital', 'services', 'key', 'performing',
-      'workplace', 'multicloud', 'responsible', 'required', 'preferred', 'strong', 'excellent',
-      'good', 'ability', 'experience', 'years', 'level', 'position', 'department', 'manager',
-      'senior', 'junior', 'lead', 'staff', 'associate', 'principal', 'director', 'analyst',
-      'engineer', 'developer', 'designer', 'architect', 'consultant', 'specialist', 'coordinator',
-      'environment', 'industry', 'client', 'customer', 'business', 'solution', 'solutions',
-      'enterprise', 'global', 'local', 'remote', 'hybrid', 'onsite', 'office', 'location',
-      'salary', 'benefits', 'bonus', 'equity', 'stock', 'option', 'compensation',
-      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-      'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
-      'september', 'october', 'november', 'december',
-      'github', 'linkedin', 'portfolio', 'email', 'phone', 'website', 'twitter', 'medium',
-    ]);
-
-    const extra: string[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = techWordRegex.exec(jobDescription)) !== null) {
-      const word = match[1];
-      if (word.length >= 2 && word.length <= 25 && !nonTechWords.has(word.toLowerCase())) {
-        extra.push(word);
-      }
-    }
-    hardFound.push(...[...new Set(extra)].slice(0, 10));
-  }
 
   const industryWords: string[] = [];
   const sentences = jobDescription.split(/[.!?\n]+/);
@@ -211,11 +192,9 @@ function extractResumeSkills(resumeText: string, resumeData: ResumeData): string
 }
 
 function normalizeSkillKey(skill: string): string {
-  return skill.toLowerCase()
-    .replace(/\.js$/i, '')
-    .replace(/\.?js$/i, '')
-    .replace(/[-_./]/g, '')
-    .trim();
+  const normalized = skill.toLowerCase().replace(/\s+/g, ' ').trim();
+  const canonical = SKILL_ALIASES[normalized] || skill;
+  return canonical.toLowerCase().replace(/[^a-z0-9+#]+/g, '');
 }
 
 function isContactWord(skill: string): boolean {
@@ -223,13 +202,14 @@ function isContactWord(skill: string): boolean {
 }
 
 function buildSkillBuckets(
-  resumeText: string,
+  resume: ResumeData,
   jobDescription: string,
-  resumeData: ResumeData,
-  jdKeywords: JDKeywordExtraction
+  jdKeywords: JDKeywordExtraction,
+  jdAnalysis: JDAnalysis,
 ): SkillBucketAnalysis {
-  const resumeSkills = extractResumeSkills(resumeText, resumeData);
-  const resumeLower = resumeText.toLowerCase();
+  const resumeText = getFullResumeText(resume);
+  const resumeSkills = extractResumeSkills(resumeText, resume);
+  const groundedSkillKeys = getGroundedSkillKeys(resume);
   const allJDSkills = [...jdKeywords.hard, ...jdKeywords.tools].filter(s => !isContactWord(s));
   const allJDSoft = jdKeywords.soft;
 
@@ -244,11 +224,23 @@ function buildSkillBuckets(
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
 
-    const inResume = resumeLower.includes(skill.toLowerCase());
+    const inResume = groundedSkillKeys.has(key);
+    const isMandatory = jdAnalysis.mandatorySkills.some(item => normalizeSkillKey(item) === key);
+    const isPreferred = jdAnalysis.preferredSkills.some(item => normalizeSkillKey(item) === key);
     if (inResume) {
-      mustHave.push({ skill, inResume: true, inJD: true, importance: 'critical' });
+      (isMandatory ? mustHave : supporting).push({
+        skill,
+        inResume: true,
+        inJD: true,
+        importance: isMandatory ? 'critical' : isPreferred ? 'important' : 'nice_to_have',
+      });
     } else {
-      missing.push({ skill, inResume: false, inJD: true, importance: 'critical' });
+      missing.push({
+        skill,
+        inResume: false,
+        inJD: true,
+        importance: isMandatory ? 'critical' : isPreferred ? 'important' : 'nice_to_have',
+      });
     }
   }
 
@@ -257,7 +249,7 @@ function buildSkillBuckets(
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
 
-    const inResume = resumeLower.includes(skill.toLowerCase());
+    const inResume = groundedSkillKeys.has(key);
     if (inResume) {
       supporting.push({ skill, inResume: true, inJD: true, importance: 'important' });
     } else {
@@ -293,13 +285,30 @@ function buildSkillBuckets(
 function buildKeywordSkillScoringContext(resume: ResumeData, jobDescription: string): KeywordSkillScoringContext {
   const resumeText = getFullResumeText(resume);
   const jdKeywords = extractJDKeywords(jobDescription);
-  const skillBuckets = buildSkillBuckets(resumeText, jobDescription, resume, jdKeywords);
+  const jdAnalysis = analyzeJD(jobDescription);
+  const skillBuckets = buildSkillBuckets(resume, jobDescription, jdKeywords, jdAnalysis);
   return {
     resumeText,
     resumeLower: resumeText.toLowerCase(),
     jdKeywords,
     skillBuckets,
+    groundedSkillKeys: getGroundedSkillKeys(resume),
   };
+}
+
+function getGroundedSkillKeys(resume: ResumeData): Set<string> {
+  const keys = new Set<string>();
+  const evidence = resume.evidenceDocument?.skills || [];
+  if (evidence.length > 0) {
+    evidence.forEach(skill => keys.add(normalizeSkillKey(skill.canonicalSkill)));
+    return keys;
+  }
+
+  // Structured test fixtures and trusted server-side callers may not include
+  // raw source spans. Treat only explicitly structured fields as evidence.
+  resume.skills?.flatMap(group => group.list).forEach(skill => keys.add(normalizeSkillKey(skill)));
+  resume.projects?.flatMap(project => project.techStack || []).forEach(skill => keys.add(normalizeSkillKey(skill)));
+  return keys;
 }
 
 function getFullResumeText(resume: ResumeData): string {
@@ -325,28 +334,204 @@ function getFullResumeText(resume: ResumeData): string {
 }
 
 function getAllBullets(resume: ResumeData): string[] {
+  if (resume.evidenceDocument?.bullets.length) {
+    return resume.evidenceDocument.bullets.map(bullet => bullet.text);
+  }
   const bullets: string[] = [];
   resume.workExperience?.forEach(exp => exp.bullets?.forEach(b => bullets.push(b)));
   resume.projects?.forEach(p => p.bullets?.forEach(b => bullets.push(b)));
   return bullets;
 }
 
+function getResumeSourceText(resume: ResumeData): string {
+  return resume.evidenceDocument?.rawText || getFullResumeText(resume);
+}
+
+function getEvidenceSegmentsBySection(resume: ResumeData): Record<ResumeSectionKind, string[]> {
+  const sections: Record<ResumeSectionKind, string[]> = {
+    header: [resume.name, resume.phone, resume.email, resume.linkedin, resume.github].filter(Boolean),
+    summary: [resume.targetRole, resume.summary, resume.careerObjective].filter(Boolean) as string[],
+    skills: (resume.skills || []).map(group => `${group.category}: ${group.list.join(', ')}`),
+    experience: [],
+    projects: [],
+    education: [],
+    certifications: [],
+    achievements: resume.achievements || [],
+  };
+  resume.workExperience?.forEach(exp => sections.experience.push(`${exp.role} at ${exp.company} (${exp.year})`, ...(exp.bullets || [])));
+  resume.projects?.forEach(project => sections.projects.push(
+    project.title,
+    project.description || '',
+    ...(project.bullets || []),
+    project.techStack?.length ? `Tools: ${project.techStack.join(', ')}` : '',
+  ));
+  resume.education?.forEach(item => sections.education.push(`${item.degree} at ${item.school} (${item.year})`));
+  resume.certifications?.forEach(item => sections.certifications.push(typeof item === 'string' ? item : `${item.title}: ${item.description}`));
+  Object.keys(sections).forEach(key => {
+    sections[key as ResumeSectionKind] = [...new Set(sections[key as ResumeSectionKind].map(value => value.trim()).filter(Boolean))];
+  });
+  return sections;
+}
+
+function collectParameterEvidence(
+  parameter: ParameterScore,
+  resume: ResumeData,
+  jd: JDAnalysis,
+  keywordContext: KeywordSkillScoringContext,
+): string[] {
+  if (parameter.applicable === false) return parameter.evidence || ['Not applicable'];
+  const segmentsBySection = getEvidenceSegmentsBySection(resume);
+  const allowedSectionsByParameter: Record<number, ResumeSectionKind[]> = {
+    6: ['skills', 'projects', 'experience'],
+    7: ['skills', 'projects', 'experience'],
+    8: ['skills', 'projects', 'experience'],
+    9: ['summary'],
+    10: ['summary', 'skills', 'projects', 'experience'],
+    11: ['projects', 'experience'],
+    12: ['projects', 'experience'],
+    13: ['projects', 'experience'],
+    14: ['projects', 'experience'],
+    15: ['projects', 'experience'],
+    16: ['projects', 'experience'],
+    17: ['experience'],
+    18: ['experience'],
+    19: ['projects'],
+    20: ['projects'],
+    21: ['header'],
+    22: ['skills'],
+    23: ['skills'],
+    24: ['projects'],
+    25: ['projects'],
+    26: ['projects'],
+    27: ['projects'],
+    28: ['skills', 'projects', 'experience'],
+    29: ['education'],
+    30: ['certifications'],
+  };
+  const allowedSections = allowedSectionsByParameter[parameter.id] || [];
+  const segments = allowedSections.flatMap(section => segmentsBySection[section]);
+  const termsByParameter: Record<number, string[]> = {
+    6: [...keywordContext.jdKeywords.hard, ...jd.hardSkills],
+    7: [
+      ...keywordContext.jdKeywords.tools,
+      ...jd.tools,
+      ...keywordContext.jdKeywords.hard,
+    ],
+    8: keywordContext.skillBuckets.mustHave.map(item => item.skill),
+    9: jd.roleKeywords,
+    10: [
+      ...keywordContext.jdKeywords.hard,
+      ...keywordContext.jdKeywords.tools,
+      ...jd.hardSkills,
+      ...jd.tools,
+    ],
+    17: [],
+    18: [jd.seniorityLevel, ...jd.roleKeywords],
+    19: [...keywordContext.jdKeywords.hard, ...keywordContext.jdKeywords.tools],
+    20: [...keywordContext.jdKeywords.hard, ...keywordContext.jdKeywords.tools],
+    22: resume.skills.flatMap(group => group.list),
+    23: [...keywordContext.jdKeywords.hard, ...keywordContext.jdKeywords.tools],
+    28: keywordContext.jdKeywords.industry,
+  };
+
+  let matchingSegments: string[];
+  const terms = (termsByParameter[parameter.id] || [])
+    .map(term => term.toLowerCase().trim())
+    .filter(term => term.length >= 2);
+
+  if (terms.length > 0) {
+    matchingSegments = segments.filter(segment => {
+      const normalized = segment.toLowerCase();
+      return terms.some(term => {
+        let cursor = normalized.indexOf(term);
+        while (cursor >= 0) {
+          if (hasTextTokenBoundaries(segment, cursor, cursor + term.length)) return true;
+          cursor = normalized.indexOf(term, cursor + 1);
+        }
+        return false;
+      });
+    });
+  } else if (parameter.id === 11) {
+    matchingSegments = segments.filter(segment => /\b\d+(?:\.\d+)?(?:%|x|\+)?\b/.test(segment));
+  } else if ([12, 13, 14, 15, 16].includes(parameter.id)) {
+    matchingSegments = segments;
+  } else {
+    matchingSegments = segments;
+  }
+
+  if (parameter.id === 3 && resume.evidenceDocument) {
+    return Object.values(resume.evidenceDocument.sections).map(section => section.heading).slice(0, 5);
+  }
+  if (parameter.id === 4 && resume.evidenceDocument?.bullets.length) {
+    return resume.evidenceDocument.bullets.map(bullet => bullet.sourceText.trim()).slice(0, 3);
+  }
+  if (matchingSegments.length === 0 && parameter.score > 0 && parameter.id <= 5) {
+    return [`Rule-based check passed: ${parameter.name}`];
+  }
+  return matchingSegments.slice(0, 3);
+}
+
+function classifyJdSkillRequirements(jobDescription: string, skills: string[]) {
+  const mandatory: string[] = [];
+  const preferred: string[] = [];
+  const contextual: string[] = [];
+  const segments = jobDescription.split(/\r?\n|(?<=[.!?])\s+/).map(segment => segment.trim()).filter(Boolean);
+  const mandatoryCue = /\b(?:must\s+have|required|mandatory|essential|minimum\s+qualification|minimum\s+requirements?)\b/i;
+  const preferredCue = /\b(?:preferred|good\s+to\s+have|nice\s+to\s+have|desired|bonus|plus)\b/i;
+
+  for (const skill of skills) {
+    const key = normalizeSkillKey(skill);
+    const matching = segments.filter(segment => {
+      const lower = segment.toLowerCase();
+      let cursor = lower.indexOf(skill.toLowerCase());
+      while (cursor >= 0) {
+        if (hasTextTokenBoundaries(segment, cursor, cursor + skill.length)) return true;
+        cursor = lower.indexOf(skill.toLowerCase(), cursor + 1);
+      }
+      return false;
+    });
+    if (matching.some(segment => mandatoryCue.test(segment))) mandatory.push(skill);
+    else if (matching.some(segment => preferredCue.test(segment))) preferred.push(skill);
+    else contextual.push(skill);
+
+    // Keep aliases deduplicated by canonical meaning.
+    if (!key) contextual.pop();
+  }
+
+  const dedupe = (values: string[]) => [...new Map(values.map(value => [normalizeSkillKey(value), value])).values()];
+  return { mandatory: dedupe(mandatory), preferred: dedupe(preferred), contextual: dedupe(contextual) };
+}
+
+function hasTextTokenBoundaries(text: string, start: number, end: number): boolean {
+  const before = start > 0 ? text[start - 1] : '';
+  const after = end < text.length ? text[end] : '';
+  return (!before || !/[A-Za-z0-9]/.test(before)) && (!after || !/[A-Za-z0-9]/.test(after));
+}
+
 function analyzeJD(jd: string): JDAnalysis {
   const jdLower = jd.toLowerCase();
+  const containsExact = (value: string) => {
+    let cursor = jdLower.indexOf(value.toLowerCase());
+    while (cursor >= 0) {
+      if (hasTextTokenBoundaries(jd, cursor, cursor + value.length)) return true;
+      cursor = jdLower.indexOf(value.toLowerCase(), cursor + 1);
+    }
+    return false;
+  };
 
   const hardSkills: string[] = [];
   TECH_SKILLS.forEach(skill => {
-    if (jdLower.includes(skill)) hardSkills.push(skill);
+    if (containsExact(skill)) hardSkills.push(skill);
   });
 
   const tools: string[] = [];
   TOOL_KEYWORDS.forEach(tool => {
-    if (jdLower.includes(tool)) tools.push(tool);
+    if (containsExact(tool)) tools.push(tool);
   });
 
   const softSkills: string[] = [];
   SOFT_SKILLS_LIST.forEach(skill => {
-    if (jdLower.includes(skill)) softSkills.push(skill);
+    if (containsExact(skill)) softSkills.push(skill);
   });
 
   const roleKeywords: string[] = [];
@@ -372,6 +557,8 @@ function analyzeJD(jd: string): JDAnalysis {
     responsibilities.push(respMatch[1].trim());
   }
 
+  const classified = classifyJdSkillRequirements(jd, [...hardSkills, ...tools]);
+
   return {
     hardSkills: [...new Set(hardSkills)],
     softSkills: [...new Set(softSkills)],
@@ -380,14 +567,18 @@ function analyzeJD(jd: string): JDAnalysis {
     seniorityLevel,
     yearsRequired,
     responsibilities,
+    mandatorySkills: classified.mandatory,
+    preferredSkills: classified.preferred,
+    contextualSkills: classified.contextual,
   };
 }
 
 function scoreP1SingleColumn(resume: ResumeData): ParameterScore {
   let score = 10;
   const suggestions: string[] = [];
-  const text = getFullResumeText(resume);
-  if (/\t{2,}/.test(text) || /\|/.test(text)) {
+  const text = getResumeSourceText(resume);
+  const pipeHeavyLines = text.split(/\r?\n/).filter(line => (line.match(/\|/g) || []).length >= 2).length;
+  if (/\t{2,}/.test(text) || pipeHeavyLines >= 2) {
     score -= 5;
     suggestions.push('Use single-column layout for ATS compatibility');
   }
@@ -397,7 +588,7 @@ function scoreP1SingleColumn(resume: ResumeData): ParameterScore {
 function scoreP2NoTablesImages(resume: ResumeData): ParameterScore {
   let score = 10;
   const suggestions: string[] = [];
-  const text = getFullResumeText(resume);
+  const text = getResumeSourceText(resume);
   if (/\[image\]|\[icon\]|\[table\]/i.test(text)) {
     score -= 5;
     suggestions.push('Remove tables, images, and icons for ATS parsing');
@@ -405,26 +596,23 @@ function scoreP2NoTablesImages(resume: ResumeData): ParameterScore {
   return { id: 2, name: 'No Tables/Images/Icons', category: 'ATS Compatibility', score, maxScore: 10, percentage: Math.round((score / 10) * 100), suggestions, fixable: false, fixType: 'none' };
 }
 
-function scoreP3StandardHeadings(resume: ResumeData): ParameterScore {
-  let score = 0;
+function scoreP3StandardHeadings(resume: ResumeData, candidateType: UserType): ParameterScore {
   const maxScore = 10;
   const suggestions: string[] = [];
-  const hasExp = (resume.workExperience?.length || 0) > 0;
-  const hasEdu = (resume.education?.length || 0) > 0;
-  const hasSkills = (resume.skills?.length || 0) > 0;
-  const hasProjects = (resume.projects?.length || 0) > 0;
-  const hasSummary = !!resume.summary && resume.summary.length > 20;
-
-  if (hasExp) score += 2;
-  else suggestions.push('Add Work Experience section');
-  if (hasEdu) score += 2;
-  else suggestions.push('Add Education section');
-  if (hasSkills) score += 2;
-  else suggestions.push('Add Skills section');
-  if (hasProjects) score += 2;
-  else suggestions.push('Add Projects section');
-  if (hasSummary) score += 2;
-  else suggestions.push('Add Summary/Objective section');
+  const detected = resume.evidenceDocument?.sections;
+  const present: Record<'summary' | 'skills' | 'experience' | 'projects' | 'education', boolean> = {
+    summary: Boolean(detected?.summary || (resume.summary && resume.summary.length > 20) || resume.careerObjective),
+    skills: Boolean(detected?.skills || resume.skills?.length),
+    experience: Boolean(detected?.experience || resume.workExperience?.length),
+    projects: Boolean(detected?.projects || resume.projects?.length),
+    education: Boolean(detected?.education || resume.education?.length),
+  };
+  const required = candidateType === 'experienced'
+    ? (['summary', 'skills', 'experience', 'education'] as const)
+    : (['summary', 'skills', 'projects', 'education'] as const);
+  const missing = required.filter(section => !present[section]);
+  const score = Math.round(((required.length - missing.length) / required.length) * maxScore);
+  missing.forEach(section => suggestions.push(`Add a recognizable ${section === 'experience' ? 'Work Experience' : section} section heading`));
 
   return { id: 3, name: 'Standard Section Headings', category: 'ATS Compatibility', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
@@ -433,19 +621,20 @@ function scoreP4BulletFormatting(resume: ResumeData): ParameterScore {
   let score = 0;
   const maxScore = 10;
   const suggestions: string[] = [];
-  const bullets = getAllBullets(resume);
+  const groundedBullets = resume.evidenceDocument?.bullets || [];
+  const bullets = groundedBullets.length > 0 ? groundedBullets.map(bullet => bullet.text) : getAllBullets(resume);
   if (bullets.length === 0) {
     suggestions.push('Add bullet points to experience and projects');
     return { id: 4, name: 'Proper Bullet Formatting', category: 'ATS Compatibility', score: 0, maxScore, percentage: 0, suggestions, fixable: true, fixType: 'ai' };
   }
 
-  const wellFormatted = bullets.filter(b => {
+  const wellFormatted = groundedBullets.length > 0 ? groundedBullets.length : bullets.filter(b => {
     const trimmed = b.trim();
     return trimmed.length >= 20 && trimmed.length <= 300 && /^[A-Z]/.test(trimmed);
   }).length;
 
   score = Math.round((wellFormatted / bullets.length) * maxScore);
-  if (score < maxScore) suggestions.push('Ensure bullets are 20-300 chars, start with capital letter');
+  if (score < maxScore) suggestions.push('Use a standard bullet marker and keep each wrapped bullet as one item');
 
   return { id: 4, name: 'Proper Bullet Formatting', category: 'ATS Compatibility', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
@@ -470,21 +659,23 @@ function scoreP6HardSkillMatch(
   const suggestions: string[] = [];
 
   if (context) {
-    const criticalMissing = context.skillBuckets.missing.filter(s => s.importance === 'critical');
-    const matched = context.skillBuckets.mustHave.length;
-    const totalCritical = matched + criticalMissing.length;
+    const nonMandatoryKeys = new Set([...jdAnalysis.preferredSkills, ...jdAnalysis.contextualSkills].map(normalizeSkillKey));
+    const matchedItems = context.skillBuckets.supporting.filter(item => nonMandatoryKeys.has(normalizeSkillKey(item.skill)));
+    const missingItems = context.skillBuckets.missing.filter(item => item.importance !== 'critical' && nonMandatoryKeys.has(normalizeSkillKey(item.skill)));
+    const matched = matchedItems.length;
+    const totalCritical = matched + missingItems.length;
 
     if (totalCritical === 0) {
-      return { id: 6, name: 'JD Hard Skill Match %', category: 'Keyword Alignment', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+      return { id: 6, name: 'Other Hard Skill Match %', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no additional hard skills were identified'], applicable: false, fixable: false, fixType: 'none' };
     }
 
     const matchPct = matched / totalCritical;
     const score = Math.round(matchPct * maxScore);
-    if (criticalMissing.length > 0) {
-      suggestions.push(`Missing hard skills: ${criticalMissing.slice(0, 5).map(s => s.skill).join(', ')}`);
+    if (missingItems.length > 0) {
+      suggestions.push(`Missing supporting hard skills: ${missingItems.slice(0, 5).map(s => s.skill).join(', ')}`);
     }
 
-    return { id: 6, name: 'JD Hard Skill Match %', category: 'Keyword Alignment', score, maxScore, percentage: Math.round(matchPct * 100), suggestions, fixable: true, fixType: 'ai' };
+    return { id: 6, name: 'Other Hard Skill Match %', category: 'Keyword Alignment', score, maxScore, percentage: Math.round(matchPct * 100), suggestions, fixable: true, fixType: 'ai' };
   }
 
   const resumeText = getFullResumeText(resume).toLowerCase();
@@ -512,17 +703,17 @@ function scoreP7ToolMatch(
   const maxScore = 10;
   const suggestions: string[] = [];
 
-  const resumeText = context?.resumeLower || getFullResumeText(resume).toLowerCase();
   const jdTools = context?.jdKeywords.tools || jdAnalysis.tools;
 
   if (jdTools.length === 0) {
-    return { id: 7, name: 'JD Tool Match %', category: 'Keyword Alignment', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+    return { id: 7, name: 'JD Tool Match %', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no tools or frameworks were identified in the JD'], applicable: false, fixable: false, fixType: 'none' };
   }
 
-  const matched = jdTools.filter(t => resumeText.includes(t.toLowerCase()));
+  const groundedKeys = context?.groundedSkillKeys || getGroundedSkillKeys(resume);
+  const matched = jdTools.filter(t => groundedKeys.has(normalizeSkillKey(t)));
   const matchPct = matched.length / jdTools.length;
   const score = Math.round(matchPct * maxScore);
-  const missing = jdTools.filter(t => !resumeText.includes(t.toLowerCase()));
+  const missing = jdTools.filter(t => !groundedKeys.has(normalizeSkillKey(t)));
   if (missing.length > 0) suggestions.push(`Missing tools: ${missing.slice(0, 5).join(', ')}`);
 
   return { id: 7, name: 'JD Tool Match %', category: 'Keyword Alignment', score, maxScore, percentage: Math.round(matchPct * 100), suggestions, fixable: true, fixType: 'ai' };
@@ -542,7 +733,7 @@ function scoreP8MandatorySkillPresence(
     const totalCritical = matched + criticalMissing.length;
 
     if (totalCritical === 0) {
-      return { id: 8, name: 'Mandatory Skill Presence', category: 'Keyword Alignment', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+      return { id: 8, name: 'Mandatory Skill Presence', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: the JD does not explicitly identify mandatory skills'], applicable: false, fixable: false, fixType: 'none' };
     }
 
     const coverage = matched / totalCritical;
@@ -577,12 +768,16 @@ function scoreP9RoleTitleAlignment(
   resume: ResumeData,
   jdAnalysis: JDAnalysis,
   jobDescription: string,
-  context?: KeywordSkillScoringContext
 ): ParameterScore {
   const maxScore = 10;
   const suggestions: string[] = [];
-  const roles = resume.workExperience?.map(e => e.role?.toLowerCase() || '') || [];
-  const allRolesText = `${roles.join(' ')} ${resume.targetRole?.toLowerCase() || ''} ${context?.resumeLower || ''}`;
+  const allRolesText = [resume.targetRole, resume.summary, resume.careerObjective]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (!allRolesText.trim()) {
+    return { id: 9, name: 'Role Title Alignment', category: 'Advanced Diagnostics', score: 0, maxScore, percentage: 0, suggestions: ['Add a target-role headline or role-focused summary'], fixable: true, fixType: 'ai' };
+  }
 
   const jdLower = jobDescription.toLowerCase();
   const titleMatch = jdLower.match(/(?:looking for|hiring|role of|position:?)\s*([^\n.]+)/i);
@@ -614,6 +809,9 @@ function scoreP10KeywordDensityBalance(
   const resumeText = context?.resumeLower || getFullResumeText(resume).toLowerCase();
   const words = resumeText.split(/\s+/).filter(Boolean);
   const totalWords = words.length;
+  if (totalWords === 0) {
+    return { id: 10, name: 'Keyword Density Balance', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no scoreable resume content'], applicable: false, fixable: false, fixType: 'none' };
+  }
 
   const jdTerms = context
     ? [...new Set([...context.jdKeywords.hard, ...context.jdKeywords.soft, ...context.jdKeywords.tools])]
@@ -674,7 +872,7 @@ function scoreP12WritingStrength(resume: ResumeData): ParameterScore {
   const suggestions: string[] = [];
   const bullets = getAllBullets(resume);
   if (bullets.length === 0) {
-    return { id: 12, name: 'Strong, Direct Achievement Bullets', category: 'Impact & Metrics', score: 4, maxScore, percentage: 40, suggestions: ['Add achievement-focused bullets with direct outcomes'], fixable: true, fixType: 'ai' };
+    return { id: 12, name: 'Strong, Direct Achievement Bullets', category: 'Impact & Metrics', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project or experience bullets'], applicable: false, fixable: false, fixType: 'none' };
   }
 
   const actionVerbRatio = bullets.filter(b => {
@@ -703,7 +901,7 @@ function scoreP13NoVaguePhrases(resume: ResumeData): ParameterScore {
   const suggestions: string[] = [];
   const bullets = getAllBullets(resume);
   if (bullets.length === 0) {
-    return { id: 13, name: 'No Vague Phrases', category: 'Impact & Metrics', score: maxScore, maxScore, percentage: 100, suggestions, fixable: true, fixType: 'ai' };
+    return { id: 13, name: 'No Vague Phrases', category: 'Impact & Metrics', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project or experience bullets'], applicable: false, fixable: false, fixType: 'none' };
   }
 
   const vagueCount = bullets.filter(b => VAGUE_PHRASES.some(v => b.toLowerCase().includes(v))).length;
@@ -719,7 +917,7 @@ function scoreP14StrongActionVerbs(resume: ResumeData): ParameterScore {
   const suggestions: string[] = [];
   const bullets = getAllBullets(resume);
   if (bullets.length === 0) {
-    return { id: 14, name: 'Strong Action Verbs', category: 'Advanced Diagnostics', score: 8, maxScore, percentage: 80, suggestions: ['Diagnostic only: add bullet points starting with action verbs'], fixable: false, fixType: 'none' };
+    return { id: 14, name: 'Strong Action Verbs', category: 'Advanced Diagnostics', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project or experience bullets'], applicable: false, fixable: false, fixType: 'none' };
   }
 
   const withActionVerb = bullets.filter(b => {
@@ -730,15 +928,18 @@ function scoreP14StrongActionVerbs(resume: ResumeData): ParameterScore {
   const score = Math.max(8, Math.round(pct * maxScore));
   if (pct < 0.6) suggestions.push('Start more bullets with strong action verbs');
 
-  return { id: 14, name: 'Strong Action Verbs', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: false, fixType: 'none' };
+  return { id: 14, name: 'Strong Action Verbs', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
 
 function scoreP15VerbRepetition(resume: ResumeData): ParameterScore {
   const maxScore = 10;
   const suggestions: string[] = [];
   const bullets = getAllBullets(resume);
+  if (bullets.length === 0) {
+    return { id: 15, name: 'No Verb Repetition Dominance', category: 'Advanced Diagnostics', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project or experience bullets'], applicable: false, fixable: false, fixType: 'none' };
+  }
   if (bullets.length < 3) {
-    return { id: 15, name: 'No Verb Repetition Dominance', category: 'Advanced Diagnostics', score: 8, maxScore, percentage: 80, suggestions, fixable: false, fixType: 'none' };
+    return { id: 15, name: 'No Verb Repetition Dominance', category: 'Advanced Diagnostics', score: 8, maxScore, percentage: 80, suggestions, fixable: true, fixType: 'ai' };
   }
 
   const firstVerbs: Record<string, number> = {};
@@ -759,7 +960,7 @@ function scoreP15VerbRepetition(resume: ResumeData): ParameterScore {
   }
 
   score = Math.max(8, score);
-  return { id: 15, name: 'No Verb Repetition Dominance', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: false, fixType: 'none' };
+  return { id: 15, name: 'No Verb Repetition Dominance', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
 
 function scoreP16NoPassiveVoice(resume: ResumeData): ParameterScore {
@@ -767,7 +968,7 @@ function scoreP16NoPassiveVoice(resume: ResumeData): ParameterScore {
   const suggestions: string[] = [];
   const bullets = getAllBullets(resume);
   if (bullets.length === 0) {
-    return { id: 16, name: 'No Passive Voice', category: 'Advanced Diagnostics', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+    return { id: 16, name: 'No Passive Voice', category: 'Advanced Diagnostics', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project or experience bullets'], applicable: false, fixable: false, fixType: 'none' };
   }
 
   const passiveCount = bullets.filter(b => PASSIVE_PATTERNS.some(p => p.test(b))).length;
@@ -775,28 +976,37 @@ function scoreP16NoPassiveVoice(resume: ResumeData): ParameterScore {
   const score = Math.max(8, Math.round(activePct * maxScore));
   if (passiveCount > 0) suggestions.push(`Convert ${passiveCount} passive voice bullet(s) to active voice`);
 
-  return { id: 16, name: 'No Passive Voice', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: false, fixType: 'none' };
+  return { id: 16, name: 'No Passive Voice', category: 'Advanced Diagnostics', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
 
-function scoreP17YearsMatch(resume: ResumeData, jdAnalysis: JDAnalysis): ParameterScore {
+function scoreP17YearsMatch(resume: ResumeData, jdAnalysis: JDAnalysis, candidateType: UserType): ParameterScore {
   const maxScore = 10;
   const suggestions: string[] = [];
 
+  if (candidateType !== 'experienced') {
+    return { id: 17, name: 'Years Match JD', category: 'Experience Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable for fresher/student profiles'], applicable: false, fixable: false, fixType: 'none' };
+  }
+
   if (jdAnalysis.yearsRequired === 0) {
-    return { id: 17, name: 'Years Match JD', category: 'Experience Alignment', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+    return { id: 17, name: 'Years Match JD', category: 'Experience Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: the JD does not specify required years'], applicable: false, fixable: false, fixType: 'none' };
+  }
+
+  const experienceSource = resume.evidenceDocument?.sections.experience?.sourceText ||
+    (resume.workExperience || []).map(exp => exp.year).join('\n');
+  if (!experienceSource.trim()) {
+    return { id: 17, name: 'Years Match JD', category: 'Experience Alignment', score: 0, maxScore, percentage: 0, suggestions: ['Add work-experience dates to evaluate the JD requirement'], evidence: ['No work-experience date evidence found'], fixable: false, fixType: 'user_input' };
   }
 
   let totalYears = 0;
-  resume.workExperience?.forEach(exp => {
-    const yearMatch = exp.year?.match(/(\d{4})\s*[-–]\s*(\d{4}|present|current|ongoing)/i);
-    if (yearMatch) {
+  const datePattern = /(\d{4})\s*[-–—]\s*(\d{4}|present|current|ongoing)/gi;
+  let yearMatch: RegExpExecArray | null;
+  while ((yearMatch = datePattern.exec(experienceSource)) !== null) {
       const start = parseInt(yearMatch[1]);
       const end = yearMatch[2].toLowerCase() === 'present' || yearMatch[2].toLowerCase() === 'current' || yearMatch[2].toLowerCase() === 'ongoing'
         ? new Date().getFullYear()
         : parseInt(yearMatch[2]);
-      totalYears += end - start;
-    }
-  });
+      totalYears += Math.max(0, end - start);
+  }
 
   // Soft scoring: years mismatch should guide, not heavily penalize.
   const gap = jdAnalysis.yearsRequired - totalYears;
@@ -814,9 +1024,12 @@ function scoreP17YearsMatch(resume: ResumeData, jdAnalysis: JDAnalysis): Paramet
   return { id: 17, name: 'Years Match JD', category: 'Experience Alignment', score, maxScore, percentage: Math.round((score / maxScore) * 100), suggestions, fixable: true, fixType: 'ai' };
 }
 
-function scoreP18SeniorityAlignment(resume: ResumeData, jdAnalysis: JDAnalysis): ParameterScore {
+function scoreP18SeniorityAlignment(resume: ResumeData, jdAnalysis: JDAnalysis, candidateType: UserType): ParameterScore {
   const maxScore = 10;
   const suggestions: string[] = [];
+  if (candidateType !== 'experienced' || (resume.workExperience?.length || 0) === 0) {
+    return { id: 18, name: 'Seniority Alignment', category: 'Experience Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable without professional work experience'], applicable: false, fixable: false, fixType: 'none' };
+  }
   const rolesText = (resume.workExperience?.map(e => e.role || '').join(' ') || '').toLowerCase();
 
   const seniorityMap: Record<string, string[]> = {
@@ -858,17 +1071,28 @@ function scoreP19ProjectSkillAlignment(resume: ResumeData, jdAnalysis: JDAnalysi
     return { id: 19, name: 'Project Skill Alignment %', category: 'Project Relevance', score: 0, maxScore, percentage: 0, suggestions, fixable: true, fixType: 'ai' };
   }
 
-  const projectText = projects.map(p => {
-    const parts = [p.title, ...(p.bullets || []), ...(p.techStack || [])];
-    return parts.join(' ');
-  }).join(' ').toLowerCase();
-
   const allJdSkills = [...jdAnalysis.hardSkills, ...jdAnalysis.tools];
   if (allJdSkills.length === 0) {
-    return { id: 19, name: 'Project Skill Alignment %', category: 'Project Relevance', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+    return { id: 19, name: 'Project Skill Alignment %', category: 'Project Relevance', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no project-relevant skills were identified in the JD'], applicable: false, fixable: false, fixType: 'none' };
   }
 
-  const matched = allJdSkills.filter(s => projectText.includes(s.toLowerCase()));
+  const projectSkillKeys = new Set(
+    resume.evidenceDocument?.skills
+      .filter(skill => skill.sourceSection === 'projects')
+      .map(skill => normalizeSkillKey(skill.canonicalSkill)) ||
+    projects.flatMap(project => project.techStack || []).map(normalizeSkillKey)
+  );
+  const projectText = projects.flatMap(project => [project.title, ...project.bullets]).join(' ');
+  const matched = allJdSkills.filter(skill => {
+    if (projectSkillKeys.has(normalizeSkillKey(skill))) return true;
+    const lower = projectText.toLowerCase();
+    let cursor = lower.indexOf(skill.toLowerCase());
+    while (cursor >= 0) {
+      if (hasTextTokenBoundaries(projectText, cursor, cursor + skill.length)) return true;
+      cursor = lower.indexOf(skill.toLowerCase(), cursor + 1);
+    }
+    return false;
+  });
   const pct = matched.length / allJdSkills.length;
   const score = Math.round(pct * maxScore);
   if (pct < 0.5) suggestions.push('Add projects that use JD-required technologies');
@@ -889,7 +1113,9 @@ function scoreP20TechStackRelevance(
     return { id: 20, name: 'Tech Stack Relevance', category: 'Project Relevance', score: 0, maxScore, percentage: 0, suggestions, fixable: true, fixType: 'ai' };
   }
 
-  const techStacks = projects.flatMap(p => p.techStack || []).map(t => t.toLowerCase());
+  const techStacks = resume.evidenceDocument?.skills
+    .filter(skill => skill.sourceSection === 'projects')
+    .map(skill => skill.canonicalSkill) || projects.flatMap(p => p.techStack || []);
 
   if (techStacks.length === 0) {
     suggestions.push('Add tech stack details to projects');
@@ -900,10 +1126,11 @@ function scoreP20TechStackRelevance(
     ? [...new Set([...context.jdKeywords.hard, ...context.jdKeywords.tools])].slice(0, 12)
     : [...jdAnalysis.hardSkills, ...jdAnalysis.tools];
   if (allJdSkills.length === 0) {
-    return { id: 20, name: 'Tech Stack Relevance', category: 'Project Relevance', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+    return { id: 20, name: 'Tech Stack Relevance', category: 'Project Relevance', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no technology requirements were identified in the JD'], applicable: false, fixable: false, fixType: 'none' };
   }
 
-  const matched = allJdSkills.filter(s => techStacks.some(t => t.includes(s.toLowerCase())));
+  const techKeys = new Set(techStacks.map(normalizeSkillKey));
+  const matched = allJdSkills.filter(s => techKeys.has(normalizeSkillKey(s)));
   const pct = matched.length / allJdSkills.length;
   const score = Math.round(pct * maxScore);
   if (pct < 0.4) suggestions.push('Include JD-relevant technologies in project tech stacks');
@@ -949,6 +1176,9 @@ function scoreP22SkillsCategorization(
   const suggestions: string[] = [];
   const skills = resume.skills || [];
   let score = 0;
+  if (skills.flatMap(group => group.list).length === 0) {
+    return { id: 22, name: 'Skills Categorization Quality', category: 'Skills Quality', score: 0, maxScore, percentage: 0, suggestions: ['Add a grounded skills section'], fixable: true, fixType: 'user_input' };
+  }
 
   const hasCategorized = skills.length >= 2;
   if (hasCategorized) score += 3;
@@ -994,6 +1224,9 @@ function scoreP23SkillRelevance(
     const criticalCoverage = criticalTotal > 0 ? context.skillBuckets.mustHave.length / criticalTotal : 1;
 
     const jdSkillTotal = context.skillBuckets.mustHave.length + context.skillBuckets.supporting.length + context.skillBuckets.missing.length;
+    if (jdSkillTotal === 0) {
+      return { id: 23, name: 'Skill Relevance to JD', category: 'Skills Quality', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: the JD contains no recognized hard skills'], applicable: false, fixable: false, fixType: 'none' };
+    }
     const overallCoverage = jdSkillTotal > 0
       ? (context.skillBuckets.mustHave.length + context.skillBuckets.supporting.length) / jdSkillTotal
       : 1;
@@ -1062,10 +1295,10 @@ function scoreP24ProjectCount(resume: ResumeData): ParameterScore {
     score = 6;
     suggestions.push('For fresher profiles, add one more relevant project (target 2+)');
   } else if (projects.length === 0 && isFresher) {
-    score = 2;
+    score = 0;
     suggestions.push('For fresher profiles, add at least 2 relevant projects');
   } else if (projects.length === 0) {
-    score = 5;
+    score = 0;
     suggestions.push('Add at least one relevant project with impact and measurable outcomes');
   }
 
@@ -1082,12 +1315,17 @@ function scoreP25ProjectTools(resume: ResumeData): ParameterScore {
     return { id: 25, name: 'Project Tools Mentioned', category: 'Project Quality', score: 0, maxScore, percentage: 0, suggestions: ['Add projects with specific technologies listed'], fixable: true, fixType: 'ai' };
   }
 
+  const groundedProjects = resume.evidenceDocument?.projects || [];
   let withTools = 0;
   for (const proj of projects) {
     const allText = `${proj.title} ${proj.description || ''} ${(proj.bullets || []).join(' ')}`.toLowerCase();
     const hasTech = (proj.techStack && proj.techStack.length > 0) ||
-      /(?:react|python|java|node|express|django|flask|mongodb|sql|aws|docker|kubernetes|tensorflow|pytorch|typescript|javascript|angular|vue|spring|go|rust|ruby|php|swift|kotlin)/i.test(allText);
+      /\b(?:react|python|java|node|express|django|flask|mongodb|sql|aws|docker|kubernetes|tensorflow|pytorch|typescript|javascript|angular|vue|spring|go|rust|ruby|php|swift|kotlin)\b/i.test(allText);
     if (hasTech) withTools++;
+  }
+
+  if (groundedProjects.length > 0) {
+    withTools = groundedProjects.filter(project => project.technologies.length > 0).length;
   }
 
   const ratio = withTools / projects.length;
@@ -1199,6 +1437,43 @@ function scoreP28IndustryKeywords(
   return { id: 28, name: 'Industry Keyword Coverage', category: 'Keyword Alignment', score, maxScore, percentage: pct, suggestions, fixable: true, fixType: 'ai' };
 }
 
+function scoreP29EducationMatch(resume: ResumeData, jobDescription: string): ParameterScore {
+  const maxScore = 10;
+  const suggestions: string[] = [];
+  const education = resume.education || [];
+  if (education.length === 0) {
+    return { id: 29, name: 'Education Match', category: 'Profile Completeness', score: 0, maxScore, percentage: 0, suggestions: ['Add your education details'], fixable: true, fixType: 'user_input' };
+  }
+
+  const requirement = jobDescription.match(/\b(?:bachelor(?:'s)?|master(?:'s)?|b\.?\s*tech|m\.?\s*tech|b\.?\s*e\.?|m\.?\s*e\.?|b\.?\s*sc|m\.?\s*sc|mba|phd|diploma)\b/i)?.[0];
+  if (!requirement) {
+    return { id: 29, name: 'Education Match', category: 'Profile Completeness', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+  }
+
+  const educationText = education.map(item => `${item.degree} ${item.field || ''}`).join(' ').toLowerCase();
+  const normalizedRequirement = requirement.toLowerCase().replace(/[.\s]/g, '');
+  const matched = educationText.replace(/[.\s]/g, '').includes(normalizedRequirement) ||
+    (/bachelor|btech|be|bsc/.test(normalizedRequirement) && /bachelor|b\.?\s*tech|b\.?\s*e\.?|b\.?\s*sc/i.test(educationText)) ||
+    (/master|mtech|me|msc|mba/.test(normalizedRequirement) && /master|m\.?\s*tech|m\.?\s*e\.?|m\.?\s*sc|mba/i.test(educationText));
+  const score = matched ? maxScore : 4;
+  if (!matched) suggestions.push(`JD mentions ${requirement}; verify that the matching qualification is clearly stated`);
+  return { id: 29, name: 'Education Match', category: 'Profile Completeness', score, maxScore, percentage: score * 10, suggestions, fixable: !matched, fixType: matched ? 'none' : 'user_input' };
+}
+
+function scoreP30CertificationMatch(resume: ResumeData, jobDescription: string): ParameterScore {
+  const maxScore = 10;
+  const suggestions: string[] = [];
+  const certifications = resume.certifications || [];
+  const jdRequiresCertification = /\b(?:certification|certified|certificate|license)\b/i.test(jobDescription);
+  if (!jdRequiresCertification && certifications.length === 0) {
+    return { id: 30, name: 'Certification Match', category: 'Profile Completeness', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: the JD does not request a certification'], applicable: false, fixable: false, fixType: 'none' };
+  }
+  if (certifications.length === 0) {
+    return { id: 30, name: 'Certification Match', category: 'Profile Completeness', score: 0, maxScore, percentage: 0, suggestions: ['Add the JD-requested certification if you hold it'], fixable: false, fixType: 'user_input' };
+  }
+  return { id: 30, name: 'Certification Match', category: 'Profile Completeness', score: maxScore, maxScore, percentage: 100, suggestions, fixable: false, fixType: 'none' };
+}
+
 function getMatchBand(score: number): string {
   if (score >= 90) return 'Excellent Match';
   if (score >= 80) return 'Very Good Match';
@@ -1224,31 +1499,65 @@ function getInterviewProbability(score: number): string {
 }
 
 const CATEGORY_WEIGHTS: Record<string, number> = {
-  'ATS Compatibility': 18,
-  'Keyword Alignment': 24,
-  'Impact & Metrics': 18,
-  'Experience Alignment': 8,
-  'Project Relevance': 10,
-  'Skills Quality': 12,
-  'Project Quality': 8,
-  'Profile Completeness': 2,
-  'Advanced Diagnostics': 0,
+  'ATS Structure and Parsing': 20,
+  'Mandatory JD Skills': 20,
+  'Other Hard Skills': 15,
+  'Tools and Frameworks': 10,
+  'Project/Experience Evidence': 15,
+  'Role and Seniority Alignment': 10,
+  'Content Quality': 10,
 };
 
-export function scoreResumeAgainstJD(resume: ResumeData, jobDescription: string): JDScoringResult {
+const CATEGORY_BY_PARAMETER: Record<number, keyof typeof CATEGORY_WEIGHTS> = {
+  1: 'ATS Structure and Parsing', 2: 'ATS Structure and Parsing', 3: 'ATS Structure and Parsing',
+  4: 'ATS Structure and Parsing', 5: 'ATS Structure and Parsing', 21: 'ATS Structure and Parsing',
+  8: 'Mandatory JD Skills',
+  6: 'Other Hard Skills', 23: 'Other Hard Skills', 28: 'Other Hard Skills',
+  7: 'Tools and Frameworks', 20: 'Tools and Frameworks', 25: 'Tools and Frameworks',
+  11: 'Project/Experience Evidence', 17: 'Project/Experience Evidence', 19: 'Project/Experience Evidence',
+  24: 'Project/Experience Evidence', 26: 'Project/Experience Evidence', 27: 'Project/Experience Evidence',
+  29: 'Project/Experience Evidence', 30: 'Project/Experience Evidence',
+  9: 'Role and Seniority Alignment', 18: 'Role and Seniority Alignment',
+  10: 'Content Quality', 12: 'Content Quality', 13: 'Content Quality', 14: 'Content Quality',
+  15: 'Content Quality', 16: 'Content Quality', 22: 'Content Quality',
+};
+
+const SCORING_PROFILE_NAMES: Record<UserType, string> = {
+  student: 'Student — skills, projects, and ATS readiness',
+  fresher: 'Fresher — JD alignment, skills, and project evidence',
+  experienced: 'Experienced — impact, progression, and JD alignment',
+};
+
+export function assertSingleJobDescription(jobDescription: string): void {
+  const explicitTitles = [...jobDescription.matchAll(/^\s*(?:job\s+title|position|role)\s*:\s*(.+)$/gim)]
+    .map(match => match[1].trim().toLowerCase())
+    .filter(Boolean);
+  const distinctTitles = new Set(explicitTitles);
+  const postingSeparators = (jobDescription.match(/^\s*(?:-{3,}|={3,})\s*$/gm) || []).length;
+  if (distinctTitles.size > 1 || (postingSeparators > 0 && distinctTitles.size > 1)) {
+    throw new Error('Only one job description can be analyzed at a time. Remove the additional job posting and try again.');
+  }
+}
+
+export function scoreResumeAgainstJD(
+  resume: ResumeData,
+  jobDescription: string,
+  candidateType: UserType = 'fresher',
+): JDScoringResult {
+  assertSingleJobDescription(jobDescription);
   const jd = analyzeJD(jobDescription);
   const keywordSkillContext = buildKeywordSkillScoringContext(resume, jobDescription);
 
-  const parameters: ParameterScore[] = [
+  const rawParameters: ParameterScore[] = [
     scoreP1SingleColumn(resume),
     scoreP2NoTablesImages(resume),
-    scoreP3StandardHeadings(resume),
+    scoreP3StandardHeadings(resume, candidateType),
     scoreP4BulletFormatting(resume),
     scoreP5PdfParsingSafety(resume),
     scoreP6HardSkillMatch(resume, jd, keywordSkillContext),
     scoreP7ToolMatch(resume, jd, keywordSkillContext),
     scoreP8MandatorySkillPresence(resume, jd, keywordSkillContext),
-    scoreP9RoleTitleAlignment(resume, jd, jobDescription, keywordSkillContext),
+    scoreP9RoleTitleAlignment(resume, jd, jobDescription),
     scoreP10KeywordDensityBalance(resume, jd, keywordSkillContext),
     scoreP11MetricDensity(resume),
     scoreP12WritingStrength(resume),
@@ -1256,8 +1565,8 @@ export function scoreResumeAgainstJD(resume: ResumeData, jobDescription: string)
     scoreP14StrongActionVerbs(resume),
     scoreP15VerbRepetition(resume),
     scoreP16NoPassiveVoice(resume),
-    scoreP17YearsMatch(resume, jd),
-    scoreP18SeniorityAlignment(resume, jd),
+    scoreP17YearsMatch(resume, jd, candidateType),
+    scoreP18SeniorityAlignment(resume, jd, candidateType),
     scoreP19ProjectSkillAlignment(resume, jd),
     scoreP20TechStackRelevance(resume, jd, keywordSkillContext),
     scoreP21OnlinePresence(resume),
@@ -1268,11 +1577,24 @@ export function scoreResumeAgainstJD(resume: ResumeData, jobDescription: string)
     scoreP26ProjectMetrics(resume),
     scoreP27ProjectImpact(resume),
     scoreP28IndustryKeywords(resume, jd, keywordSkillContext),
+    scoreP29EducationMatch(resume, jobDescription),
+    scoreP30CertificationMatch(resume, jobDescription),
   ];
+
+  const categorizedParameters = rawParameters.map(parameter => ({
+    ...parameter,
+    category: CATEGORY_BY_PARAMETER[parameter.id],
+    applicable: parameter.applicable !== false,
+  }));
+
+  let parameters = categorizedParameters.map(parameter => ({
+    ...parameter,
+    evidence: collectParameterEvidence(parameter, resume, jd, keywordSkillContext),
+  }));
 
   const categoryNames = Object.keys(CATEGORY_WEIGHTS);
   const categories: CategoryScore[] = categoryNames.map(catName => {
-    const catParams = parameters.filter(p => p.category === catName);
+    const catParams = parameters.filter(p => p.category === catName && p.applicable !== false);
     const catScore = catParams.reduce((sum, p) => sum + p.score, 0);
     const catMax = catParams.reduce((sum, p) => sum + p.maxScore, 0);
     return {
@@ -1281,23 +1603,34 @@ export function scoreResumeAgainstJD(resume: ResumeData, jobDescription: string)
       parameters: catParams,
       score: catScore,
       maxScore: catMax,
-      percentage: catMax > 0 ? Math.round((catScore / catMax) * 100) : 0,
+      percentage: catMax > 0 ? Math.round((catScore / catMax) * 100) : 100,
     };
   });
 
-  let weightedTotal = 0;
-  let weightSum = 0;
-  categories.forEach(cat => {
-    weightedTotal += cat.percentage * cat.weight;
-    weightSum += cat.weight;
+  parameters = parameters.map(parameter => {
+    if (parameter.applicable === false) return { ...parameter, earnedPoints: 0, weightedMaxPoints: 0 };
+    const category = categories.find(item => item.name === parameter.category)!;
+    const weightedMaxPoints = category.maxScore > 0
+      ? category.weight * (parameter.maxScore / category.maxScore)
+      : 0;
+    return {
+      ...parameter,
+      earnedPoints: weightedMaxPoints * (parameter.percentage / 100),
+      weightedMaxPoints,
+    };
   });
-  const overallScore = Math.round(weightedTotal / weightSum);
+
+  const earnedTotal = parameters.reduce((sum, parameter) => sum + (parameter.earnedPoints || 0), 0);
+  const applicableMax = parameters.reduce((sum, parameter) => sum + (parameter.weightedMaxPoints || 0), 0);
+  const overallScore = applicableMax > 0 ? Math.round((earnedTotal / applicableMax) * 100) : 0;
 
   const fixableCount = parameters.filter(p => p.fixable && p.percentage < 80).length;
   const nonFixableCount = parameters.filter(p => !p.fixable && p.percentage < 80).length;
 
   return {
     overallScore,
+    candidateType,
+    scoringProfile: SCORING_PROFILE_NAMES[candidateType],
     categories,
     parameters,
     matchBand: getMatchBand(overallScore),

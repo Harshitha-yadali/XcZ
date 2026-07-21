@@ -101,6 +101,11 @@ describe('geminiResumeParserService', () => {
     expect(parsed.email).toBe('alice@example.com');
     expect(parsed.workExperience).toHaveLength(1);
     expect(parsed.projects).toHaveLength(1);
+    expect(parsed.projects[0].techStack).toEqual(expect.arrayContaining(['React', 'TypeScript']));
+    expect(parsed.skills.flatMap(group => group.list)).not.toEqual(expect.arrayContaining(['Go', 'Rust']));
+    expect(parsed.evidenceDocument?.skills.every(skill =>
+      sampleResumeText.slice(skill.startIndex, skill.endIndex) === skill.sourceText
+    )).toBe(true);
   });
 
   it('falls back to heuristic parsing when the AI proxy fails', async () => {
@@ -118,5 +123,17 @@ describe('geminiResumeParserService', () => {
     expect(parsed.skills.some((category) => category.list.includes('React'))).toBe(true);
     expect(parsed.workExperience).toHaveLength(1);
     expect(parsed.rawResponse?.fallback).toBe('heuristic');
+    expect(chatWithSystemMock).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      expect.any(String),
+      { model: 'google/gemini-3.1-flash-lite', temperature: 0.1 },
+    );
+    expect(chatWithSystemMock).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.any(String),
+      { model: 'google/gemini-3.5-flash', temperature: 0.05 },
+    );
   });
 });
