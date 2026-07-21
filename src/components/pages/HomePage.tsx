@@ -269,10 +269,10 @@ const serviceCards: Array<{
     cta: 'Check my resume',
     icon: Gauge,
     accent: 'from-emerald-400/20 via-emerald-400/5 to-transparent',
-    span: 'lg:col-span-2 lg:row-span-2',
+    span: 'lg:col-span-2',
   },
   {
-    title: 'AI Resume Optimizer',
+    title: 'JD Optimizer',
     description: 'Turn every issue in your score report into a role-specific, ATS-ready improvement.',
     eyebrow: 'Fix what matters',
     path: '/optimizer',
@@ -322,7 +322,7 @@ const faqs = [
   {
     question: 'What happens after I receive my score?',
     answer:
-      'Your report highlights the gaps that matter. If you want help fixing them, you can continue into the paid AI Resume Optimizer, which rewrites and tailors your resume for the role you selected.',
+      'Your report highlights the gaps that matter. If you want help fixing them, you can continue into the paid JD Optimizer, which rewrites and tailors your resume for the role you selected.',
   },
   {
     question: 'How is the resume matched to a job description?',
@@ -662,7 +662,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   useSEO({
-    title: 'ATS Resume Checker & AI Resume Optimizer',
+    title: 'ATS Resume Checker & JD Optimizer',
     description:
       'Applied everywhere but still not getting interview calls? Check your resume against any job description, find ATS issues, and fix them with PrimoBoost AI.',
     keywords:
@@ -968,7 +968,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               {
                 step: '03',
                 title: 'Fix or get guided',
-                text: 'Use the AI Optimizer for targeted fixes or CareerBooster for expert support.',
+                text: 'Use the JD Optimizer for targeted fixes or CareerBooster for expert support.',
                 icon: Wand2,
               },
             ].map((item, index) => (
@@ -1087,7 +1087,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 icon: FileSearch,
               },
               {
-                name: 'AI Optimizer',
+                name: 'JD Optimizer',
                 price: 'Pay as you go',
                 note: 'For candidates ready to fix the gaps',
                 features: ['Job-specific optimization', 'AI bullet rewrites', 'Keyword alignment', 'Editable resume output'],
