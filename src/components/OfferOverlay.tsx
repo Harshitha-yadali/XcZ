@@ -1,6 +1,13 @@
-// src/components/OfferOverlay.tsx
 import React, { useEffect, useState } from "react";
-import { X, Sparkles, CheckCircle, ArrowRight } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  X
+} from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
@@ -11,27 +18,43 @@ interface OfferOverlayProps {
   onAction?: () => void;
   targetPath?: string;
   ctaLabel?: string;
-  imageSrc?: string;
-  fit?: "cover" | "contain";
 }
+
+const benefits = [
+  "Role-specific keyword alignment",
+  "Evidence-safe bullet rewrites",
+  "Editable ATS-friendly resume",
+  "Clear gaps before you apply"
+];
+
+const matchedSkills = ["Python", "Flask", "REST API", "MySQL"];
 
 export const OfferOverlay: React.FC<OfferOverlayProps> = ({
   isOpen,
   onClose,
   onAction,
   targetPath = "/optimizer",
-  imageSrc = "https://img.sanishtech.com/u/d3c3a0693f8dfeff84478ac6f4b44977.png",
-  ctaLabel = "Optimize Resume Now",
-  fit = "cover"
+  ctaLabel = "Open JD Optimizer"
 }) => {
   const navigate = useNavigate();
   const { isChristmasMode } = useTheme();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 550);
+    const timer = setTimeout(() => setReady(true), 350);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleActionClick = () => {
     if (onAction) {
@@ -42,204 +65,210 @@ export const OfferOverlay: React.FC<OfferOverlayProps> = ({
     onClose();
   };
 
-  const features = [
-    "Instant JD-based tailoring",
-    "Keyword density fixes",
-    "Project impact rewrites",
-    "Recruiter-ready formatting"
-  ];
-
-  const tags = [
-    "Instant ATS score",
-    "Keyword gap fixes",
-    "Project rewriting",
-    "Tailored to any JD"
-  ];
+  const accentText = isChristmasMode ? "text-green-400" : "text-emerald-400";
+  const accentTextSoft = isChristmasMode ? "text-green-300" : "text-emerald-300";
+  const accentIconBg = isChristmasMode ? "bg-green-400/10" : "bg-emerald-400/10";
+  const accentPanel = isChristmasMode
+    ? "border-green-400/15 bg-green-400/5"
+    : "border-emerald-400/15 bg-emerald-400/5";
 
   return (
     <AnimatePresence>
       {isOpen && ready && (
         <motion.div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto"
+          className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto p-3 sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
+          transition={{ duration: 0.2 }}
         >
-          {/* Backdrop */}
-          <motion.div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+          <motion.button
+            type="button"
+            aria-label="Close JD Optimizer offer"
+            className="fixed inset-0 cursor-default bg-slate-950/80 backdrop-blur-md"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
 
-          {/* Modal Container */}
-          <motion.div
+          <motion.section
             role="dialog"
             aria-modal="true"
-            className="relative w-full max-w-[95vw] sm:max-w-2xl lg:max-w-3xl my-auto"
-            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            aria-labelledby="jd-offer-title"
+            aria-describedby="jd-offer-description"
+            className={`relative my-auto w-full max-w-5xl overflow-hidden rounded-3xl border bg-[#07131c] shadow-[0_30px_100px_rgba(0,0,0,0.65)] ${
+              isChristmasMode ? "border-green-400/30" : "border-emerald-400/30"
+            }`}
+            initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.97 }}
+            exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
           >
-            {/* Glow Effect - Hidden on mobile for performance */}
-            <div className={`pointer-events-none absolute -inset-2 sm:-inset-3 rounded-2xl sm:rounded-3xl blur-2xl sm:blur-3xl opacity-40 sm:opacity-60 hidden sm:block ${
-              isChristmasMode
-                ? 'bg-gradient-to-r from-red-500/40 via-green-500/40 to-emerald-500/40'
-                : 'bg-gradient-to-r from-emerald-500/40 via-cyan-500/40 to-teal-500/40'
-            }`} />
+            <div
+              className={`pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b ${
+                isChristmasMode ? "from-green-500/15" : "from-emerald-500/15"
+              } to-transparent`}
+            />
+            <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
 
-            {/* Main Card */}
-            <div className={`relative overflow-hidden rounded-xl sm:rounded-2xl border shadow-2xl ${
-              isChristmasMode
-                ? 'border-green-500/30 bg-slate-900'
-                : 'border-emerald-500/30 bg-slate-900'
-            }`}>
-              {/* Background Image with Overlay - Hidden on mobile for performance */}
-              <div className="absolute inset-0 hidden sm:block">
-                <img
-                  src={imageSrc}
-                  alt="PrimoBoostAI offer"
-                  className={`h-full w-full object-${fit} opacity-15`}
-                  loading="lazy"
-                />
-                <div className={`absolute inset-0 ${
-                  isChristmasMode
-                    ? 'bg-gradient-to-br from-slate-900/98 via-slate-900/95 to-green-900/90'
-                    : 'bg-gradient-to-br from-slate-900/98 via-slate-900/95 to-emerald-900/90'
-                }`} />
-              </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close offer"
+              className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-slate-900/80 text-slate-300 transition hover:border-white/20 hover:bg-slate-800 hover:text-white sm:right-6 sm:top-6"
+            >
+              <X className="h-5 w-5" />
+            </button>
 
-              {/* Close Button */}
-              <button
-                onClick={onClose}
-                aria-label="Close offer"
-                className={`absolute top-3 right-3 sm:top-4 sm:right-4 z-20 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full transition-all duration-200 ${
-                  isChristmasMode
-                    ? 'bg-slate-800/90 active:bg-red-500/20 text-slate-300 active:text-red-400 border border-slate-700/50'
-                    : 'bg-slate-800/90 active:bg-emerald-500/20 text-slate-300 active:text-emerald-400 border border-slate-700/50'
-                }`}
-              >
-                <X className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {/* Content */}
-              <div className="relative flex flex-col gap-4 p-4 sm:p-6 md:p-8 max-h-[80vh] overflow-y-auto">
-                {/* Main Content - Single Column on Mobile */}
-                <div className="space-y-4">
-                  {/* Badge */}
-                  <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs sm:text-sm font-semibold backdrop-blur-md ${
+            <div className="relative grid max-h-[90vh] overflow-y-auto lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="flex flex-col justify-center px-5 py-8 sm:px-9 sm:py-10 lg:px-12 lg:py-14">
+                <div
+                  className={`mb-6 inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.16em] ${
                     isChristmasMode
-                      ? 'bg-green-500/15 border border-green-500/30 text-green-300'
-                      : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                  }`}>
-                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>PrimoBoost AI Optimizer</span>
-                  </div>
+                      ? "border-green-400/25 bg-green-400/10 text-green-300"
+                      : "border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  PrimoBoost · JD Optimizer
+                </div>
 
-                  {/* Headline */}
-                  <div>
-                    <h3 className="text-xl sm:text-2xl md:text-3xl font-bold text-white leading-tight">
-                      Your Resume Isn't Getting Shortlisted?
-                    </h3>
-                    <p className={`text-lg sm:text-xl md:text-2xl font-semibold mt-1 ${
-                      isChristmasMode ? 'text-green-400' : 'text-emerald-400'
-                    }`}>
-                      Fix it in 60 Seconds.
-                    </p>
-                  </div>
+                <p className="mb-3 text-sm font-semibold text-cyan-300">
+                  Built for the job you want
+                </p>
+                <h2
+                  id="jd-offer-title"
+                  className="max-w-xl text-3xl font-bold leading-[1.12] tracking-tight text-white sm:text-4xl lg:text-[2.75rem]"
+                >
+                  Turn one resume into the right resume for the role.
+                </h2>
+                <p
+                  id="jd-offer-description"
+                  className="mt-5 max-w-xl text-sm leading-6 text-slate-300 sm:text-base sm:leading-7"
+                >
+                  Compare your resume with the job description, identify meaningful gaps,
+                  and create an editable, role-focused version before you apply.
+                </p>
 
-                  {/* Description - Hidden on very small screens */}
-                  <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                    ATS score, missing keywords, weak projects - PrimoBoost AI finds and fixes everything before recruiters ever see your resume.
-                  </p>
-
-                  {/* Tags - Scrollable on mobile */}
-                  <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                    {tags.map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm bg-slate-800/60 border border-slate-700/50 text-slate-300"
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Features Card - Inline on mobile */}
-                  <div className={`rounded-xl p-4 backdrop-blur-md ${
-                    isChristmasMode
-                      ? 'bg-slate-800/50 border border-green-500/20'
-                      : 'bg-slate-800/50 border border-emerald-500/20'
-                  }`}>
-                    {/* ATS Score Badge */}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-slate-300 font-medium">ATS Score Boost</span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        isChristmasMode
-                          ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      }`}>
-                        +25 pts avg
-                      </span>
+                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                  {benefits.map((benefit) => (
+                    <div key={benefit} className="flex items-start gap-2.5 text-sm text-slate-200">
+                      <CheckCircle2
+                        className={`mt-0.5 h-4 w-4 shrink-0 ${
+                          isChristmasMode ? "text-green-400" : "text-emerald-400"
+                        }`}
+                      />
+                      <span>{benefit}</span>
                     </div>
+                  ))}
+                </div>
 
-                    <hr className={`mb-3 ${
-                      isChristmasMode ? 'border-green-500/20' : 'border-emerald-500/20'
-                    }`} />
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <motion.button
+                    type="button"
+                    whileHover={{ y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleActionClick}
+                    className={`group flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r px-6 font-semibold text-slate-950 shadow-lg transition ${
+                      isChristmasMode
+                        ? "from-green-400 to-emerald-300 shadow-green-500/15"
+                        : "from-emerald-400 to-cyan-400 shadow-emerald-500/15"
+                    }`}
+                  >
+                    {ctaLabel}
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </motion.button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="h-11 px-4 text-sm font-medium text-slate-400 transition hover:text-white"
+                  >
+                    Maybe later
+                  </button>
+                </div>
 
-                    {/* Features List - Compact on mobile */}
-                    <div>
-                      <p className="font-semibold text-white text-sm mb-2">What you get</p>
-                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {features.map((line) => (
-                          <li key={line} className="flex items-center gap-2">
-                            <CheckCircle className={`w-4 h-4 flex-shrink-0 ${
-                              isChristmasMode ? 'text-green-400' : 'text-emerald-400'
-                            }`} />
-                            <span className="text-xs sm:text-sm text-slate-300">{line}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-
-                  {/* CTA Buttons - Full width on mobile */}
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 pt-1">
-                    <motion.button
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleActionClick}
-                      className={`group flex items-center justify-center gap-2 h-11 sm:h-12 px-5 sm:px-6 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 w-full sm:w-auto ${
-                        isChristmasMode
-                          ? 'bg-gradient-to-r from-red-500 via-emerald-500 to-green-600 active:shadow-green-500/40'
-                          : 'bg-gradient-to-r from-emerald-500 to-cyan-500 active:shadow-emerald-500/40'
-                      }`}
-                    >
-                      <span className="text-sm sm:text-base">{ctaLabel}</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </motion.button>
-
-                    <button
-                      onClick={onClose}
-                      className="text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors h-10 px-4"
-                    >
-                      Not now
-                    </button>
-                  </div>
+                <div className="mt-5 flex items-center gap-2 text-xs text-slate-500">
+                  <ShieldCheck className={`h-4 w-4 ${accentText}`} />
+                  Review every change before export. No hiring guarantees.
                 </div>
               </div>
 
-              {/* Bottom Gradient Line */}
-              <div className={`absolute inset-x-0 bottom-0 h-1 ${
-                isChristmasMode
-                  ? 'bg-gradient-to-r from-red-500 via-green-500 to-emerald-500'
-                  : 'bg-gradient-to-r from-emerald-500 via-cyan-500 to-teal-500'
-              }`} />
+              <div className="relative border-t border-white/10 bg-slate-950/45 p-5 sm:p-9 lg:border-l lg:border-t-0 lg:p-10">
+                <div className="flex h-full min-h-[390px] items-center justify-center">
+                  <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0c1925] p-4 shadow-2xl sm:p-5">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accentIconBg}`}>
+                          <Target className={`h-5 w-5 ${accentText}`} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                            JD alignment preview
+                          </p>
+                          <p className="mt-0.5 font-semibold text-white">Graduate Software Engineer</p>
+                        </div>
+                      </div>
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">
+                        Preview
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-rose-400/10 bg-rose-400/5 p-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-rose-300">Before</p>
+                        <p className="mt-2 text-xs leading-5 text-slate-400">Generic summary and unsupported role keywords</p>
+                      </div>
+                      <div className={`rounded-xl border p-3 ${accentPanel}`}>
+                        <p className={`text-[11px] font-bold uppercase tracking-wider ${accentTextSoft}`}>Optimized</p>
+                        <p className="mt-2 text-xs leading-5 text-slate-300">Role-aligned content backed by resume evidence</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/70 p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                        <FileText className="h-4 w-4 text-cyan-300" />
+                        Skills found in your projects
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {matchedSkills.map((skill) => (
+                          <span
+                            key={skill}
+                            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2.5">
+                      {["Mandatory skill gaps separated", "Project bullets strengthened", "ATS-safe structure retained"].map(
+                        (item) => (
+                          <div key={item} className="flex items-center gap-2.5 rounded-lg bg-white/[0.025] px-3 py-2.5 text-xs text-slate-300">
+                            <CheckCircle2 className={`h-4 w-4 shrink-0 ${accentText}`} />
+                            {item}
+                          </div>
+                        )
+                      )}
+                    </div>
+
+                    <p className="mt-4 text-center text-[10px] uppercase tracking-[0.14em] text-slate-600">
+                      Illustrative product preview
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </motion.div>
+
+            <div
+              className={`absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r ${
+                isChristmasMode
+                  ? "from-green-400 via-emerald-300 to-green-500"
+                  : "from-emerald-400 via-cyan-400 to-teal-400"
+              }`}
+            />
+          </motion.section>
         </motion.div>
       )}
     </AnimatePresence>

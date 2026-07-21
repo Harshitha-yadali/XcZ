@@ -3,6 +3,8 @@
  * Keep this file free of browser and Node-specific types so the same scorer can
  * run in the web application, tests, and the Supabase Edge runtime.
  */
+import type { ResumeEvidenceDocument } from './resumeEvidence.ts';
+
 export interface Education {
   degree: string;
   school: string;
@@ -62,7 +64,7 @@ export interface ResumeData {
   additionalSections?: AdditionalSection[];
   achievements?: string[];
   origin?: string;
-  evidenceDocument?: import('./resumeEvidence').ResumeEvidenceDocument;
+  evidenceDocument?: ResumeEvidenceDocument;
 }
 
 export type UserType = 'fresher' | 'experienced' | 'student';

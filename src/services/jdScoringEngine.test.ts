@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ResumeData } from '../types/resume';
 import { scoreResumeAgainstJD } from './jdScoringEngine';
+import { normalizeCanonicalResume } from './canonicalResumeNormalizer';
 
 const backendJd = `
   We are hiring a Backend Software Engineer with 3+ years of experience.
@@ -136,5 +137,49 @@ Responsibilities: Build REST APIs and test backend services.`;
       alignedResume,
       'Job Title: Backend Engineer\nRequired: Python.\n---\nJob Title: Data Analyst\nRequired: SQL.',
     )).toThrow(/one job description/i);
+  });
+
+  it('normalizes legacy string fields before canonical scoring', () => {
+    const legacyResume = normalizeCanonicalResume({
+      name: 'Candidate',
+      email: 'candidate@example.com',
+      experience: [{
+        title: 'Backend Intern',
+        organization: 'Example Systems',
+        dates: 2025,
+        responsibilities: 'Built Python APIs\n- Improved database queries',
+      }],
+      projects: [{
+        name: 'Student Result System',
+        technologies: 'Python, Flask, MySQL',
+        points: 'Built a REST API\n• Tested endpoints with Postman',
+      }],
+      skills: { Languages: 'Python, JavaScript', Frameworks: ['Flask'] },
+      certifications: { title: 'Invalid non-array value' },
+    });
+
+    expect(legacyResume.workExperience[0].bullets).toEqual([
+      'Built Python APIs',
+      'Improved database queries',
+    ]);
+    expect(legacyResume.projects[0].techStack).toEqual(['Python', 'Flask', 'MySQL']);
+    expect(legacyResume.skills.flatMap(group => group.list)).toEqual(['Python', 'JavaScript', 'Flask']);
+    expect(() => scoreResumeAgainstJD(legacyResume, backendJd, 'fresher')).not.toThrow();
+  });
+
+  it('never awards points without allowed-section evidence on sparse resumes', () => {
+    const sparseResume = normalizeCanonicalResume({
+      name: 'Candidate',
+      email: 'candidate@example.com',
+      summary: 'Python engineer interested in reliable financial services.',
+      projects: [{ name: 'API Project', technologies: 'Python, Flask' }],
+    });
+    const result = scoreResumeAgainstJD(sparseResume, backendJd, 'fresher');
+    const unsupportedAwards = result.parameters.filter(parameter =>
+      parameter.score > 0 && (!Array.isArray(parameter.evidence) || parameter.evidence.length === 0)
+    );
+
+    expect(unsupportedAwards).toEqual([]);
+    expect(result.parameters.find(parameter => parameter.id === 23)?.score).toBe(0);
   });
 });

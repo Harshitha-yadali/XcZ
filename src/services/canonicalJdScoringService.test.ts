@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResumeData } from '../types/resume';
 
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+const { invokeMock, refreshSessionMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  refreshSessionMock: vi.fn(),
+}));
 vi.mock('../lib/supabaseClient', () => ({
-  supabase: { functions: { invoke: invokeMock } },
+  supabase: {
+    functions: { invoke: invokeMock },
+    auth: { refreshSession: refreshSessionMock },
+  },
 }));
 
 import { CANONICAL_JD_SCORING_VERSION, CanonicalJdScoringService } from './canonicalJdScoringService';
@@ -17,7 +23,10 @@ const resume: ResumeData = {
 const jd = 'Hiring a Python backend engineer to build reliable services and APIs.';
 
 describe('CanonicalJdScoringService', () => {
-  beforeEach(() => invokeMock.mockReset());
+  beforeEach(() => {
+    invokeMock.mockReset();
+    refreshSessionMock.mockReset();
+  });
 
   it('sends version, candidate type, and context to the backend source of truth', async () => {
     const scoreResult = scoreResumeAgainstJD(resume, jd, 'fresher');
@@ -68,5 +77,56 @@ describe('CanonicalJdScoringService', () => {
       candidateType: 'fresher',
       context: 'smart_before',
     })).rejects.toThrow('version mismatch');
+  });
+
+  it('surfaces the Edge Function JSON error instead of the generic non-2xx message', async () => {
+    const response = new Response(JSON.stringify({ error: 'Scoring history could not be saved.' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    invokeMock.mockResolvedValue({
+      data: null,
+      error: Object.assign(new Error('Edge Function returned a non-2xx status code'), { context: response }),
+    });
+
+    await expect(CanonicalJdScoringService.score({
+      resumeData: resume,
+      jobDescription: jd,
+      candidateType: 'fresher',
+      context: 'smart_before',
+    })).rejects.toThrow('Scoring history could not be saved.');
+  });
+
+  it('refreshes an expired session and retries the scoring request once', async () => {
+    const scoreResult = scoreResumeAgainstJD(resume, jd, 'fresher');
+    invokeMock
+      .mockResolvedValueOnce({
+        data: null,
+        error: Object.assign(new Error('Unauthorized'), {
+          context: new Response(JSON.stringify({ error: 'Invalid user token' }), { status: 401 }),
+        }),
+      })
+      .mockResolvedValueOnce({
+        data: {
+          scoreResult,
+          scoreId: 'score-id',
+          inputHash: 'input-hash',
+          scoringVersion: CANONICAL_JD_SCORING_VERSION,
+          cacheHit: false,
+        },
+        error: null,
+      });
+    refreshSessionMock.mockResolvedValue({ error: null });
+
+    const result = await CanonicalJdScoringService.score({
+      resumeData: resume,
+      jobDescription: jd,
+      candidateType: 'fresher',
+      context: 'smart_before',
+    });
+
+    expect(refreshSessionMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(result.scoreId).toBe('score-id');
   });
 });

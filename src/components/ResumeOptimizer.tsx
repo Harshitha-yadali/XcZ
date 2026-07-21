@@ -218,6 +218,11 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   }>({ type: null, status: null, message: '' });
 
   const [optimizationInterrupted, setOptimizationInterrupted] = useState(false);
+  const [optimizationError, setOptimizationError] = useState<{
+    title: string;
+    message: string;
+    creditRestored: boolean;
+  } | null>(null);
   const [showOptimizationQuality, setShowOptimizationQuality] = useState(false);
   const [availableOptimizationCredits, setAvailableOptimizationCredits] = useState(0);
   const [processingQualityTier, setProcessingQualityTier] = useState<JdOptimizationTierId | null>(null);
@@ -256,6 +261,7 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     setCurrentStep(0);
     setActiveTab('resume');
     setOptimizationInterrupted(false);
+    setOptimizationError(null);
     setParameter16Scores(null);
     setUserActionsRequired([]);
     setJdOptimizationResult(null);
@@ -372,6 +378,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setParameter16Scores(null);
       setOptimizationScoreSummary(null);
       setUserActionsRequired([]);
+      setOptimizationError(null);
 
       const reservation = await paymentService.reserveOptimization(user!.id, qualityTier.id, optimizationRunId);
       if (!reservation.success || !reservation.reservationId) {
@@ -610,16 +617,26 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setOptimizedResume(finalOptimizedResume);
     } catch (error) {
       console.error('Error in final optimization pass:', error);
+      let creditRestored = !creditReservationId;
       if (creditReservationId && !creditFinalized) {
         const refund = await paymentService.refundCreditReservation(creditReservationId);
         if (!refund.success) {
           console.error('Failed to restore reserved optimization usage:', refund.error);
         } else {
+          creditRestored = true;
           await checkSubscriptionStatus();
           setWalletRefreshKey(prevKey => prevKey + 1);
         }
       }
-      alert(error instanceof Error ? error.message : 'Failed to complete resume optimization. Please try again.');
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'Failed to complete resume optimization. Please try again.';
+      const isScoringFailure = /JD scoring|scoring service|score.*unavailable|session expired/i.test(errorMessage);
+      setOptimizationError({
+        title: isScoringFailure ? 'JD analysis could not be completed' : 'Resume optimization stopped',
+        message: errorMessage,
+        creditRestored,
+      });
     } finally {
       setIsOptimizing(false);
       setIsCalculatingScore(false);
@@ -1202,6 +1219,49 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       {isChristmasMode && <ChristmasSnow count={40} />}
 
       <div className="container-responsive py-8 relative z-10">
+        {optimizationError && (
+          <div
+            role="alert"
+            className="mx-auto mb-6 max-w-4xl rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] p-4 shadow-xl backdrop-blur-sm sm:p-5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 text-amber-300">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-white">{optimizationError.title}</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-300">{optimizationError.message}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                    optimizationError.creditRestored
+                      ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                      : 'border-amber-400/20 bg-amber-400/10 text-amber-200'
+                  }`}>
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    {optimizationError.creditRestored
+                      ? 'Credit was not charged or was restored'
+                      : 'Credit restoration needs verification'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOptimizationError(null)}
+                    className="text-xs font-semibold text-cyan-300 transition hover:text-cyan-200"
+                  >
+                    Dismiss and retry
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOptimizationError(null)}
+                aria-label="Dismiss optimization error"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
         {!optimizedResume ? (
           <>
             <button

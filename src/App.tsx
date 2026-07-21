@@ -886,7 +886,7 @@ const handleDiwaliCTAClick = useCallback(() => {
             isOpen={showWelcomeOffer}
             onClose={() => setShowWelcomeOffer(false)}
             targetPath="/optimizer"
-            ctaLabel="Optimize Resume Now"
+            ctaLabel="Open JD Optimizer"
           />
         )}
       

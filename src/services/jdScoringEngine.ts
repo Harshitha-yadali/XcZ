@@ -367,6 +367,14 @@ function getEvidenceSegmentsBySection(resume: ResumeData): Record<ResumeSectionK
   ));
   resume.education?.forEach(item => sections.education.push(`${item.degree} at ${item.school} (${item.year})`));
   resume.certifications?.forEach(item => sections.certifications.push(typeof item === 'string' ? item : `${item.title}: ${item.description}`));
+  if (resume.evidenceDocument) {
+    Object.entries(resume.evidenceDocument.sections).forEach(([section, evidence]) => {
+      const sectionKind = section as ResumeSectionKind;
+      if (evidence?.sourceText && sections[sectionKind]) {
+        sections[sectionKind].push(evidence.sourceText);
+      }
+    });
+  }
   Object.keys(sections).forEach(key => {
     sections[key as ResumeSectionKind] = [...new Set(sections[key as ResumeSectionKind].map(value => value.trim()).filter(Boolean))];
   });
@@ -460,13 +468,17 @@ function collectParameterEvidence(
   }
 
   if (parameter.id === 3 && resume.evidenceDocument) {
-    return Object.values(resume.evidenceDocument.sections).map(section => section.heading).slice(0, 5);
+    const headings = Object.values(resume.evidenceDocument.sections).map(section => section.heading).filter(Boolean);
+    if (headings.length > 0) return headings.slice(0, 5);
   }
   if (parameter.id === 4 && resume.evidenceDocument?.bullets.length) {
     return resume.evidenceDocument.bullets.map(bullet => bullet.sourceText.trim()).slice(0, 3);
   }
   if (matchingSegments.length === 0 && parameter.score > 0 && parameter.id <= 5) {
     return [`Rule-based check passed: ${parameter.name}`];
+  }
+  if (matchingSegments.length === 0 && parameter.id === 10) {
+    return segments.slice(0, 3);
   }
   return matchingSegments.slice(0, 3);
 }
@@ -1587,10 +1599,22 @@ export function scoreResumeAgainstJD(
     applicable: parameter.applicable !== false,
   }));
 
-  let parameters = categorizedParameters.map(parameter => ({
-    ...parameter,
-    evidence: collectParameterEvidence(parameter, resume, jd, keywordSkillContext),
-  }));
+  let parameters = categorizedParameters.map(parameter => {
+    const evidence = collectParameterEvidence(parameter, resume, jd, keywordSkillContext);
+    if (parameter.score > 0 && evidence.length === 0) {
+      return {
+        ...parameter,
+        score: 0,
+        percentage: 0,
+        evidence,
+        suggestions: [
+          ...parameter.suggestions,
+          `No evidence was found in the allowed resume section for ${parameter.name}`,
+        ],
+      };
+    }
+    return { ...parameter, evidence };
+  });
 
   const categoryNames = Object.keys(CATEGORY_WEIGHTS);
   const categories: CategoryScore[] = categoryNames.map(catName => {

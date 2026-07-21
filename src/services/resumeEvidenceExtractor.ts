@@ -11,7 +11,7 @@ import type {
   ResumeSectionKind,
   SectionEvidence,
   SkillEvidence,
-} from '../types/resumeEvidence';
+} from '../types/resumeEvidence.ts';
 
 export const SECTION_ALIASES: Record<Exclude<ResumeSectionKind, 'header'>, readonly string[]> = {
   summary: ['summary', 'professional summary', 'career summary', 'objective', 'career objective', 'profile', 'about me'],
