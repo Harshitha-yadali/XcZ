@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { ResumeData, UserType } from '../types/resume';
 import { ExportOptions, defaultExportOptions, layoutConfigs } from '../types/export';
 import { LiveResumePreviewControls } from './LiveResumePreviewControls';
+import { getCertificationDisplayParts } from '../utils/certificationFormatting';
 
 
 // ---------- Helper Functions (replicated from exportUtils.ts for consistency) ----------
@@ -572,61 +573,33 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
         <ul style={{ marginLeft: mmToPx(PDF_CONFIG.spacing.bulletIndent), listStyleType: 'disc' }}>
           {certs.map((cert, index) => {
             if (!cert) return null;
+            const { title, description } = getCertificationDisplayParts(cert);
+            const titleEff = isPlaceholderText(title) ? '' : title;
+            const descEff = isPlaceholderText(description) ? '' : description;
+            if (!titleEff && !descEff) return null;
 
-            // Handle string and object formats gracefully
-            if (typeof cert === 'string') {
-              return (
-                <li key={index} style={listItemStyle}>
-                  <span>{cert}</span>
-                </li>
-              );
-            } else if (typeof cert === 'object' && 'title' in cert) {
-              const certObj = cert as any;
-              const title = toPlainText(certObj.title);
-              const description = toPlainText(certObj.description);
-              const titleEff = isPlaceholderText(title) ? '' : title;
-              const descEff = isPlaceholderText(description) ? '' : description;
-              const primary = titleEff || descEff;
-              return (
-                <li key={index} style={listItemStyle}>
-                  <div>
-                    {titleEff && (
-                      <div style={{ fontWeight: 'bold', marginBottom: mmToPx(1) }}>
-                        {titleEff}
-                      </div>
-                    )}
-                    {descEff && descEff !== titleEff && (
-                      <div style={{
-                        fontSize: '10px',
-                        lineHeight: '1.4',
-                        color: '#000000',
-                        marginLeft: mmToPx(2)
-                      }}>
-                        {descEff}
-                      </div>
-                    )}
-                    {!titleEff && primary && (
-                      <div>{primary}</div>
-                    )}
-                  </div>
-                </li>
-              );
-            } else if (typeof cert === 'object') {
-              const primary = toPlainText(cert);
-              const desc = toPlainText((cert as any)?.description);
-              const text = primary || desc || String(cert);
-              return (
-                <li key={index} style={listItemStyle}>
-                  <span>{text}</span>
-                </li>
-              );
-            } else {
-              return (
-                <li key={index} style={listItemStyle}>
-                  <span>{String(cert)}</span>
-                </li>
-              );
-            }
+            return (
+              <li key={index} style={listItemStyle}>
+                <div>
+                  {titleEff && (
+                    <div style={{ fontWeight: 'bold', marginBottom: descEff ? mmToPx(1) : 0 }}>
+                      {titleEff}
+                    </div>
+                  )}
+                  {descEff && descEff !== titleEff && (
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: 'normal',
+                      lineHeight: '1.4',
+                      color: '#000000',
+                      marginLeft: titleEff ? mmToPx(2) : 0
+                    }}>
+                      {descEff}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
           })}
         </ul>
       </div>

@@ -4,6 +4,7 @@ import { ResumeData, Certification } from '../types/resume'; // Import Certifica
 import { saveAs } from 'file-saver';
 import { ExportOptions, defaultExportOptions } from '../types/export';
 import { UserType } from '../types/resume';
+import { getCertificationDisplayParts } from './certificationFormatting';
 
 // Map font family names to jsPDF compatible fonts
 const mapFontFamily = (fontFamily: string): string => {
@@ -318,31 +319,25 @@ function renderCertificationsForPDF(state: PageState, certifications: (string | 
   filtered.forEach((cert) => {
     if (!checkPageSpace(state, 10, PDF_CONFIG)) addNewPage(state, PDF_CONFIG);
 
-    if (typeof cert === 'object' && cert !== null) {
-      const anyC: any = cert;
-      const title = toPlainText(anyC.title);
-      const desc = toPlainText(anyC.description);
-      const primary = title || desc;
-      const titleHeight = drawText(state, `• ${primary}` , PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
+    const { title, description } = getCertificationDisplayParts(
+      cert as string | Record<string, unknown>,
+    );
+    const primary = title || description;
+
+    if (primary) {
+      const titleHeight = drawText(state, `• ${primary}`, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
         fontWeight: 'bold',
         maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
       });
       totalHeight += titleHeight;
 
-      if (desc && title && desc !== title) {
+      if (description && title && description !== title) {
         state.currentY += 1;
-        const descHeight = drawText(state, desc, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent * 2, PDF_CONFIG, {
+        const descHeight = drawText(state, description, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent * 2, PDF_CONFIG, {
           maxWidth: PDF_CONFIG.contentWidth - (PDF_CONFIG.spacing.bulletIndent * 2)
         });
         totalHeight += descHeight + 1;
       }
-    } else {
-      const bulletText = `• ${toPlainText(cert)}`;
-      const certHeight = drawText(state, bulletText, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-        fontSize: PDF_CONFIG.fonts.body.size,
-        maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-      });
-      totalHeight += certHeight;
     }
     state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
   });
@@ -1204,25 +1199,12 @@ const generateWordHTMLContent = (data: ResumeData, userType: UserType = 'experie
               : (cert && (!isPlaceholderText(toPlainText(cert)) || !isPlaceholderText(toPlainText(cert.description))))
           )
           .map((cert: any) => {
-          let certText = '';
-          if (typeof cert === 'object' && cert !== null) {
-            const title = toPlainText(cert.title) || toPlainText(cert);
-            const description = toPlainText(cert.description);
-            
-            if (title && description && description !== title) {
-              // Format with title on one line and description indented below
-              certText = `
-                <div style="font-weight: bold; margin-bottom: 2pt;">${title}</div>
-                <div style="font-size: 8.5pt; color: #4a5568; margin-left: 3mm; line-height: 1.3;">${description}</div>
-              `;
-            } else {
-              // Single line format
-              const primary = title || description;
-              certText = primary;
-            }
-          } else {
-            certText = String(cert);
-          }
+          const { title, description } = getCertificationDisplayParts(cert);
+          const primary = title || description;
+          const certText = description && title ? `
+            <div style="font-weight: bold; margin-bottom: 2pt;">${title}</div>
+            <div style="font-size: 8.5pt; font-weight: normal; color: #4a5568; margin-left: 3mm; line-height: 1.3;">${description}</div>
+          ` : primary;
           return `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 4pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${certText}</li>`;
         }).join('')}
       </ul>
