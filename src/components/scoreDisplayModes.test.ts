@@ -42,25 +42,7 @@ const result = {
 } as any;
 
 describe('Quick, Smart, and Deep score presentation', () => {
-  it('shows no numeric score or comparison in Quick Scan', () => {
-    const html = renderToStaticMarkup(React.createElement(ScoreDeltaDisplay, {
-      result,
-      mode: 'scan',
-    }));
-
-    expect(html).toContain('Quick Scan Complete');
-    expect(html).toContain('Scan Findings');
-    expect(html).not.toContain('Current Match');
-    expect(html).not.toContain('Before Optimization');
-    expect(html).not.toContain('After Optimization');
-    expect(html).not.toContain('56%');
-    expect(html).not.toContain('78%');
-    expect(html).not.toContain('44%');
-    expect(html).not.toContain('88%');
-    expect(html).not.toContain('/100');
-  });
-
-  it.each(['smart', 'deep'])('shows canonical Before and After scores for %s', () => {
+  it.each(['quick', 'smart', 'deep'])('shows canonical Before and After scores for %s', () => {
     const html = renderToStaticMarkup(React.createElement(ScoreDeltaDisplay, {
       result,
       mode: 'comparison',
@@ -73,9 +55,9 @@ describe('Quick, Smart, and Deep score presentation', () => {
     expect(html).toContain('ATS points');
   });
 
-  it('keeps the legacy Quick fallback display score-free', () => {
+  it('shows the Quick fallback as an optimization comparison', () => {
     const html = renderToStaticMarkup(React.createElement(Parameter16ScoreDisplay, {
-      mode: 'scan',
+      mode: 'comparison',
       compact: true,
       overallBefore: 56,
       overallAfter: 78,
@@ -89,11 +71,10 @@ describe('Quick, Smart, and Deep score presentation', () => {
       }],
     }));
 
-    expect(html).toContain('Quick Scan Complete');
-    expect(html).toContain('Hard Skills');
-    expect(html).not.toContain('56%');
-    expect(html).not.toContain('78%');
-    expect(html).not.toContain('40%');
-    expect(html).not.toContain('Current Match');
+    expect(html).toContain('16-Parameter ATS Score');
+    expect(html).toContain('56%');
+    expect(html).toContain('78%');
+    expect(html).toContain('Before');
+    expect(html).toContain('After');
   });
 });

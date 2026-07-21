@@ -35,6 +35,7 @@ export interface JdOptimizationTier {
   summaryRewriting: boolean;
   experienceRewriting: boolean;
   projectRewriting: boolean;
+  projectAnalysis: boolean;
   roleStrategy: 'Not included' | 'Basic' | 'Detailed';
   accuracyCheck: string;
   bestFor: string;
@@ -49,7 +50,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     badge: 'Fastest',
     regularRate: 49,
     creditCost: 1,
-    unitLabel: 'scan',
+    unitLabel: 'optimization',
     packages: [
       { size: 1, offerPrice: 19, regularValue: 49, perOptimization: 19, discountPercentage: 61, credits: 1, addOnId: 'jd_optimization_quick' },
       { size: 5, offerPrice: 89, regularValue: 245, perOptimization: 17.80, discountPercentage: 64, credits: 5, addOnId: 'jd_optimization_quick_5' },
@@ -62,15 +63,16 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     mode: 'light',
     aiPasses: 1,
     refinementModels: [],
-    sectionSuggestions: false,
-    summaryRewriting: false,
-    experienceRewriting: false,
-    projectRewriting: false,
+    sectionSuggestions: true,
+    summaryRewriting: true,
+    experienceRewriting: true,
+    projectRewriting: true,
+    projectAnalysis: false,
     roleStrategy: 'Not included',
     accuracyCheck: 'Basic',
-    bestFor: 'Checking your match',
+    bestFor: 'Fast basic rewrite',
     cta: 'Run Quick Scan',
-    description: 'A fast ATS and JD-match diagnosis without a full resume rewrite.',
+    description: 'A fast one-pass basic rewrite of the full resume for the selected job.',
   },
   {
     id: 'smart',
@@ -95,6 +97,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     summaryRewriting: true,
     experienceRewriting: true,
     projectRewriting: true,
+    projectAnalysis: true,
     roleStrategy: 'Basic',
     accuracyCheck: 'Verified',
     bestFor: 'Most job applications',
@@ -124,6 +127,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     summaryRewriting: true,
     experienceRewriting: true,
     projectRewriting: true,
+    projectAnalysis: true,
     roleStrategy: 'Detailed',
     accuracyCheck: 'Enhanced audited',
     bestFor: 'Important applications',

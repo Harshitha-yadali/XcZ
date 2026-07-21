@@ -598,11 +598,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       await checkSubscriptionStatus();
       setWalletRefreshKey(prevKey => prevKey + 1);
 
-      setChangedSections(
-        qualityTier.id === 'quick'
-          ? []
-          : ['workExperience', 'education', 'projects', 'skills', 'certifications'],
-      );
+      setChangedSections(['workExperience', 'education', 'projects', 'skills', 'certifications']);
       if (user) {
         try {
           await authService.incrementResumesCreatedCount(user.id);
@@ -655,9 +651,8 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       // setOptimizedResume(resumeData); // REMOVED - was causing mobile to skip optimization
       setParsedResumeData(resumeData);
       
-      if (selectedOptimizationTierRef.current === 'quick') {
-        await proceedWithFinalOptimization(resumeData, null as any, accessToken);
-      } else if (resumeData.projects && resumeData.projects.length > 0) {
+      const selectedTier = getJdOptimizationTier(selectedOptimizationTierRef.current);
+      if (selectedTier.projectAnalysis && resumeData.projects && resumeData.projects.length > 0) {
         setShowProjectAnalysis(true);
       } else {
         // Pass null for initialScore since we're not using OpenRouter scoring
@@ -672,7 +667,8 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   }, [jobDescription, proceedWithFinalOptimization]); // Dependencies for memoized function
 
  const continueOptimizationProcess = useCallback(async (resumeData: ResumeData, accessToken: string) => { // Memoize
-  // Quick Scan is diagnostic and must never force users through data-entry.
+  // Quick performs its one-pass rewrite immediately and does not force users
+  // through the Smart/Deep project-analysis or missing-data workflow.
   const missing = selectedOptimizationTierRef.current === 'quick'
     ? []
     : checkForMissingSections(resumeData);
@@ -1363,24 +1359,24 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                     <div>
                       <div className="flex items-center space-x-2 mb-1">
                         <h3 className="text-xl font-bold text-white">
-                          {selectedOptimizationTierRef.current === 'quick' ? 'Quick Scan Completed!' : 'Resume Optimized Successfully!'}
+                          {selectedOptimizationTierRef.current === 'quick' ? 'Quick Rewrite Completed!' : 'Resume Optimized Successfully!'}
                         </h3>
                         <span className="bg-gradient-to-r from-emerald-500 to-cyan-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-md">
-                          {selectedOptimizationTierRef.current === 'quick' ? 'ANALYZED' : 'READY'}
+                          READY
                         </span>
                       </div>
                       <p className="text-sm text-slate-300 mb-2">
-                        Your resume has been {selectedOptimizationTierRef.current === 'quick' ? 'analyzed' : 'optimized'} for <span className="font-semibold text-emerald-400">{jobContext.roleTitle}</span> at <span className="font-semibold text-emerald-400">{jobContext.companyName}</span>
+                        Your resume has been optimized for <span className="font-semibold text-emerald-400">{jobContext.roleTitle}</span> at <span className="font-semibold text-emerald-400">{jobContext.companyName}</span>
                       </p>
                       <div className="flex items-center space-x-2 text-xs text-slate-400">
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'JD gaps reviewed' : 'ATS-optimized'}</span>
+                        <span>ATS-optimized</span>
                         <span>•</span>
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'Resume unchanged' : 'Keyword-matched'}</span>
+                        <span>Keyword-matched</span>
                         <span>•</span>
                         <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>{selectedOptimizationTierRef.current === 'quick' ? 'Ready to review' : 'Ready to download'}</span>
+                        <span>Ready to download</span>
                       </div>
                     </div>
                   </div>
@@ -1392,16 +1388,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                     <span>Apply Now</span>
                   </button>
                 </div>
-                {selectedOptimizationTierRef.current !== 'quick' && <div className="mt-4 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                <div className="mt-4 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
                   <p className="text-xs text-slate-400 flex items-center space-x-1">
                     <AlertCircle className="w-3 h-3" />
                     <span>Make sure to download your optimized resume before applying for future reference</span>
                   </p>
-                </div>}
+                </div>
               </div>
             )}
 
-            {optimizedResume && selectedOptimizationTierRef.current !== 'quick' && (
+            {optimizedResume && (
               <div className="flex items-start gap-3 p-4 rounded-xl border mb-2"
                 style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.3)' }}>
                 <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
@@ -1514,7 +1510,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                         result={jdOptimizationResult}
                         userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                         scoreSummaryOverride={optimizationScoreSummary || undefined}
-                        mode={selectedOptimizationTierRef.current === 'quick' ? 'scan' : 'comparison'}
+                        mode="comparison"
                       />
                     </div>
                   )}
@@ -1534,7 +1530,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                       overallAfter={parameter16Scores.overallAfter}
                       improvement={parameter16Scores.improvement}
                       compact={true}
-                      mode={selectedOptimizationTierRef.current === 'quick' ? 'scan' : 'comparison'}
+                      mode="comparison"
                     />
                   )}
                 </div>

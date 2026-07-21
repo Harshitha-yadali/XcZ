@@ -112,63 +112,6 @@ const safeFetch = async (
 };
 // --- END ---
 
-export interface QuickScanInsight {
-  category: 'keywords' | 'skills' | 'experience' | 'quantification' | 'grammar' | 'certifications' | 'projects';
-  priority: 'critical' | 'high' | 'medium';
-  title: string;
-  description: string;
-  suggestions: string[];
-}
-
-/** Gemini Flash analysis-only path. It returns recommendations and never a resume. */
-export const analyzeResumeForQuickScan = async (
-  resume: string,
-  jobDescription: string,
-  modelOverride?: string,
-): Promise<QuickScanInsight[]> => {
-  if (resume.length + jobDescription.length > MAX_INPUT_LENGTH) {
-    throw new Error(`Input too long. Combined resume and job description exceed ${MAX_INPUT_LENGTH} characters.`);
-  }
-
-  const prompt = `Analyze the resume against the job description. This is a diagnostic scan only.
-
-RESUME:
-${cleanResumeTextForAI(resume)}
-
-JOB DESCRIPTION:
-${cleanResumeTextForAI(jobDescription)}
-
-Return a JSON object with an "insights" array. Each insight must contain:
-- category: one of keywords, skills, experience, quantification, grammar, certifications, projects
-- priority: one of critical, high, medium
-- title: short diagnostic title
-- description: explain the gap without claiming the candidate has missing experience
-- suggestions: 1-3 concrete actions the candidate can take
-
-Rules:
-- Do not rewrite or return the resume.
-- Never invent skills, projects, credentials, employers, dates, metrics, or achievements.
-- Treat a JD-only requirement as missing evidence, not candidate experience.
-- Return at most 8 insights and valid JSON only.`;
-
-  const response = await safeFetch({ prompt, model: modelOverride || JD_OPTIMIZER_MODEL });
-  const cleaned = response.content.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
-  const parsed = JSON.parse(cleaned) as { insights?: QuickScanInsight[] };
-  const allowedCategories = new Set(['keywords', 'skills', 'experience', 'quantification', 'grammar', 'certifications', 'projects']);
-  const allowedPriorities = new Set(['critical', 'high', 'medium']);
-
-  return (Array.isArray(parsed.insights) ? parsed.insights : [])
-    .filter((item) => item && allowedCategories.has(item.category) && allowedPriorities.has(item.priority))
-    .slice(0, 8)
-    .map((item) => ({
-      category: item.category,
-      priority: item.priority,
-      title: String(item.title || 'Resume improvement opportunity').slice(0, 120),
-      description: String(item.description || '').slice(0, 500),
-      suggestions: (Array.isArray(item.suggestions) ? item.suggestions : []).map(String).slice(0, 3),
-    }));
-};
-
 export const optimizeResume = async (
   resume: string,
   jobDescription: string,
@@ -282,11 +225,13 @@ SECTION ORDER FOR FRESHERS:
   };
 
   const modeInstructions: Record<OptimizationMode, string> = {
-    light: `HIGHEST PRIORITY — QUICK SCAN MODE:
-- Preserve the candidate's original wording, section content, skills, experience, projects, education, and metrics.
-- Do not add, remove, rewrite, or infer any candidate claim.
-- Only normalize the supplied content into the required JSON schema.
-- Missing JD keywords must remain missing; never insert them in Quick Scan mode.`,
+    light: `HIGHEST PRIORITY — QUICK BASIC REWRITE MODE:
+- Rewrite the full resume once for clearer ATS readability and stronger alignment with the supplied job description.
+- Improve the professional summary or objective, experience bullets, project bullets, skills organization, and section wording at a basic level.
+- Preserve every candidate fact, employer, date, credential, technology, project, and metric from the source resume.
+- Never add a JD skill, qualification, project, achievement, or metric unless the original resume explicitly supports it.
+- Keep unsupported JD requirements as gaps; do not turn them into candidate claims.
+- Return the complete rewritten resume in the required JSON schema.`,
     standard: `SMART OPTIMIZE MODE:
 - Improve summary, experience, projects, section clarity, and JD alignment.
 - Use only facts supported by the supplied resume. Never invent skills, employers, metrics, dates, or achievements.`,

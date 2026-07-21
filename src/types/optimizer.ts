@@ -29,9 +29,9 @@ export interface OptimizationModeConfig {
 export const OPTIMIZATION_MODES: Record<OptimizationMode, OptimizationModeConfig> = {
   light: {
     addMissingKeywords: true,
-    rewriteBullets: false,
+    rewriteBullets: true,
     restructureSections: false,
-    generateSummary: false,
+    generateSummary: true,
     maxChangesPerSection: 2,
   },
   standard: {

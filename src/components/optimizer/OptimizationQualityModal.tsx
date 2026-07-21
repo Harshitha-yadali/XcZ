@@ -43,22 +43,24 @@ const comparisonRows: ComparisonRow[] = [
   },
   {
     label: 'Project–JD match analysis',
-    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? 'Advanced' : 'Detailed',
+    value: (tier) => tier.projectAnalysis
+      ? tier.id === 'smart' ? 'Advanced' : 'Detailed'
+      : <Included enabled={false} />,
   },
   { label: 'Section-by-section action plan', value: (tier) => <Included enabled={tier.id !== 'quick'} /> },
   {
     label: 'Professional summary rewriting',
-    value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? <Included enabled /> : 'Strategic rewrite',
+    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Strategic rewrite',
   },
   {
     label: 'Experience bullet rewriting',
-    value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? <Included enabled /> : 'Impact-focused rewrite',
+    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Impact-focused rewrite',
   },
   {
     label: 'Evidence-based project rewriting',
-    value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? <Included enabled /> : 'Detailed rewrite',
+    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Detailed rewrite',
   },
-  { label: 'Before/after score comparison', value: (tier) => <Included enabled={tier.id !== 'quick'} /> },
+  { label: 'Before/after score comparison', value: () => <Included enabled /> },
   {
     label: 'Role and seniority strategy',
     value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? 'Basic' : 'Detailed',
@@ -73,13 +75,13 @@ const comparisonRows: ComparisonRow[] = [
   },
   {
     label: 'Processing depth',
-    value: (tier) => tier.id === 'quick' ? '1 analysis stage' : tier.id === 'smart' ? '2 optimization stages' : '3 optimization stages',
+    value: (tier) => tier.id === 'quick' ? '1 optimization stage' : tier.id === 'smart' ? '2 optimization stages' : '3 optimization stages',
   },
   { label: 'Editable optimized resume', value: () => <Included enabled /> },
   { label: 'PDF/Word export', value: () => <Included enabled /> },
   {
     label: 'Best for',
-    value: (tier) => tier.id === 'quick' ? 'Checking your match' : tier.id === 'smart' ? 'Most applications' : 'Important and senior roles',
+    value: (tier) => tier.id === 'quick' ? 'Fast basic rewrite' : tier.id === 'smart' ? 'Most applications' : 'Important and senior roles',
   },
 ];
 

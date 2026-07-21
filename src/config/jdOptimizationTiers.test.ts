@@ -95,6 +95,18 @@ describe('JD optimization quality tiers', () => {
     }
   });
 
+  it('makes Quick a one-pass full rewrite without the separate project-analysis step', () => {
+    const quick = getJdOptimizationTier('quick');
+    expect(quick.aiPasses).toBe(1);
+    expect(quick.summaryRewriting).toBe(true);
+    expect(quick.experienceRewriting).toBe(true);
+    expect(quick.projectRewriting).toBe(true);
+    expect(quick.projectAnalysis).toBe(false);
+
+    expect(getJdOptimizationTier('smart').projectAnalysis).toBe(true);
+    expect(getJdOptimizationTier('deep').projectAnalysis).toBe(true);
+  });
+
   it('keeps every tier on its assigned internal model for all passes', () => {
     for (const tier of JD_OPTIMIZATION_TIERS) {
       expect(tier.refinementModels.every((model) => model === tier.modelId)).toBe(true);
