@@ -1,26 +1,25 @@
-export const DEFAULT_OPENROUTER_MODEL = 'openrouter/free';
-export const PINNED_RESUME_PARSER_MODEL = 'google/gemini-3.1-flash-lite';
-export const RESUME_PARSER_ESCALATION_MODEL = 'google/gemini-3.5-flash';
-export const QUICK_OPTIMIZATION_MODEL = 'google/gemini-3.5-flash';
-export const SMART_OPTIMIZATION_MODEL = 'openai/gpt-5.6-terra';
-export const DEEP_OPTIMIZATION_MODEL = 'anthropic/claude-opus-4.8';
+export const GEMMA_4_31B_FREE_MODEL = 'google/gemma-4-31b-it:free';
+export const GEMMA_4_26B_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
+export const NEMOTRON_3_ULTRA_FREE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
+export const NORTH_MINI_CODE_FREE_MODEL = 'cohere/north-mini-code:free';
 
-const SHARED_FREE_OPENROUTER_MODELS = [
-  'nvidia/nemotron-3-nano-30b-a3b:free',
-  'nvidia/nemotron-nano-9b-v2:free',
-  'google/gemma-3n-e2b-it:free',
-  ] as const;
-
-const LEGACY_OPENROUTER_MODELS = [
-  'google/gemma-3n-e4b-it',
-  'google/gemma-3n-e4b-it:free',
+// Keep every OpenRouter request on this explicit free-model allowlist. Do not use
+// openrouter/free: its random routing makes model quality and activity logs vary.
+export const FREE_OPENROUTER_MODELS = [
+  GEMMA_4_31B_FREE_MODEL,
+  GEMMA_4_26B_FREE_MODEL,
+  NEMOTRON_3_ULTRA_FREE_MODEL,
+  NORTH_MINI_CODE_FREE_MODEL,
 ] as const;
 
-const MODEL_FALLBACK_POOL = [
-  DEFAULT_OPENROUTER_MODEL,
-  ...SHARED_FREE_OPENROUTER_MODELS,
-  ...LEGACY_OPENROUTER_MODELS,
-] as const;
+export const DEFAULT_OPENROUTER_MODEL = GEMMA_4_31B_FREE_MODEL;
+export const PINNED_RESUME_PARSER_MODEL = GEMMA_4_31B_FREE_MODEL;
+export const RESUME_PARSER_ESCALATION_MODEL = GEMMA_4_26B_FREE_MODEL;
+export const QUICK_OPTIMIZATION_MODEL = GEMMA_4_26B_FREE_MODEL;
+export const SMART_OPTIMIZATION_MODEL = NEMOTRON_3_ULTRA_FREE_MODEL;
+export const DEEP_OPTIMIZATION_MODEL = NEMOTRON_3_ULTRA_FREE_MODEL;
+
+const MODEL_FALLBACK_POOL = FREE_OPENROUTER_MODELS;
 const SHARED_MODEL_SET = new Set<string>(MODEL_FALLBACK_POOL);
 
 const RATE_LIMIT_ERROR_PATTERNS = [
@@ -42,8 +41,10 @@ const MODEL_UNAVAILABLE_ERROR_PATTERNS = [
 
 const normalizeModelId = (model?: string) => model?.trim() || '';
 
-export const supportsCustomSamplingParameters = (model?: string) =>
-  normalizeModelId(model) !== DEEP_OPTIMIZATION_MODEL;
+export const supportsCustomSamplingParameters = (model?: string) => {
+  void model;
+  return true;
+};
 
 export const getOpenRouterTemperature = (
   model: string | undefined,
@@ -78,15 +79,11 @@ export const isUnavailableOpenRouterModelError = (error: unknown) => {
 
 export const getOpenRouterModelsToTry = (requestedModel?: string) => {
   const normalizedRequestedModel = normalizeModelId(requestedModel);
-  if (!normalizedRequestedModel) {
+  if (!normalizedRequestedModel || !SHARED_MODEL_SET.has(normalizedRequestedModel)) {
     return [...OPENROUTER_MODEL_FALLBACKS];
   }
 
-  if (SHARED_MODEL_SET.has(normalizedRequestedModel)) {
-    return dedupeModels([normalizedRequestedModel, ...OPENROUTER_MODEL_FALLBACKS]);
-  }
-
-  return [normalizedRequestedModel];
+  return dedupeModels([normalizedRequestedModel, ...OPENROUTER_MODEL_FALLBACKS]);
 };
 
 export const shouldRetryWithNextOpenRouterModel = (

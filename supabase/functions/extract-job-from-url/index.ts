@@ -14,16 +14,18 @@ const ADMIN_EMAIL = "primoboostai@gmail.com";
 const SPIRE_PUBLIC_API_BASE = "https://io.spire2grow.com/ies/v1/p";
 const SPIRE_PUBLIC_ASSET_BASE = "https://io-public.spire2grow.com";
 const SPIRE_SEARCH_PAGE_SIZE = 250;
-const LEGACY_OPENROUTER_MODEL = "google/gemma-3n-e4b-it:free";
-const DEFAULT_OPENAI_BULK_MODEL = "gpt-5-mini";
-const DEFAULT_OPENAI_STANDARD_MODEL = "gpt-5";
-const DEFAULT_OPENAI_PRIORITY_MODEL = "gpt-5.2";
-const DEFAULT_OPENROUTER_BULK_MODEL = "openai/gpt-5-mini";
-const DEFAULT_OPENROUTER_STANDARD_MODEL = "openai/gpt-5";
-const DEFAULT_OPENROUTER_PRIORITY_MODEL = "openai/gpt-5.2";
+const LEGACY_OPENROUTER_MODEL = "cohere/north-mini-code:free";
+const DEFAULT_OPENROUTER_BULK_MODEL = "google/gemma-4-26b-a4b-it:free";
+const DEFAULT_OPENROUTER_STANDARD_MODEL = "google/gemma-4-31b-it:free";
+const DEFAULT_OPENROUTER_PRIORITY_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
+const ALLOWED_OPENROUTER_MODELS = new Set([
+  DEFAULT_OPENROUTER_BULK_MODEL,
+  DEFAULT_OPENROUTER_STANDARD_MODEL,
+  DEFAULT_OPENROUTER_PRIORITY_MODEL,
+  LEGACY_OPENROUTER_MODEL,
+]);
 
 type ExtractionAiMode = "bulk" | "standard" | "priority";
-type ExtractionAiProvider = "openai" | "openrouter";
 
 interface ExtractJobRequest {
   jobUrl?: string;
@@ -2249,37 +2251,23 @@ const buildJobExtractionPrompts = (
   return { systemPrompt, userPrompt };
 };
 
-const getConfiguredExtractionAiProvider = (): ExtractionAiProvider | null => {
-  const preferredProvider = cleanWhitespace(Deno.env.get("JOB_EXTRACTION_AI_PROVIDER") || "").toLowerCase();
-  const hasOpenAi = Boolean(cleanWhitespace(Deno.env.get("OPENAI_API_KEY") || ""));
-  const hasOpenRouter = Boolean(cleanWhitespace(Deno.env.get("OPENROUTER_API_KEY") || ""));
-
-  if (preferredProvider === "openai" && hasOpenAi) return "openai";
-  if (preferredProvider === "openrouter" && hasOpenRouter) return "openrouter";
-  if (hasOpenAi) return "openai";
-  if (hasOpenRouter) return "openrouter";
-  return null;
-};
-
-const getOpenAiModelForMode = (aiMode: ExtractionAiMode): string => {
-  if (aiMode === "bulk") {
-    return cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENAI_BULK_MODEL") || DEFAULT_OPENAI_BULK_MODEL);
-  }
-
-  if (aiMode === "priority") {
-    return cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENAI_PRIORITY_MODEL") || DEFAULT_OPENAI_PRIORITY_MODEL);
-  }
-
-  return cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENAI_STANDARD_MODEL") || DEFAULT_OPENAI_STANDARD_MODEL);
-};
+const hasConfiguredExtractionAiProvider = (): boolean =>
+  Boolean(cleanWhitespace(Deno.env.get("OPENROUTER_API_KEY") || ""));
 
 const getOpenRouterModelsForMode = (aiMode: ExtractionAiMode): string[] => {
-  const preferredModel =
+  const configuredModel =
     aiMode === "bulk"
       ? cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENROUTER_BULK_MODEL") || DEFAULT_OPENROUTER_BULK_MODEL)
       : aiMode === "priority"
         ? cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENROUTER_PRIORITY_MODEL") || DEFAULT_OPENROUTER_PRIORITY_MODEL)
         : cleanWhitespace(Deno.env.get("JOB_EXTRACTION_OPENROUTER_STANDARD_MODEL") || DEFAULT_OPENROUTER_STANDARD_MODEL);
+  const preferredModel = ALLOWED_OPENROUTER_MODELS.has(configuredModel)
+    ? configuredModel
+    : aiMode === "bulk"
+      ? DEFAULT_OPENROUTER_BULK_MODEL
+      : aiMode === "priority"
+        ? DEFAULT_OPENROUTER_PRIORITY_MODEL
+        : DEFAULT_OPENROUTER_STANDARD_MODEL;
 
   return Array.from(new Set([preferredModel, LEGACY_OPENROUTER_MODEL].filter(Boolean)));
 };
@@ -2372,59 +2360,6 @@ const resolveExtractionAiMode = (params: {
   return "standard";
 };
 
-const callOpenAiForJobExtraction = async (
-  model: string,
-  sourcePlatform: string,
-  jobUrl: string,
-  metadata: SourceMetadata,
-  structuredHints: Record<string, unknown>,
-  textContent: string,
-  jsonLdNodes: Array<Record<string, unknown>>
-): Promise<Record<string, unknown>> => {
-  const openAiApiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured.");
-  }
-
-  const { systemPrompt, userPrompt } = buildJobExtractionPrompts(
-    sourcePlatform,
-    jobUrl,
-    metadata,
-    structuredHints,
-    textContent,
-    jsonLdNodes
-  );
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openAiApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-
-  const responseJson = await response.json();
-  if (!response.ok) {
-    throw new Error(getAiErrorMessage(responseJson, "OpenAI job extraction request failed."));
-  }
-
-  const content = safeString(responseJson?.choices?.[0]?.message?.content);
-  if (!content) {
-    throw new Error("OpenAI returned an empty response.");
-  }
-
-  return parseAiJsonObject(content);
-};
-
 const callOpenRouterForJobExtraction = async (
   aiMode: ExtractionAiMode,
   sourcePlatform: string,
@@ -2495,23 +2430,8 @@ const callAiForJobExtraction = async (
   textContent: string,
   jsonLdNodes: Array<Record<string, unknown>>
 ): Promise<Record<string, unknown>> => {
-  const configuredProvider = getConfiguredExtractionAiProvider();
-  if (!configuredProvider) {
-    throw new Error("No AI provider is configured for job extraction.");
-  }
-
-  if (configuredProvider === "openai") {
-    const model = getOpenAiModelForMode(aiMode);
-    console.log(`extract-job-from-url: using OpenAI model ${model} for ${aiMode} extraction.`);
-    return await callOpenAiForJobExtraction(
-      model,
-      sourcePlatform,
-      jobUrl,
-      metadata,
-      structuredHints,
-      textContent,
-      jsonLdNodes
-    );
+  if (!hasConfiguredExtractionAiProvider()) {
+    throw new Error("OPENROUTER_API_KEY is not configured for job extraction.");
   }
 
   const modelsToTry = getOpenRouterModelsForMode(aiMode).join(", ");

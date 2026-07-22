@@ -12,6 +12,7 @@ vi.mock('../config/env', () => ({
 }));
 
 import { openrouter } from './aiProxyService';
+import { GEMMA_4_26B_FREE_MODEL } from './openrouterModelConfig';
 
 describe('aiProxyService', () => {
   beforeEach(() => {
@@ -29,7 +30,7 @@ describe('aiProxyService', () => {
   it('authenticates JD optimization requests with both Supabase headers', async () => {
     await expect(
       openrouter.chat('Optimize this resume', {
-        model: 'google/gemini-3.5-flash',
+        model: GEMMA_4_26B_FREE_MODEL,
         maxTokens: 100,
       }),
     ).resolves.toBe('Optimized resume');
@@ -49,7 +50,7 @@ describe('aiProxyService', () => {
     expect(JSON.parse(requestInit.body as string)).toMatchObject({
       service: 'openrouter',
       action: 'chat',
-      model: 'google/gemini-3.5-flash',
+      model: GEMMA_4_26B_FREE_MODEL,
       prompt: 'Optimize this resume',
     });
   });

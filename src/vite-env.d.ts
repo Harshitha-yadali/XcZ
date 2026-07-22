@@ -20,7 +20,6 @@ interface ImportMetaEnv {
   
   // AI Services
   readonly VITE_EDENAI_API_KEY?: string;
-  readonly VITE_OPENROUTER_API_KEY?: string;
   readonly VITE_DEEPSEEK_API_KEY?: string;
   readonly VITE_GEMINI_API_KEY?: string;
   

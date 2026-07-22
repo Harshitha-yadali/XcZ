@@ -97,7 +97,6 @@ export const WORKER_API_URL = import.meta.env.VITE_WORKER_API_URL || '';
 // ======================
 // AI SERVICES (all routed through OpenRouter/Gemini via Edge Function)
 // ======================
-export const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
 export const EDENAI_API_KEY = '';
 export const DEEPSEEK_API_KEY = '';
 export const GEMINI_API_KEY = '';
@@ -331,7 +330,6 @@ const env = {
   
   // AI Services
   EDENAI_API_KEY,
-  OPENROUTER_API_KEY,
   DEEPSEEK_API_KEY,
   GEMINI_API_KEY,
   

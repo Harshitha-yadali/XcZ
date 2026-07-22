@@ -12,9 +12,24 @@ const jsonResponse = (data: any, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const DEFAULT_OPENROUTER_MODEL =
-  Deno.env.get("OPENROUTER_DEFAULT_MODEL")?.trim() || "openrouter/free";
-const MODELS_WITH_FIXED_SAMPLING = new Set(["anthropic/claude-opus-4.8"]);
+const ALLOWED_OPENROUTER_MODELS = new Set([
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "cohere/north-mini-code:free",
+]);
+const configuredDefaultModel = Deno.env.get("OPENROUTER_DEFAULT_MODEL")?.trim() || "";
+const DEFAULT_OPENROUTER_MODEL = ALLOWED_OPENROUTER_MODELS.has(configuredDefaultModel)
+  ? configuredDefaultModel
+  : "google/gemma-4-31b-it:free";
+const MODELS_WITH_FIXED_SAMPLING = new Set<string>();
+
+const resolveAllowedModel = (requestedModel: unknown): string | null => {
+  const model = typeof requestedModel === "string" && requestedModel.trim()
+    ? requestedModel.trim()
+    : DEFAULT_OPENROUTER_MODEL;
+  return ALLOWED_OPENROUTER_MODELS.has(model) ? model : null;
+};
 
 const withSupportedSampling = (model: string, temperature: number) =>
   MODELS_WITH_FIXED_SAMPLING.has(model) ? {} : { temperature };
@@ -47,7 +62,9 @@ async function handleOpenRouter(action: string, params: any) {
 
   switch (action) {
     case "chat": {
-      const { prompt, model = DEFAULT_OPENROUTER_MODEL, temperature = 0.3, maxTokens = 4000 } = params;
+      const { prompt, temperature = 0.3, maxTokens = 4000 } = params;
+      const model = resolveAllowedModel(params.model);
+      if (!model) return jsonResponse({ error: "Requested model is not in the free-model allowlist" }, 400);
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -65,7 +82,9 @@ async function handleOpenRouter(action: string, params: any) {
     }
 
     case "chat_with_system": {
-      const { systemPrompt, userPrompt, model = DEFAULT_OPENROUTER_MODEL, temperature = 0.3 } = params;
+      const { systemPrompt, userPrompt, temperature = 0.3 } = params;
+      const model = resolveAllowedModel(params.model);
+      if (!model) return jsonResponse({ error: "Requested model is not in the free-model allowlist" }, 400);
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {

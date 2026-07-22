@@ -127,13 +127,13 @@ describe('geminiResumeParserService', () => {
       1,
       expect.any(String),
       expect.any(String),
-      { model: 'google/gemini-3.1-flash-lite', temperature: 0.1 },
+      { model: 'google/gemma-4-31b-it:free', temperature: 0.1 },
     );
     expect(chatWithSystemMock).toHaveBeenNthCalledWith(
       2,
       expect.any(String),
       expect.any(String),
-      { model: 'google/gemini-3.5-flash', temperature: 0.05 },
+      { model: 'google/gemma-4-26b-a4b-it:free', temperature: 0.05 },
     );
   });
 });
