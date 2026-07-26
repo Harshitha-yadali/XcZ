@@ -1177,8 +1177,6 @@ export class FullResumeRewriter16ParameterService {
         });
       }
     }
-    
-    softCategory.count = softCategory.list.length;
     return changes;
   }
   
