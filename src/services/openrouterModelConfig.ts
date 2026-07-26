@@ -2,9 +2,12 @@ export const GEMMA_4_31B_FREE_MODEL = 'google/gemma-4-31b-it:free';
 export const GEMMA_4_26B_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 export const NEMOTRON_3_ULTRA_FREE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 export const NORTH_MINI_CODE_FREE_MODEL = 'cohere/north-mini-code:free';
+export const GPT_5_6_TERRA_MODEL = 'openai/gpt-5.6-terra';
+export const GEMINI_3_5_FLASH_LITE_MODEL = 'google/gemini-3.5-flash-lite';
+export const CLAUDE_OPUS_4_8_MODEL = 'anthropic/claude-opus-4.8';
 
-// Keep every OpenRouter request on this explicit free-model allowlist. Do not use
-// openrouter/free: its random routing makes model quality and activity logs vary.
+// Keep fallback traffic on explicit free models. Do not use openrouter/free:
+// its random routing makes model quality and activity logs vary.
 export const FREE_OPENROUTER_MODELS = [
   GEMMA_4_31B_FREE_MODEL,
   GEMMA_4_26B_FREE_MODEL,
@@ -12,15 +15,22 @@ export const FREE_OPENROUTER_MODELS = [
   NORTH_MINI_CODE_FREE_MODEL,
 ] as const;
 
+export const ALLOWED_OPENROUTER_MODELS = [
+  GPT_5_6_TERRA_MODEL,
+  GEMINI_3_5_FLASH_LITE_MODEL,
+  CLAUDE_OPUS_4_8_MODEL,
+  ...FREE_OPENROUTER_MODELS,
+] as const;
+
 export const DEFAULT_OPENROUTER_MODEL = GEMMA_4_31B_FREE_MODEL;
 export const PINNED_RESUME_PARSER_MODEL = GEMMA_4_31B_FREE_MODEL;
 export const RESUME_PARSER_ESCALATION_MODEL = GEMMA_4_26B_FREE_MODEL;
-export const QUICK_OPTIMIZATION_MODEL = GEMMA_4_26B_FREE_MODEL;
-export const SMART_OPTIMIZATION_MODEL = NEMOTRON_3_ULTRA_FREE_MODEL;
-export const DEEP_OPTIMIZATION_MODEL = NEMOTRON_3_ULTRA_FREE_MODEL;
+export const QUICK_OPTIMIZATION_MODEL = GEMINI_3_5_FLASH_LITE_MODEL;
+export const SMART_OPTIMIZATION_MODEL = GPT_5_6_TERRA_MODEL;
+export const DEEP_OPTIMIZATION_MODEL = CLAUDE_OPUS_4_8_MODEL;
 
 const MODEL_FALLBACK_POOL = FREE_OPENROUTER_MODELS;
-const SHARED_MODEL_SET = new Set<string>(MODEL_FALLBACK_POOL);
+const ALLOWED_MODEL_SET = new Set<string>(ALLOWED_OPENROUTER_MODELS);
 
 const RATE_LIMIT_ERROR_PATTERNS = [
   '429',
@@ -41,10 +51,8 @@ const MODEL_UNAVAILABLE_ERROR_PATTERNS = [
 
 const normalizeModelId = (model?: string) => model?.trim() || '';
 
-export const supportsCustomSamplingParameters = (model?: string) => {
-  void model;
-  return true;
-};
+export const supportsCustomSamplingParameters = (model?: string) =>
+  normalizeModelId(model) !== GPT_5_6_TERRA_MODEL;
 
 export const getOpenRouterTemperature = (
   model: string | undefined,
@@ -79,7 +87,7 @@ export const isUnavailableOpenRouterModelError = (error: unknown) => {
 
 export const getOpenRouterModelsToTry = (requestedModel?: string) => {
   const normalizedRequestedModel = normalizeModelId(requestedModel);
-  if (!normalizedRequestedModel || !SHARED_MODEL_SET.has(normalizedRequestedModel)) {
+  if (!normalizedRequestedModel || !ALLOWED_MODEL_SET.has(normalizedRequestedModel)) {
     return [...OPENROUTER_MODEL_FALLBACKS];
   }
 

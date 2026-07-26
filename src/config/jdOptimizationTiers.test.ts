@@ -24,22 +24,22 @@ describe('JD optimization quality tiers', () => {
         id: 'quick',
         regularRate: 49,
         creditCost: 1,
-        modelLabel: 'Gemma 4 26B (Free)',
-        modelId: 'google/gemma-4-26b-a4b-it:free',
+        modelLabel: 'Gemini 3.5 Flash Lite',
+        modelId: 'google/gemini-3.5-flash-lite',
       },
       {
         id: 'smart',
         regularRate: 99,
         creditCost: 1,
-        modelLabel: 'Nemotron 3 Ultra (Free)',
-        modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        modelLabel: 'GPT-5.6 Terra',
+        modelId: 'openai/gpt-5.6-terra',
       },
       {
         id: 'deep',
         regularRate: 199,
         creditCost: 1,
-        modelLabel: 'Nemotron 3 Ultra (Free)',
-        modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        modelLabel: 'Claude Opus 4.8',
+        modelId: 'anthropic/claude-opus-4.8',
       },
     ]);
   });

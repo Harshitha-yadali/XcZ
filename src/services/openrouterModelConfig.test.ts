@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALLOWED_OPENROUTER_MODELS,
+  CLAUDE_OPUS_4_8_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   DEEP_OPTIMIZATION_MODEL,
   FREE_OPENROUTER_MODELS,
+  GEMINI_3_5_FLASH_LITE_MODEL,
   GEMMA_4_26B_FREE_MODEL,
   GEMMA_4_31B_FREE_MODEL,
+  GPT_5_6_TERRA_MODEL,
   NEMOTRON_3_ULTRA_FREE_MODEL,
   NORTH_MINI_CODE_FREE_MODEL,
   PINNED_RESUME_PARSER_MODEL,
@@ -24,16 +28,37 @@ describe('openrouterModelConfig', () => {
     expect(getOpenRouterModelsToTry(PINNED_RESUME_PARSER_MODEL)).toEqual(FREE_OPENROUTER_MODELS);
   });
 
-  it('pins every optimization tier to the approved free models', () => {
-    expect(QUICK_OPTIMIZATION_MODEL).toBe(GEMMA_4_26B_FREE_MODEL);
-    expect(SMART_OPTIMIZATION_MODEL).toBe(NEMOTRON_3_ULTRA_FREE_MODEL);
-    expect(DEEP_OPTIMIZATION_MODEL).toBe(NEMOTRON_3_ULTRA_FREE_MODEL);
+  it('pins every optimization tier to its approved model', () => {
+    expect(QUICK_OPTIMIZATION_MODEL).toBe(GEMINI_3_5_FLASH_LITE_MODEL);
+    expect(SMART_OPTIMIZATION_MODEL).toBe(GPT_5_6_TERRA_MODEL);
+    expect(DEEP_OPTIMIZATION_MODEL).toBe(CLAUDE_OPUS_4_8_MODEL);
+    expect(ALLOWED_OPENROUTER_MODELS).toContain(QUICK_OPTIMIZATION_MODEL);
+    expect(ALLOWED_OPENROUTER_MODELS).toContain(SMART_OPTIMIZATION_MODEL);
+    expect(ALLOWED_OPENROUTER_MODELS).toContain(DEEP_OPTIMIZATION_MODEL);
   });
 
-  it('keeps supported sampling parameters for the free models', () => {
+  it('omits unsupported sampling parameters for GPT-5.6 Terra', () => {
     expect(getOpenRouterTemperature(DEEP_OPTIMIZATION_MODEL, 0.1)).toBe(0.1);
-    expect(getOpenRouterTemperature(SMART_OPTIMIZATION_MODEL, 0.1)).toBe(0.1);
+    expect(getOpenRouterTemperature(SMART_OPTIMIZATION_MODEL, 0.1)).toBeUndefined();
     expect(getOpenRouterTemperature(QUICK_OPTIMIZATION_MODEL, undefined)).toBe(0.3);
+  });
+
+  it('tries GPT-5.6 Terra first for Smart and keeps free fallbacks available', () => {
+    expect(getOpenRouterModelsToTry(SMART_OPTIMIZATION_MODEL)).toEqual([
+      GPT_5_6_TERRA_MODEL,
+      ...FREE_OPENROUTER_MODELS,
+    ]);
+  });
+
+  it('tries the paid Quick and Deep models before free fallbacks', () => {
+    expect(getOpenRouterModelsToTry(QUICK_OPTIMIZATION_MODEL)).toEqual([
+      GEMINI_3_5_FLASH_LITE_MODEL,
+      ...FREE_OPENROUTER_MODELS,
+    ]);
+    expect(getOpenRouterModelsToTry(DEEP_OPTIMIZATION_MODEL)).toEqual([
+      CLAUDE_OPUS_4_8_MODEL,
+      ...FREE_OPENROUTER_MODELS,
+    ]);
   });
 
   it('prefers the shared default model when none is requested', () => {
