@@ -1510,7 +1510,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                         result={jdOptimizationResult}
                         userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                         scoreSummaryOverride={optimizationScoreSummary || undefined}
-                        mode="comparison"
+                        mode={selectedOptimizationTierRef.current === 'quick' ? 'quick' : 'comparison'}
                       />
                     </div>
                   )}
@@ -1530,7 +1530,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                       overallAfter={parameter16Scores.overallAfter}
                       improvement={parameter16Scores.improvement}
                       compact={true}
-                      mode="comparison"
+                      mode={selectedOptimizationTierRef.current === 'quick' ? 'quick' : 'comparison'}
                     />
                   )}
                 </div>

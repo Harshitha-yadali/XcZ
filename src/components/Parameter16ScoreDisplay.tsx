@@ -22,7 +22,7 @@ interface Parameter16ScoreDisplayProps {
   overallAfter?: number;
   improvement?: number;
   compact?: boolean;
-  mode?: 'comparison' | 'scan';
+  mode?: 'comparison' | 'quick' | 'scan';
 }
 
 const PARAMETER_ICONS: Record<number, string> = {
@@ -54,6 +54,8 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
   mode = 'comparison',
 }) => {
   const isScan = mode === 'scan';
+  const isQuick = mode === 'quick';
+  const hideScores = isScan || isQuick;
   const scores = isScan ? (beforeScores || afterScores || []) : (afterScores || beforeScores || []);
   const currentScore = overallBefore ?? overallAfter ?? 0;
   
@@ -79,14 +81,18 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
     return { grade: 'D', color: 'text-red-500' };
   };
 
-  if (isScan) {
+  if (hideScores) {
     return (
       <div className="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 rounded-lg p-4 border border-cyan-500/30">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Target className="w-4 h-4 text-cyan-400" />
-          Quick Scan Complete
+          {isQuick ? 'Quick Rewrite Complete' : 'Quick Scan Complete'}
         </h3>
-        <p className="mt-2 text-sm text-gray-300">Review the matched areas and improvement suggestions below.</p>
+        <p className="mt-2 text-sm text-gray-300">
+          {isQuick
+            ? 'Review your optimized resume and the remaining improvement suggestions below.'
+            : 'Review the matched areas and improvement suggestions below.'}
+        </p>
         {scores.length > 0 && (
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
             {scores.map((score) => (

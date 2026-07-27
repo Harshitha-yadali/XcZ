@@ -20,7 +20,7 @@ interface ScoreDeltaDisplayProps {
   result: OptimizationSessionResult;
   userActionCards?: UserActionCard[];
   scoreSummaryOverride?: ScoreSummaryOverride;
-  mode?: 'comparison' | 'scan';
+  mode?: 'comparison' | 'quick' | 'scan';
 }
 
 const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison' }) => {
@@ -41,6 +41,8 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
   const displayedDelta = displayAfter.score - displayBefore.score;
   const showReachedTarget = reachedTarget || displayAfter.score >= 90;
   const isScan = mode === 'scan';
+  const isQuick = mode === 'quick';
+  const hideScores = isScan || isQuick;
 
   const toggleCategory = (name: string) => {
     setExpandedCategory(expandedCategory === name ? null : name);
@@ -48,7 +50,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
 
   return (
     <div className="space-y-6">
-      {!isScan && (
+      {!hideScores && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ScoreCard label="Before" score={displayBefore.score} band={displayBefore.band} probability={displayBefore.probability} variant="before" />
           <div className="flex items-center justify-center">
@@ -73,6 +75,14 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
             <p className="text-sm text-cyan-200/80">Review the matched areas and gaps below. Your resume was analyzed but not rewritten.</p>
           </div>
         </div>
+      ) : isQuick ? (
+        <div className="flex items-center gap-3 p-4 bg-cyan-500/10 border border-cyan-400/30 rounded-xl">
+          <CheckCircle className="w-5 h-5 text-cyan-300 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-cyan-100">Quick Rewrite Complete</p>
+            <p className="text-sm text-cyan-200/80">Review your optimized resume and the remaining improvement suggestions below.</p>
+          </div>
+        </div>
       ) : showReachedTarget ? (
         <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-400/30 rounded-xl">
           <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
@@ -94,7 +104,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
       <div className="space-y-3">
         <div className="flex items-center gap-2 mb-2">
           <BarChart3 className="w-5 h-5 text-cyan-300" />
-          <h3 className="font-semibold text-white text-lg">{isScan ? 'Scan Findings' : 'Category Breakdown'}</h3>
+          <h3 className="font-semibold text-white text-lg">{isScan ? 'Scan Findings' : isQuick ? 'Optimization Findings' : 'Category Breakdown'}</h3>
         </div>
         {categoryDeltas.map(cat => {
           const isExpanded = expandedCategory === cat.name;
@@ -106,18 +116,18 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                 className="w-full flex items-center justify-between p-4 hover:bg-slate-900/70 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {!isScan && <span className="text-sm font-medium text-slate-400 w-10">{cat.weight}%</span>}
+                  {!hideScores && <span className="text-sm font-medium text-slate-400 w-10">{cat.weight}%</span>}
                   <span className="font-medium text-slate-100">{cat.name}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  {!isScan && <div className="flex items-center gap-2 text-sm">
+                  {!hideScores && <div className="flex items-center gap-2 text-sm">
                     <span className="text-slate-500">{cat.beforePercentage}%</span>
                     <ArrowRight className="w-3 h-3 text-slate-500" />
                     <span className={`font-semibold ${cat.afterPercentage >= 80 ? 'text-emerald-400' : cat.afterPercentage >= 60 ? 'text-amber-300' : 'text-red-400'}`}>
                       {cat.afterPercentage}%
                     </span>
                   </div>}
-                  {!isScan && <DeltaBadge delta={cat.delta} />}
+                  {!hideScores && <DeltaBadge delta={cat.delta} />}
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                 </div>
               </button>
@@ -130,7 +140,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                         <span className="text-sm text-slate-200">{param.name}</span>
                         {!param.fixable && <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-200 rounded">Manual</span>}
                       </div>
-                      {!isScan && <div className="flex items-center gap-3">
+                      {!hideScores && <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5 text-sm">
                           <span className="text-slate-500 tabular-nums">{param.beforePercentage}%</span>
                           <ArrowRight className="w-3 h-3 text-slate-600" />
@@ -162,7 +172,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
                   <span className="text-sm text-slate-200 truncate">{param.name}</span>
                   <span className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded flex-shrink-0">{param.category}</span>
                 </div>
-                {!isScan && <div className="flex items-center gap-3 flex-shrink-0">
+                {!hideScores && <div className="flex items-center gap-3 flex-shrink-0">
                   <ProgressBar before={param.beforePercentage} after={param.afterPercentage} />
                   <DeltaBadge delta={param.delta} small />
                 </div>}
@@ -183,7 +193,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
         <div className="space-y-3">
           <h3 className="font-semibold text-white text-lg flex items-center gap-2">
             <Target className="w-5 h-5" />
-            {isScan ? 'Recommended Actions' : 'Actions Required for 90+'}
+            {hideScores ? 'Recommended Actions' : 'Actions Required for 90+'}
           </h3>
           {userActionCards.map(card => (
             <div key={card.parameterId} className={`p-4 rounded-xl border ${
