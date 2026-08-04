@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'src/**/*.property.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.property.test.ts', 'supabase/functions/**/*.test.ts'],
     setupFiles: ['src/tests/setup.ts'],
     coverage: {
       reporter: ['text', 'json', 'html'],

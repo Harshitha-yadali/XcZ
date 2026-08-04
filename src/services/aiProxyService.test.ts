@@ -12,7 +12,7 @@ vi.mock('../config/env', () => ({
 }));
 
 import { openrouter } from './aiProxyService';
-import { GEMMA_4_26B_FREE_MODEL } from './openrouterModelConfig';
+import { FREE_OPENROUTER_MODELS, GEMMA_4_26B_FREE_MODEL, QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
 
 describe('aiProxyService', () => {
   beforeEach(() => {
@@ -53,5 +53,50 @@ describe('aiProxyService', () => {
       model: GEMMA_4_26B_FREE_MODEL,
       prompt: 'Optimize this resume',
     });
+  });
+
+  it('warns when a paid tier request is silently served by a fallback model', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    fetchWithSupabaseFallback
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'rate limited, try again' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'Optimized resume' } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      openrouter.chat('Optimize this resume', { model: QUICK_OPTIMIZATION_MODEL }),
+    ).resolves.toBe('Optimized resume');
+
+    expect(fetchWithSupabaseFallback).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'AI request served by fallback model instead of the requested model',
+      expect.objectContaining({
+        requestedModel: QUICK_OPTIMIZATION_MODEL,
+        servedModel: FREE_OPENROUTER_MODELS[0],
+        fallbackDepth: 1,
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when the requested model serves the request directly', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(
+      openrouter.chat('Optimize this resume', { model: QUICK_OPTIMIZATION_MODEL }),
+    ).resolves.toBe('Optimized resume');
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

@@ -112,4 +112,13 @@ describe('JD optimization quality tiers', () => {
       expect(tier.refinementModels.every((model) => model === tier.modelId)).toBe(true);
     }
   });
+
+  it('keeps Quick, Smart, and Deep on three distinct models', () => {
+    // Regression guard: commit cd6c63f briefly collapsed Smart and Deep onto the
+    // same free-tier model, so a ₹99 Deep purchase bought exactly what a ₹49
+    // Smart purchase did. This must fail loudly if that ever happens again,
+    // regardless of which specific model IDs are in play.
+    const modelIds = JD_OPTIMIZATION_TIERS.map((tier) => tier.modelId);
+    expect(new Set(modelIds).size).toBe(JD_OPTIMIZATION_TIERS.length);
+  });
 });

@@ -110,6 +110,15 @@ const callProxy = async (service: string, action: string, params: Record<string,
   throw new Error(`AI proxy request failed for ${service}/${action}`);
 };
 
+const warnIfServedByFallbackModel = (modelsToTry: readonly string[], servedIndex: number) => {
+  if (servedIndex === 0) return;
+  console.warn('AI request served by fallback model instead of the requested model', {
+    requestedModel: modelsToTry[0],
+    servedModel: modelsToTry[servedIndex],
+    fallbackDepth: servedIndex,
+  });
+};
+
 export const openrouter = {
   async chat(prompt: string, options: { model?: string; temperature?: number; maxTokens?: number } = {}) {
     const modelsToTry = getOpenRouterModelsToTry(options.model);
@@ -125,6 +134,7 @@ export const openrouter = {
           maxTokens: options.maxTokens ?? 4000,
         });
 
+        warnIfServedByFallbackModel(modelsToTry, i);
         return result.choices?.[0]?.message?.content || '';
       } catch (error) {
         lastError = error;
@@ -150,6 +160,7 @@ export const openrouter = {
           ...(temperature === undefined ? {} : { temperature }),
         });
 
+        warnIfServedByFallbackModel(modelsToTry, i);
         return result.choices?.[0]?.message?.content || '';
       } catch (error) {
         lastError = error;

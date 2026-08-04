@@ -37,6 +37,13 @@ describe('openrouterModelConfig', () => {
     expect(ALLOWED_OPENROUTER_MODELS).toContain(DEEP_OPTIMIZATION_MODEL);
   });
 
+  it('never lets two paid optimization tiers share the same model', () => {
+    // Regression guard for cd6c63f, which briefly pointed Smart and Deep at the
+    // same free model — silently erasing the premium tier's value proposition.
+    const tierModels = [QUICK_OPTIMIZATION_MODEL, SMART_OPTIMIZATION_MODEL, DEEP_OPTIMIZATION_MODEL];
+    expect(new Set(tierModels).size).toBe(tierModels.length);
+  });
+
   it('omits unsupported sampling parameters for GPT-5.6 Terra', () => {
     expect(getOpenRouterTemperature(DEEP_OPTIMIZATION_MODEL, 0.1)).toBe(0.1);
     expect(getOpenRouterTemperature(SMART_OPTIMIZATION_MODEL, 0.1)).toBeUndefined();
