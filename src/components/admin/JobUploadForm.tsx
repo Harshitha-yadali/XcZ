@@ -1212,7 +1212,19 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
         await jobsService.updateJobListing(jobId, jobData);
       } else {
-        await jobsService.createJobListing(jobData);
+        const newJob = await jobsService.createJobListing(jobData);
+        // Fire-and-forget: notify "immediate" subscribers for this domain. Scoped to this
+        // single-submit path only (not the bulk URL-paste importer or Apify sync below),
+        // since those can insert many jobs at once and would spam per-job emails.
+        supabase.functions.invoke('notify-new-job', { body: { jobId: newJob.id } }).catch((err) => {
+          console.warn('notify-new-job failed (non-blocking):', err);
+        });
+        // Fire-and-forget: post the new job to the configured Telegram group/channel.
+        // Same scoping as notify-new-job above — single-submit only, to avoid spamming
+        // the group with one message per job during bulk imports.
+        supabase.functions.invoke('notify-telegram-job-update', { body: { jobId: newJob.id } }).catch((err) => {
+          console.warn('notify-telegram-job-update failed (non-blocking):', err);
+        });
       }
 
       setSubmitSuccess(true);
