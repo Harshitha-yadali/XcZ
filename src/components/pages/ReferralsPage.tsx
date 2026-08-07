@@ -199,7 +199,7 @@ export const ReferralsPage: React.FC<ReferralsPageProps> = ({ onShowAuth }) => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.08 + index * 0.04 }}
                   onClick={() => navigate(`/referrals/${listing.id}`)}
-                  className="bg-gradient-to-br from-[#0d1f2d] to-[#0a1a24] border border-slate-700/50 rounded-2xl p-5 sm:p-6 cursor-pointer hover:border-emerald-500/30 transition-all group"
+                  className="bg-gradient-to-br from-surface to-surface-sunken border border-slate-700/50 rounded-2xl p-5 sm:p-6 cursor-pointer hover:border-emerald-500/30 transition-all group"
                 >
                   <div className="flex items-start gap-4 mb-4">
                     {listing.company_logo_url ? (

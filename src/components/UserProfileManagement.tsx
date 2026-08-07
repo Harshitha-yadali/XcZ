@@ -764,18 +764,18 @@ export const UserProfileManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen pb-20 md:pl-16 bg-[#05131A]">
+    <div className="min-h-screen pb-20 md:pl-16 bg-surface-deep">
       <div className="flex min-h-screen">
-        <aside className="hidden lg:flex flex-col w-64 flex-shrink-0 border-r border-[#0c1d25] bg-[#071018] sticky top-0 h-screen overflow-y-auto">
+        <aside className="hidden lg:flex flex-col w-64 flex-shrink-0 border-r border-surface bg-surface-deep sticky top-0 h-screen overflow-y-auto">
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 px-5 py-4 text-sm text-slate-400 hover:text-[#00E6B8] transition-colors border-b border-[#0c1d25]"
+            className="flex items-center gap-2 px-5 py-4 text-sm text-slate-400 hover:text-brand-500 transition-colors border-b border-surface"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
-          <div className="px-5 py-6 border-b border-[#0c1d25]">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#00E6B8] to-cyan-500 flex items-center justify-center mb-3">
+          <div className="px-5 py-6 border-b border-surface">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-cyan-500 flex items-center justify-center mb-3">
               <UserIcon className="w-7 h-7 text-white" />
             </div>
             <h2 className="text-base font-semibold text-slate-100 truncate">{user?.name || 'User'}</h2>
@@ -783,11 +783,11 @@ export const UserProfileManagement: React.FC = () => {
             <div className="mt-3">
               <div className="flex items-center justify-between text-xs mb-1">
                 <span className="text-slate-500">Profile</span>
-                <span className={profileCompletion >= 80 ? 'text-[#00E6B8]' : profileCompletion >= 50 ? 'text-amber-400' : 'text-red-400'}>{profileCompletion}%</span>
+                <span className={profileCompletion >= 80 ? 'text-brand-500' : profileCompletion >= 50 ? 'text-amber-400' : 'text-red-400'}>{profileCompletion}%</span>
               </div>
-              <div className="w-full bg-[#0c1d25] rounded-full h-1.5">
+              <div className="w-full bg-surface rounded-full h-1.5">
                 <div
-                  className={'h-1.5 rounded-full transition-all duration-500 ' + (profileCompletion >= 80 ? 'bg-[#00E6B8]' : profileCompletion >= 50 ? 'bg-amber-400' : 'bg-red-400')}
+                  className={'h-1.5 rounded-full transition-all duration-500 ' + (profileCompletion >= 80 ? 'bg-brand-500' : profileCompletion >= 50 ? 'bg-amber-400' : 'bg-red-400')}
                   style={{ width: profileCompletion + '%' }}
                 />
               </div>
@@ -802,8 +802,8 @@ export const UserProfileManagement: React.FC = () => {
                   onClick={() => setActiveTab(item.id as ProfileTab)}
                   className={'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5 ' +
                     (activeTab === item.id
-                      ? 'bg-[rgba(0,230,184,0.12)] text-[#00E6B8]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-[#0c1d25]')
+                      ? 'bg-[rgba(0,230,184,0.12)] text-brand-500'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-surface')
                   }
                 >
                   <Icon className="w-4 h-4 flex-shrink-0" />
@@ -815,7 +815,7 @@ export const UserProfileManagement: React.FC = () => {
         </aside>
 
         <div className="flex-1 min-w-0">
-          <div className="lg:hidden sticky top-0 z-10 bg-[#05131A]/95 backdrop-blur-sm border-b border-[#0c1d25]">
+          <div className="lg:hidden sticky top-0 z-10 bg-surface-deep/95 backdrop-blur-sm border-b border-surface">
             <div className="flex items-center gap-3 px-4 py-3">
               <button onClick={() => navigate(-1)} className="p-2 text-slate-400 hover:text-slate-200 transition-colors rounded-lg">
                 <ArrowLeft className="w-5 h-5" />
@@ -835,8 +835,8 @@ export const UserProfileManagement: React.FC = () => {
                       onClick={() => setActiveTab(item.id as ProfileTab)}
                       className={'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all duration-200 ' +
                         (activeTab === item.id
-                          ? 'bg-[rgba(0,230,184,0.12)] text-[#00E6B8]'
-                          : 'text-[#7A8CAA] hover:text-[#00E6B8] hover:bg-[#0c1d25]')
+                          ? 'bg-[rgba(0,230,184,0.12)] text-brand-500'
+                          : 'text-ink-muted hover:text-brand-500 hover:bg-surface')
                       }
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -856,12 +856,12 @@ export const UserProfileManagement: React.FC = () => {
             </div>
 
             {isParsingResume && (
-              <div className="fixed inset-0 z-50 bg-[#05131A]/80 backdrop-blur-sm flex items-center justify-center">
-                <div className="flex flex-col items-center space-y-3 px-6 py-4 rounded-xl border border-[#0c1d25] shadow-lg bg-[#0a1a24] max-w-sm">
-                  <Loader2 className="w-8 h-8 animate-spin text-[#00E6B8]" />
+              <div className="fixed inset-0 z-50 bg-surface-deep/80 backdrop-blur-sm flex items-center justify-center">
+                <div className="flex flex-col items-center space-y-3 px-6 py-4 rounded-xl border border-surface shadow-lg bg-surface-sunken max-w-sm">
+                  <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
                   <span className="text-slate-200 font-medium text-center">{parsingProgress || 'Parsing your resume...'}</span>
-                  <div className="w-full bg-[#0c1d25] rounded-full h-1.5">
-                    <div className="bg-[#00E6B8] h-1.5 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                  <div className="w-full bg-surface rounded-full h-1.5">
+                    <div className="bg-brand-500 h-1.5 rounded-full animate-pulse" style={{ width: '60%' }}></div>
                   </div>
                   <p className="text-xs text-slate-400 text-center">This may take 10-30 seconds depending on resume complexity</p>
                 </div>

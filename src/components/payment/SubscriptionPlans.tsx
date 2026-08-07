@@ -320,7 +320,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 lg:left-16 bg-gradient-to-b from-slate-900 via-slate-950 to-[#070b14] flex items-start justify-center z-50 overflow-y-auto">
+    <div className="fixed inset-0 lg:left-16 bg-gradient-to-b from-slate-900 via-slate-950 to-surface-deepest flex items-start justify-center z-50 overflow-y-auto">
       <div className="w-full max-w-5xl mx-auto px-4 py-8">
         <button
           onClick={onNavigateBack}

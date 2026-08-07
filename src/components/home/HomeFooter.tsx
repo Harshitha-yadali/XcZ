@@ -29,7 +29,7 @@ export const HomeFooter: React.FC = () => {
   const navigate = useNavigate();
 
   return (
-    <footer className="relative bg-[#020a0f] border-t border-slate-800/50">
+    <footer className="relative bg-surface-deepest border-t border-slate-800/50">
       <div className="h-px bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
       <div className="container-responsive py-10 sm:py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">

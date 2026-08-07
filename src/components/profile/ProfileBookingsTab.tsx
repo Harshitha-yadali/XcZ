@@ -98,7 +98,7 @@ export const ProfileBookingsTab: React.FC = () => {
           onClick={() => setSubTab('sessions')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             subTab === 'sessions'
-              ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8]'
+              ? 'bg-[rgba(0,230,184,0.15)] text-brand-500'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
           }`}
         >
@@ -108,7 +108,7 @@ export const ProfileBookingsTab: React.FC = () => {
           onClick={() => setSubTab('webinars')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             subTab === 'webinars'
-              ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8]'
+              ? 'bg-[rgba(0,230,184,0.15)] text-brand-500'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
           }`}
         >
@@ -120,16 +120,16 @@ export const ProfileBookingsTab: React.FC = () => {
         <div className="space-y-4">
           {loadingSessions ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-[#00E6B8] mr-2" />
+              <Loader2 className="w-6 h-6 animate-spin text-brand-500 mr-2" />
               <span className="text-slate-400">Loading sessions...</span>
             </div>
           ) : bookings.length === 0 ? (
-            <div className="text-center py-12 bg-[#0a1a24] rounded-xl border border-[#0c1d25]">
+            <div className="text-center py-12 bg-surface-sunken rounded-xl border border-surface">
               <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-3" />
               <p className="text-slate-400 mb-4">No session bookings yet</p>
               <button
                 onClick={() => navigate('/session')}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(0,230,184,0.15)] text-[#00E6B8] rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(0,230,184,0.15)] text-brand-500 rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
               >
                 <CalendarPlus className="w-4 h-4" /> Book a Session
               </button>
@@ -138,7 +138,7 @@ export const ProfileBookingsTab: React.FC = () => {
             <>
               {upcomingSessions.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-[#00E6B8] uppercase tracking-wider mb-3">Upcoming</h3>
+                  <h3 className="text-sm font-semibold text-brand-500 uppercase tracking-wider mb-3">Upcoming</h3>
                   <div className="space-y-3">
                     {upcomingSessions.map(b => (
                       <BookingCard key={b.id} booking={b} />
@@ -165,16 +165,16 @@ export const ProfileBookingsTab: React.FC = () => {
         <div className="space-y-3">
           {loadingWebinars ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-[#00E6B8] mr-2" />
+              <Loader2 className="w-6 h-6 animate-spin text-brand-500 mr-2" />
               <span className="text-slate-400">Loading webinars...</span>
             </div>
           ) : webinarRegs.length === 0 ? (
-            <div className="text-center py-12 bg-[#0a1a24] rounded-xl border border-[#0c1d25]">
+            <div className="text-center py-12 bg-surface-sunken rounded-xl border border-surface">
               <Video className="w-12 h-12 text-slate-600 mx-auto mb-3" />
               <p className="text-slate-400 mb-4">No webinar registrations yet</p>
               <button
                 onClick={() => navigate('/webinars')}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(0,230,184,0.15)] text-[#00E6B8] rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(0,230,184,0.15)] text-brand-500 rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
               >
                 <Video className="w-4 h-4" /> Browse Webinars
               </button>
@@ -185,7 +185,7 @@ export const ProfileBookingsTab: React.FC = () => {
                 key={reg.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-[#0a1a24] border border-[#0c1d25] rounded-xl p-4 flex items-center justify-between hover:border-[rgba(0,230,184,0.2)] transition-colors"
+                className="bg-surface-sunken border border-surface rounded-xl p-4 flex items-center justify-between hover:border-[rgba(0,230,184,0.2)] transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
@@ -222,7 +222,7 @@ const BookingCard: React.FC<{ booking: SessionBooking }> = ({ booking }) => {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-[#0a1a24] border border-[#0c1d25] rounded-xl p-4 hover:border-[rgba(0,230,184,0.2)] transition-colors"
+      className="bg-surface-sunken border border-surface rounded-xl p-4 hover:border-[rgba(0,230,184,0.2)] transition-colors"
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2 text-sm">

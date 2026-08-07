@@ -50,7 +50,7 @@ export const SessionHighlight: React.FC<SessionHighlightProps> = ({
           transition={{ duration: 0.6 }}
           className="max-w-5xl mx-auto"
         >
-          <div className="relative rounded-3xl overflow-hidden bg-[#0D1B2A] border border-emerald-500/20">
+          <div className="relative rounded-3xl overflow-hidden bg-surface border border-emerald-500/20">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(16,185,129,0.08),transparent_50%),radial-gradient(circle_at_80%_20%,rgba(6,182,212,0.06),transparent_40%)]" />
 
             <div className="relative grid lg:grid-cols-2 gap-8 lg:gap-12 p-8 sm:p-10 lg:p-12">
@@ -111,7 +111,7 @@ export const SessionHighlight: React.FC<SessionHighlightProps> = ({
                     {[1, 2, 3, 4].map((i) => (
                       <div
                         key={i}
-                        className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 border-2 border-[#0D1B2A] flex items-center justify-center text-xs text-slate-300 font-medium"
+                        className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 border-2 border-surface flex items-center justify-center text-xs text-slate-300 font-medium"
                       >
                         {String.fromCharCode(64 + i)}
                       </div>

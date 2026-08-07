@@ -6,6 +6,8 @@ import { exportToPDF } from '../utils/exportUtils';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import { isJobOpen } from '../utils/jobStatus';
 
+export const JOB_CATEGORIES = ['Fresher', 'Experienced', 'Internship'] as const;
+
 export const isEligibleYearsColumnMissing = (error: any): boolean => {
   if (!error) return false;
   const message = typeof error.message === 'string' ? error.message : '';
@@ -19,11 +21,8 @@ export const isEligibleYearsColumnMissing = (error: any): boolean => {
 const isMissingColumnError = (error: any, column: string): boolean => {
   if (!error) return false;
   const message = typeof error.message === 'string' ? error.message : '';
-  return (
-    error.code === 'PGRST204' ||
-    error.code === '42703' ||
-    message.toLowerCase().includes(column.toLowerCase())
-  );
+  const isSchemaError = error.code === 'PGRST204' || error.code === '42703';
+  return isSchemaError && message.toLowerCase().includes(column.toLowerCase());
 };
 
 const withCompanyLogoFallback = (payload: Record<string, any>): Record<string, any> => {
@@ -37,6 +36,7 @@ class JobsService {
   private static eligibleYearsSupported = true;
   private static skillsSupported = true;
   private static expiresAtSupported = true;
+  private static jobCategorySupported = true;
 
   private normalizePackageAmountForStorage(
     packageAmount: JobListing['package_amount'],
@@ -151,6 +151,7 @@ class JobsService {
     let attemptedSkillsFallback = false;
     let attemptedCompanyLogoFallback = false;
     let attemptedExpiresAtFallback = false;
+    let attemptedJobCategoryFallback = false;
 
     let result = await mutation(nextPayload);
 
@@ -186,6 +187,15 @@ class JobsService {
         JobsService.expiresAtSupported = false;
         attemptedExpiresAtFallback = true;
         delete nextPayload.expires_at;
+        result = await mutation(nextPayload);
+        continue;
+      }
+
+      if (isMissingColumnError(result.error, 'job_category') && !attemptedJobCategoryFallback) {
+        console.warn('JobsService: job_category column not found. Retrying without it.');
+        JobsService.jobCategorySupported = false;
+        attemptedJobCategoryFallback = true;
+        delete nextPayload.job_category;
         result = await mutation(nextPayload);
         continue;
       }
@@ -229,6 +239,7 @@ class JobsService {
         domain: jobData.domain,
         location_type: jobData.location_type,
         location_city: jobData.location_city || null,
+        job_category: jobData.job_category || null,
         experience_required: jobData.experience_required,
         qualification: jobData.qualification,
         eligible_years: eligibleYears,
@@ -275,6 +286,10 @@ class JobsService {
 
       if (!JobsService.expiresAtSupported) {
         delete insertData.expires_at;
+      }
+
+      if (!JobsService.jobCategorySupported) {
+        delete insertData.job_category;
       }
 
       console.log('JobsService: Inserting job data:', insertData);
@@ -351,6 +366,7 @@ class JobsService {
         domain: jobData.domain,
         location_type: jobData.location_type,
         location_city: jobData.location_city || null,
+        job_category: jobData.job_category || null,
         experience_required: jobData.experience_required,
         qualification: jobData.qualification,
         eligible_years: eligibleYears,
@@ -391,6 +407,10 @@ class JobsService {
 
       if (!JobsService.expiresAtSupported) {
         delete updateData.expires_at;
+      }
+
+      if (!JobsService.jobCategorySupported) {
+        delete updateData.job_category;
       }
 
       const { data: updatedJob, error } = await this.runJobMutationWithFallbacks<JobListing>(
@@ -537,6 +557,10 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         query = query.eq('location_type', filters.location_type);
       }
 
+      if (filters.job_category && JobsService.jobCategorySupported) {
+        query = query.eq('job_category', filters.job_category);
+      }
+
       if (filters.experience_required) {
         query = query.eq('experience_required', filters.experience_required);
       }
@@ -597,6 +621,12 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
         if (isMissingColumnError(error, 'skills') && JobsService.skillsSupported) {
           console.warn('JobsService: skills column not found while searching. Retrying without skills search.');
           JobsService.skillsSupported = false;
+          return this.getJobListings(filters, limit, offset);
+        }
+
+        if (isMissingColumnError(error, 'job_category') && JobsService.jobCategorySupported) {
+          console.warn('JobsService: job_category column not found while filtering. Retrying without it.');
+          JobsService.jobCategorySupported = false;
           return this.getJobListings(filters, limit, offset);
         }
 
@@ -1052,6 +1082,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
   async getFilterOptions(): Promise<{
     domains: string[];
     locationTypes: string[];
+    jobCategories: string[];
     experienceLevels: string[];
     eligibleYears: string[];
     packageRanges: { min: number; max: number };
@@ -1108,6 +1139,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       return {
         domains: uniqueDomains,
         locationTypes: uniqueLocations,
+        jobCategories: [...JOB_CATEGORIES],
         experienceLevels: uniqueExperiences,
         eligibleYears,
         packageRanges
@@ -1117,6 +1149,7 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       return {
         domains: ['SDE', 'Data Science', 'Product', 'Marketing', 'Analytics'],
         locationTypes: ['Remote', 'Onsite', 'Hybrid'],
+        jobCategories: [...JOB_CATEGORIES],
         experienceLevels: ['0-1 years', '0-2 years', '1-2 years', '1-3 years', '2-4 years', '3-5 years'],
         eligibleYears: ['2022', '2023', '2024', '2025', '2026'],
         packageRanges: { min: 0, max: 1000000 }

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { DarkPageWrapper } from '../ui';
 import { HomeFooter } from '../home/HomeFooter';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 type LegalSection = {
   title: string;
@@ -44,15 +44,15 @@ export const LegalPageLayout: React.FC<LegalPageLayoutProps> = ({
   sections = [],
   faqs = [],
 }) => {
-  useSEO({
-    title: `${title} | PrimoBoost AI`,
-    description,
-    canonical,
-  });
-
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
 
   return (
+    <>
+    <Seo
+      title={title}
+      description={description}
+      canonicalPath={canonical}
+    />
     <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
       <div className="md:ml-16">
         <section className="relative pt-20 sm:pt-24 pb-10">
@@ -169,6 +169,7 @@ export const LegalPageLayout: React.FC<LegalPageLayoutProps> = ({
         <HomeFooter />
       </div>
     </DarkPageWrapper>
+    </>
   );
 };
 

@@ -27,7 +27,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { careersData } from '../../data/careersData';
 import { DarkPageWrapper } from '../ui';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 interface CareersPageProps {
   isAuthenticated: boolean;
@@ -36,13 +36,6 @@ interface CareersPageProps {
 
 export const CareersPage: React.FC<CareersPageProps> = ({ isAuthenticated, onShowAuth }) => {
   const navigate = useNavigate();
-
-  useSEO({
-    title: 'Careers - Company-Wise Job Openings & Practice',
-    description: 'Explore company-wise career opportunities and practice for specific company interviews. Browse jobs from top companies with domain-specific preparation resources.',
-    keywords: 'company wise jobs, Google jobs, TCS jobs, Infosys jobs, Wipro jobs, Amazon jobs, company interview preparation, company specific resume, company career opportunities, top company jobs India, PrimoBoost AI',
-    canonical: '/careers',
-  });
 
   const getDomainIcon = (domain: string) => {
     switch (domain) {
@@ -91,6 +84,13 @@ export const CareersPage: React.FC<CareersPageProps> = ({ isAuthenticated, onSho
   };
 
   return (
+    <>
+    <Seo
+      title="Careers - Company-Wise Job Openings & Practice"
+      description="Explore company-wise career opportunities and practice for specific company interviews. Browse jobs from top companies with domain-specific preparation resources."
+      keywords="company wise jobs, Google jobs, TCS jobs, Infosys jobs, Wipro jobs, Amazon jobs, company interview preparation, company specific resume, company career opportunities, top company jobs India, PrimoBoost AI"
+      canonicalPath="/careers"
+    />
     <DarkPageWrapper>
       {/* Hero */}
       <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-cyan-600 to-blue-700 py-20 sm:py-28">
@@ -249,5 +249,6 @@ export const CareersPage: React.FC<CareersPageProps> = ({ isAuthenticated, onSho
         </div>
       </div>
     </DarkPageWrapper>
+    </>
   );
 };

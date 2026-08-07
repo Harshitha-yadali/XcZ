@@ -388,7 +388,7 @@ export const AdminReferralsPage: React.FC = () => {
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
                 onClick={(event) => event.stopPropagation()}
-                className="bg-[#0d1f2d] border border-slate-700/50 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+                className="bg-surface border border-slate-700/50 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
               >
                 <div className="flex items-center justify-between p-5 border-b border-slate-700/40">
                   <h2 className="text-white font-bold text-lg">

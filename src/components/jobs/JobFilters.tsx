@@ -32,6 +32,7 @@ export const JobFilters: React.FC<JobFiltersProps> = ({
   const [filterOptions, setFilterOptions] = useState({
     domains: [] as string[],
     locationTypes: [] as string[],
+    jobCategories: [] as string[],
     experienceLevels: [] as string[],
     eligibleYears: [] as string[],
     packageRanges: { min: 0, max: 1000000 }
@@ -85,6 +86,28 @@ export const JobFilters: React.FC<JobFiltersProps> = ({
           onChange={(e) => handleFilterChange('search', e.target.value)}
           className="w-full pl-12 pr-4 py-3 bg-slate-800/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-slate-100 placeholder-slate-400"
         />
+      </div>
+
+      {/* Category Quick Filters */}
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-4">
+        {(['Fresher', 'Experienced', 'Internship'] as const).map((category) => {
+          const isActive = filters.job_category === category;
+          return (
+            <button
+              key={category}
+              onClick={() =>
+                handleFilterChange('job_category', isActive ? undefined : category)
+              }
+              className={`px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium border transition-colors truncate ${
+                isActive
+                  ? 'bg-emerald-500 text-white border-emerald-500'
+                  : 'bg-slate-800/50 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-slate-100'
+              }`}
+            >
+              {category}
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter Toggle Button */}

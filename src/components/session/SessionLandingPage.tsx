@@ -135,7 +135,7 @@ export const SessionLandingPage: React.FC<SessionLandingPageProps> = ({ onShowAu
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="bg-gradient-to-br from-[#0d1f2d] to-[#0a1a24] border border-slate-700/50 rounded-2xl overflow-hidden mb-10 sm:mb-14"
+          className="bg-gradient-to-br from-surface to-surface-sunken border border-slate-700/50 rounded-2xl overflow-hidden mb-10 sm:mb-14"
         >
           <div className="grid lg:grid-cols-5">
             {/* Left: Highlights */}

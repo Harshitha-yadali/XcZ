@@ -10,7 +10,7 @@ import {
 
 export const BeforeAfterSection: React.FC = () => {
   return (
-    <section className="relative py-16 sm:py-24 bg-gradient-to-b from-slate-950 to-[#0a0f1c]">
+    <section className="relative py-16 sm:py-24 bg-gradient-to-b from-slate-950 to-surface-deep">
       <div className="container-responsive">
         <motion.div
           initial={{ opacity: 0, y: 30 }}

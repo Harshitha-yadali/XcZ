@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, Loader2, CheckCircle, AlertCircle, ExternalLink, AlertTriangle, Info } from 'lucide-react';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { portfolioService } from '../../services/portfolioService';
 import { UserType, TemplateId, TEMPLATE_CONFIGS } from '../../types/portfolio';
@@ -20,12 +20,6 @@ export const PortfolioBuilderPage: React.FC<PortfolioBuilderPageProps> = ({
 }) => {
   const { isChristmasMode, colors } = useTheme();
 
-  useSEO({
-    title: 'Portfolio Builder',
-    description: 'Build a professional portfolio website from your resume in minutes. AI-powered portfolio generation for freshers and experienced professionals.',
-    canonical: '/portfolio-builder',
-    ogType: 'website',
-  });
   const [step, setStep] = useState<'upload' | 'type' | 'template' | 'processing' | 'success'>('type');
   const [userType, setUserType] = useState<UserType>('fresher');
   const [targetRole, setTargetRole] = useState('');
@@ -165,6 +159,13 @@ export const PortfolioBuilderPage: React.FC<PortfolioBuilderPageProps> = ({
   };
 
   return (
+    <>
+    <Seo
+      title="Portfolio Builder"
+      description="Build a professional portfolio website from your resume in minutes. AI-powered portfolio generation for freshers and experienced professionals."
+      canonicalPath="/portfolio-builder"
+      ogType="website"
+    />
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
@@ -482,5 +483,6 @@ export const PortfolioBuilderPage: React.FC<PortfolioBuilderPageProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };

@@ -101,7 +101,7 @@ export const HowItWorks: React.FC = () => {
                 className="relative group"
               >
                 <motion.div
-                  className={`relative rounded-2xl p-6 bg-[#0D1B2A]/80 border ${step.border} backdrop-blur-sm transition-all duration-300`}
+                  className={`relative rounded-2xl p-6 bg-surface/80 border ${step.border} backdrop-blur-sm transition-all duration-300`}
                   whileHover={{
                     y: -6,
                     boxShadow: `0 20px 40px -8px ${step.glow}`,

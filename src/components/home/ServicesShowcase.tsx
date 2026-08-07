@@ -190,7 +190,7 @@ export const ServicesShowcase: React.FC<ServicesShowcaseProps> = ({
       onClick={() => handleCardClick(card)}
     >
       <div
-        className={`relative h-full rounded-2xl p-6 bg-[#0D1B2A]/80 border ${card.borderColor} backdrop-blur-sm transition-colors duration-300 overflow-hidden`}
+        className={`relative h-full rounded-2xl p-6 bg-surface/80 border ${card.borderColor} backdrop-blur-sm transition-colors duration-300 overflow-hidden`}
       >
         {/* shimmer sweep on hover */}
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none overflow-hidden rounded-2xl">

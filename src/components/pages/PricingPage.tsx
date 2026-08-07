@@ -146,8 +146,8 @@ export const PricingPage: React.FC<PricingPageProps> = ({
   return (
     <div className={`min-h-screen relative overflow-hidden ${
       isChristmasMode
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]'
-        : 'bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest'
+        : 'bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest'
     }`}>
       <div className={`pointer-events-none absolute inset-0 ${
         isChristmasMode

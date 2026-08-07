@@ -1,5 +1,6 @@
 // src/components/pages/ToolsAndPagesNavigation.tsx
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
   Home,
   Info,
@@ -13,10 +14,24 @@ import {
   Users,
   Award,
   Crown,
+  Briefcase,
+  Building2,
+  Scale,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Subscription } from '../../types/payment';
 import { getOptimizationTierRemaining } from '../../services/paymentService';
+
+const SEO_RESOURCE_LINKS = [
+  { path: '/resume-for', title: 'Resume by Role', description: '60+ role-specific resume guides with ATS keywords.', icon: <Briefcase />, colorClass: 'from-emerald-500 to-teal-500' },
+  { path: '/resume-for-company', title: 'Resume by Company', description: 'Tailored resume tips for TCS, Amazon, Google and more.', icon: <Building2 />, colorClass: 'from-cyan-500 to-blue-500' },
+  { path: '/compare', title: 'Comparisons', description: 'ATS checker vs manual review, and other head-to-heads.', icon: <Scale />, colorClass: 'from-indigo-500 to-purple-500' },
+  { path: '/resume-keywords', title: 'Resume Keywords Guide', description: 'What ATS software actually scans for.', icon: <Target />, colorClass: 'from-pink-500 to-rose-500' },
+  { path: '/resume-templates', title: 'Resume Templates', description: 'ATS-friendly formats and common mistakes to avoid.', icon: <BookOpen />, colorClass: 'from-orange-500 to-amber-500' },
+  { path: '/campus-placement-resume', title: 'Campus Placement Guide', description: 'Resume advice for freshers and campus hiring.', icon: <Award />, colorClass: 'from-teal-500 to-emerald-500' },
+  { path: '/referral-message-templates', title: 'Referral Templates', description: 'Message templates that actually get replies.', icon: <Users />, colorClass: 'from-fuchsia-500 to-pink-500' },
+  { path: '/interview-questions', title: 'Interview Questions', description: 'Common questions and how to structure answers.', icon: <MessageCircle />, colorClass: 'from-blue-500 to-cyan-500' },
+];
 
 interface ToolsAndPagesNavigationProps {
   onPageChange: (page: string) => void;
@@ -245,7 +260,7 @@ export const ToolsAndPagesNavigation: React.FC<ToolsAndPagesNavigationProps> = (
   ];
 
   return (
-    <div className="min-h-screen bg-[#070b14] py-8">
+    <div className="min-h-screen bg-surface-deepest py-8">
       <div className="container-responsive max-w-5xl mx-auto">
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 mb-8 text-center">
           Explore All Features & Pages
@@ -287,6 +302,31 @@ export const ToolsAndPagesNavigation: React.FC<ToolsAndPagesNavigationProps> = (
                 userSubscription={userSubscription}
                 onShowSubscriptionPlans={onShowSubscriptionPlans}
               />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-10">
+          <h2 className="text-xl font-bold text-slate-100 mb-5 flex items-center gap-2">
+            <Target className="w-5 h-5 text-pink-400" />
+            Resume Guides & Resources
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {SEO_RESOURCE_LINKS.map((link) => (
+              <Link
+                key={link.path}
+                to={link.path}
+                className="group flex items-start gap-4 rounded-xl border border-surface bg-surface-sunken/60 p-4 hover:border-brand-500/50 transition-colors"
+              >
+                <div className={`shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br ${link.colorClass} flex items-center justify-center text-white`}>
+                  {link.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-slate-100 group-hover:text-brand-500 transition-colors">{link.title}</h3>
+                  <p className="text-sm text-slate-400 mt-0.5">{link.description}</p>
+                </div>
+                <ArrowRight className="w-4 h-4 mt-2 text-slate-500 group-hover:text-brand-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+              </Link>
             ))}
           </div>
         </div>

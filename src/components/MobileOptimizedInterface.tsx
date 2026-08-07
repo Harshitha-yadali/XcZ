@@ -75,7 +75,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-950 to-[#020617] pb-24">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 pb-24">
       <div className="bg-slate-900/95 backdrop-blur-xl border-b border-slate-700/50 sticky top-0 z-40">
         <div className="px-4 py-3 flex items-center justify-between">
           <button

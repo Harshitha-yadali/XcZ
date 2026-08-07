@@ -15,7 +15,7 @@ import { webinarService } from '../../services/webinarService';
 import { useAuth } from '../../contexts/AuthContext';
 import { DarkPageWrapper } from '../ui';
 import type { Webinar, WebinarFilters } from '../../types/webinar';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 type WebinarsPageProps = {
   onShowAuth?: () => void;
@@ -24,13 +24,6 @@ type WebinarsPageProps = {
 export const WebinarsPage: React.FC<WebinarsPageProps> = ({ onShowAuth }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-
-  useSEO({
-    title: 'Webinars - Career Growth & Interview Preparation',
-    description: 'Join live webinars on resume building, interview preparation, career growth strategies, and more. Learn from industry experts at PrimoBoost AI.',
-    keywords: 'career webinars, resume building webinar, interview preparation webinar, career growth strategies, job search webinar, ATS resume webinar, resume optimization webinar, PrimoBoost AI webinars',
-    canonical: '/webinars',
-  });
 
   const [webinars, setWebinars] = useState<Webinar[]>([]);
   const [myRegistrations, setMyRegistrations] = useState<any[]>([]);
@@ -260,6 +253,13 @@ export const WebinarsPage: React.FC<WebinarsPageProps> = ({ onShowAuth }) => {
   };
 
   return (
+    <>
+    <Seo
+      title="Webinars - Career Growth & Interview Preparation"
+      description="Join live webinars on resume building, interview preparation, career growth strategies, and more. Learn from industry experts at PrimoBoost AI."
+      keywords="career webinars, resume building webinar, interview preparation webinar, career growth strategies, job search webinar, ATS resume webinar, resume optimization webinar, PrimoBoost AI webinars"
+      canonicalPath="/webinars"
+    />
     <DarkPageWrapper>
       {/* Hero */}
       <div className="bg-gradient-to-br from-emerald-600 via-cyan-600 to-blue-700 py-20">
@@ -366,5 +366,6 @@ export const WebinarsPage: React.FC<WebinarsPageProps> = ({ onShowAuth }) => {
         )}
       </div>
     </DarkPageWrapper>
+    </>
   );
 };

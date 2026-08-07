@@ -33,7 +33,8 @@ import { jobsService } from '../../services/jobsService';
 import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
 import { ApplicationMethodModal } from '../modals/ApplicationMethodModal';
-import { useSEO, injectJsonLd, removeJsonLd } from '../../hooks/useSEO';
+import { RichText } from '../common/RichText';
+import { Seo } from '../../seo/Seo';
 import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
 interface JobDetailsPageProps {
@@ -74,56 +75,58 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
   const jobOpen = job ? isJobOpen(job) : false;
   const expiryLabel = formatJobExpiryLabel(job?.expires_at);
 
-  useSEO({
-    title: job ? `${job.role_title} at ${job.company_name} - Apply Now` : 'Job Details',
-    description: job
-      ? `Apply for ${job.role_title} at ${job.company_name}${job.location_city ? ` in ${job.location_city}` : ''}.${job.experience_required ? ` ${job.experience_required} experience.` : ''}${job.qualification ? ` ${job.qualification}.` : ''} ${(job.short_description || job.description || '').substring(0, 150)}`
-      : 'View job details and apply on PrimoBoost AI.',
-    canonical: jobId ? `/jobs/${jobId}` : '/jobs',
-    ogType: 'article',
-    ogImage: job?.company_logo_url || undefined,
-    twitterCard: 'summary_large_image',
-  });
-
-  useEffect(() => {
-    if (job) {
-      const jsonLd: Record<string, unknown> = {
-        '@context': 'https://schema.org',
-        '@type': 'JobPosting',
-        title: job.role_title || '',
-        description: job.full_description || job.description || '',
-        datePosted: job.posted_date || job.created_at || '',
-        hiringOrganization: {
-          '@type': 'Organization',
-          name: job.company_name || '',
-          ...(job.company_logo_url ? { logo: job.company_logo_url } : {}),
-          ...(job.company_website ? { sameAs: job.company_website } : {}),
+  const jobJsonLd = useMemo(() => {
+    if (!job) return undefined;
+    const jsonLd: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'JobPosting',
+      title: job.role_title || '',
+      description: job.full_description || job.description || '',
+      datePosted: job.posted_date || job.created_at || '',
+      hiringOrganization: {
+        '@type': 'Organization',
+        name: job.company_name || '',
+        ...(job.company_logo_url ? { logo: job.company_logo_url } : {}),
+        ...(job.company_website ? { sameAs: job.company_website } : {}),
+      },
+      jobLocation: {
+        '@type': 'Place',
+        address: {
+          '@type': 'PostalAddress',
+          addressLocality: job.location_city || '',
+          addressCountry: 'IN',
         },
-        jobLocation: {
-          '@type': 'Place',
-          address: {
-            '@type': 'PostalAddress',
-            addressLocality: job.location_city || '',
-            addressCountry: 'IN',
-          },
-        },
-        employmentType: 'FULL_TIME',
-        url: `https://primoboost.ai/jobs/${job.id}`,
+      },
+      employmentType: 'FULL_TIME',
+      url: `https://primoboost.ai/jobs/${job.id}`,
+    };
+    if (job.package_amount) {
+      jsonLd.baseSalary = {
+        '@type': 'MonetarySalary',
+        currency: job.package_currency || 'INR',
+        value: { '@type': 'QuantitativeValue', value: job.package_amount },
       };
-      if (job.package_amount) {
-        jsonLd.baseSalary = {
-          '@type': 'MonetarySalary',
-          currency: job.package_currency || 'INR',
-          value: { '@type': 'QuantitativeValue', value: job.package_amount },
-        };
-      }
-      if (job.expires_at) {
-        jsonLd.validThrough = job.expires_at;
-      }
-      injectJsonLd('job-detail-structured-data', jsonLd);
     }
-    return () => removeJsonLd('job-detail-structured-data');
+    if (job.expires_at) {
+      jsonLd.validThrough = job.expires_at;
+    }
+    return jsonLd;
   }, [job]);
+
+  const seoTag = (
+    <Seo
+      title={job ? `${job.role_title} at ${job.company_name} - Apply Now` : 'Job Details'}
+      description={
+        job
+          ? `Apply for ${job.role_title} at ${job.company_name}${job.location_city ? ` in ${job.location_city}` : ''}.${job.experience_required ? ` ${job.experience_required} experience.` : ''}${job.qualification ? ` ${job.qualification}.` : ''} ${(job.short_description || job.description || '').substring(0, 150)}`
+          : 'View job details and apply on PrimoBoost AI.'
+      }
+      canonicalPath={jobId ? `/jobs/${jobId}` : '/jobs'}
+      ogType="article"
+      ogImage={job?.company_logo_url || undefined}
+      jsonLd={jobJsonLd}
+    />
+  );
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -217,25 +220,31 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-        <div className="flex flex-col items-center">
-          <Loader2 className="w-10 h-10 animate-spin text-emerald-400 mb-3" />
-          <p className="text-slate-400">Loading job details...</p>
+      <>
+        {seoTag}
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+          <div className="flex flex-col items-center">
+            <Loader2 className="w-10 h-10 animate-spin text-emerald-400 mb-3" />
+            <p className="text-slate-400">Loading job details...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (!job) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-        <div className="text-center">
-          <p className="text-xl text-slate-300 mb-4">Job not found</p>
-          <button onClick={() => navigate('/jobs')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-6 rounded-xl transition-colors">
-            Back to Jobs
-          </button>
+      <>
+        {seoTag}
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+          <div className="text-center">
+            <p className="text-xl text-slate-300 mb-4">Job not found</p>
+            <button onClick={() => navigate('/jobs')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-6 rounded-xl transition-colors">
+              Back to Jobs
+            </button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -243,6 +252,8 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
   const skillTags = job.skills || [];
 
   return (
+    <>
+    {seoTag}
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 lg:pl-16 transition-colors duration-300 pb-24 lg:pb-8">
       {/* Top Bar */}
       <div className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-xl border-b border-slate-700/40">
@@ -389,6 +400,15 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* Key Details Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {job.job_category && (
+                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Who it's for</span>
+                  </div>
+                  <p className="text-sm font-semibold text-white">{job.job_category}</p>
+                </div>
+              )}
               <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-blue-400" />
@@ -469,9 +489,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                   <Building2 className="w-5 h-5 text-blue-400" />
                   About {job.company_name}
                 </h2>
-                <p className="text-slate-300 leading-relaxed text-[15px] whitespace-pre-line">
-                  {job.company_description}
-                </p>
+                <RichText content={job.company_description} />
                 {job.company_website && (
                   <a href={job.company_website} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 mt-4 text-sm font-medium transition-colors">
@@ -489,9 +507,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                 <FileText className="w-5 h-5 text-emerald-400" />
                 Job Description
               </h2>
-              <div className="text-slate-300 leading-relaxed text-[15px] whitespace-pre-line">
-                {job.full_description || job.description}
-              </div>
+              <RichText content={job.full_description || job.description} />
             </div>
 
             {/* Selection Process */}
@@ -542,7 +558,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                 {job.test_requirements && (
                   <div className="mt-4 bg-slate-700/30 rounded-xl p-4 border border-slate-600/30">
                     <p className="text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">What to Expect</p>
-                    <p className="text-sm text-slate-300 whitespace-pre-line">{job.test_requirements}</p>
+                    <RichText content={job.test_requirements} className="text-sm" />
                   </div>
                 )}
               </div>
@@ -641,7 +657,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
               {job.short_description && (
                 <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
                   <h3 className="text-base font-bold text-white mb-3">Summary</h3>
-                  <p className="text-sm text-slate-300 leading-relaxed">{job.short_description}</p>
+                  <RichText content={job.short_description} className="text-sm" />
                 </div>
               )}
             </div>
@@ -674,5 +690,6 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
         onScoreCheck={handleScoreCheck}
       />
     </div>
+    </>
   );
 };

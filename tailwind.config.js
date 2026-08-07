@@ -147,7 +147,42 @@ export default {
           700: '#e4e4e7',
           800: '#f4f4f5',
           900: '#fafafa',
-        }
+        },
+        /**
+         * Brand teal — the de-facto accent. `#00e6b8` was hardcoded in 97
+         * places across 65 files before it was a token; this makes the colour
+         * the app actually ships the one the app actually declares.
+         */
+        brand: {
+          50: '#e6fff9',
+          100: '#b3ffed',
+          200: '#80ffe1',
+          300: '#4dffd5',
+          400: '#1af5c6',
+          500: '#00e6b8',
+          600: '#00c49c',
+          700: '#009a7a',
+          800: '#00705a',
+          900: '#004d3d',
+        },
+        /**
+         * Dark surface ramp, ordered lightest → darkest so it reads like the
+         * other scales. These were the hardcoded background values scattered
+         * through the app (#0c1d25, #05131a, #070b14, #0a1a24 …).
+         */
+        surface: {
+          raised: '#122a33',
+          DEFAULT: '#0c1d25',
+          sunken: '#0a1a24',
+          deep: '#05131a',
+          deepest: '#070b14',
+        },
+        /** Muted body / secondary text on dark surfaces. */
+        ink: {
+          muted: '#7a8caa',
+          soft: '#c4cfde',
+          DEFAULT: '#c8d3e0',
+        },
       },
       // Minimum touch target sizes
       minWidth: {
@@ -160,6 +195,10 @@ export default {
       },
       // Additional spacing for better mobile UX
       spacing: {
+        // 13 is not in Tailwind's default scale. `h-13` was already used on the
+        // hero CTAs and in Tutorials, where it silently did nothing and left the
+        // buttons sized by padding alone at inconsistent heights.
+        '13': '3.25rem',
         '18': '4.5rem',
         '22': '5.5rem',
         '88': '22rem',

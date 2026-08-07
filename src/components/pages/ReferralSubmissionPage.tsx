@@ -70,7 +70,7 @@ export const ReferralSubmissionPage: React.FC<ReferralSubmissionPageProps> = ({ 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-[#0d1f2d] to-[#0a1a24] border border-slate-700/50 rounded-3xl overflow-hidden mb-8"
+          className="bg-gradient-to-br from-surface to-surface-sunken border border-slate-700/50 rounded-3xl overflow-hidden mb-8"
         >
           <div className="p-6 sm:p-8">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">

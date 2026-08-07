@@ -4,7 +4,26 @@
       "Bash(npx tsc *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(ls -la /tmp/marketingskills/skills/)",
+      "Read(//tmp/marketingskills/**)",
+      "Bash(rm -rf /tmp/marketingskills)",
+      "Bash(npm run *)",
+      "Bash(grep -o '<div id=\"root\">.\\\\{0,300\\\\}' dist/resume-for/data-scientist/index.html)",
+      "WebFetch(domain:omp.sh)",
+      "Bash(curl -fsSL https://omp.sh/install)",
+      "Bash(git symbolic-ref *)",
+      "Bash(git remote *)",
+      "Bash(git status *)",
+      "Bash(echo \"typecheck-exit:$?\")",
+      "Bash(git clone *)",
+      "Bash(command -v bun)",
+      "Bash(echo \"bun-exit:$?\")",
+      "Bash(grep -nE \"curl|wget|eval \\\\\\\\\\\\$\\\\\\(|https?://\" /tmp/gstack/setup)",
+      "PowerShell(irm bun.sh/install.ps1 | iex)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

@@ -11,7 +11,7 @@
   }
   
   body {
-    @apply text-slate-100 bg-[#070b14] antialiased;
+    @apply text-slate-100 bg-surface-deepest antialiased;
     font-feature-settings: 'liga' 1, 'kern' 1;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -58,7 +58,7 @@
   input:focus,
   textarea:focus,
   select:focus {
-    outline: 2px solid theme('colors.neon.cyan.500');
+    outline: 2px solid theme('colors.brand.500');
     outline-offset: 2px;
   }
   
@@ -83,12 +83,15 @@
     @apply inline-flex items-center justify-center min-w-button min-h-button px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900;
   }
   
+  /* Primary action. Solid brand teal rather than the old emerald→cyan gradient,
+     so app-wide buttons match the hero CTA and the brand token. Dark text on
+     the light teal clears contrast comfortably; white did not. */
   .btn-primary {
-    @apply btn-base bg-gradient-to-r from-emerald-500 to-cyan-500 text-white hover:from-emerald-400 hover:to-cyan-400 active:from-emerald-600 active:to-cyan-600 focus:ring-emerald-500 shadow-lg hover:shadow-emerald-500/30 hover:scale-[1.02];
+    @apply btn-base bg-brand-500 text-surface-deepest hover:bg-brand-400 active:bg-brand-600 focus:ring-brand-500 shadow-lg shadow-brand-500/20 hover:shadow-brand-500/30;
   }
-  
+
   .btn-secondary {
-    @apply btn-base bg-slate-800/50 text-slate-200 border border-slate-700 hover:bg-slate-700/50 hover:border-emerald-500/30 active:bg-slate-800 focus:ring-emerald-500;
+    @apply btn-base bg-surface-raised/60 text-ink border border-white/15 hover:bg-surface-raised hover:border-white/25 active:bg-surface hover:text-white focus:ring-brand-500;
   }
   
   /* Christmas button variant */
@@ -98,7 +101,7 @@
 
   /* Card styles - Dark theme by default */
   .card-surface {
-    @apply rounded-2xl border border-slate-800/70 bg-slate-900/70 shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl;
+    @apply rounded-2xl border border-white/10 bg-surface/70 shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl;
   }
 
   .card {
@@ -106,7 +109,7 @@
   }
   
   .card-hover {
-    @apply card transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer hover:shadow-emerald-500/20 hover:border-emerald-500/30;
+    @apply card transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer hover:shadow-brand-500/20 hover:border-brand-500/30;
   }
   
   /* Glass card variant */
@@ -117,16 +120,16 @@
   
   /* Input styles - Dark theme */
   .input-base {
-    @apply w-full px-3 py-2 sm:px-4 sm:py-3 border border-slate-700 rounded-xl bg-slate-800/50 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-slate-100 placeholder-slate-400 backdrop-blur-sm;
+    @apply w-full px-3 py-2 sm:px-4 sm:py-3 border border-slate-700 rounded-xl bg-slate-800/50 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all duration-200 text-slate-100 placeholder-slate-400 backdrop-blur-sm;
   }
   
   /* Navigation styles - Dark theme */
   .nav-link {
-    @apply px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium transition-all duration-200 text-slate-300 hover:bg-slate-800/50 hover:text-emerald-400;
+    @apply px-3 py-2 sm:px-4 sm:py-2 rounded-lg font-medium transition-all duration-200 text-slate-300 hover:bg-white/5 hover:text-brand-400;
   }
   
   .nav-link-active {
-    @apply nav-link bg-slate-800/70 text-emerald-400 border border-emerald-500/30;
+    @apply nav-link bg-white/5 text-brand-400 border border-brand-500/30;
   }
   
   /* Loading spinner */
@@ -618,11 +621,22 @@ html {
   background: rgba(148, 163, 184, 0.8);
 }
 
-/* Smooth scroll for reduced motion preference */
+/* Smooth scroll for reduced motion preference.
+   Note this only neutralises CSS-driven animation. Framer Motion animates via
+   JS transforms which are unaffected by these rules — that side is handled by
+   `useMotionPresets()` in src/lib/motion.ts, which must be used for any JS
+   animation if reduced motion is to be respected. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
   }
 }

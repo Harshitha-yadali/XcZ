@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /profile
+Disallow: /my-bookings
+Disallow: /my-webinars
+Disallow: /jobs/applications
+Disallow: /reset-password
+Disallow: /test-email-digest
+Disallow: /*?*session=active
+
+Sitemap: https://primoboost.ai/sitemap.xml

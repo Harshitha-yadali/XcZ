@@ -6,6 +6,9 @@ import { BlogPostWithRelations } from '../../types/blog';
 import { BlogPostSEO } from '../blog/BlogPostSEO';
 import { RelatedPosts } from '../blog/RelatedPosts';
 import { Breadcrumb } from '../common/Breadcrumb';
+import { TableOfContents, processContentHeadings } from '../blog/TableOfContents';
+import { ContextualLinks } from '../seo/ContextualLinks';
+import { blogContextualLinks } from '../../seo/internalLinks';
 
 export const BlogPostPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -102,6 +105,7 @@ export const BlogPostPage: React.FC = () => {
   }
 
   const readingTime = blogService.calculateReadingTime(post.body_content);
+  const { html: processedContent, toc } = processContentHeadings(post.body_content);
 
   return (
     <>
@@ -179,10 +183,12 @@ export const BlogPostPage: React.FC = () => {
             </div>
           )}
 
+          <TableOfContents items={toc} />
+
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-700/50 p-8 md:p-12 mb-8">
             <div
               className="prose prose-lg prose-invert max-w-none prose-headings:text-slate-100 prose-p:text-slate-300 prose-a:text-emerald-400 prose-strong:text-slate-100 prose-li:text-slate-300 prose-code:text-emerald-400 prose-code:bg-slate-900/50 prose-pre:bg-slate-900/50 prose-blockquote:border-emerald-500 prose-blockquote:text-slate-400"
-              dangerouslySetInnerHTML={{ __html: post.body_content }}
+              dangerouslySetInnerHTML={{ __html: processedContent }}
             />
           </div>
 
@@ -232,6 +238,10 @@ export const BlogPostPage: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div className="mt-8">
+            <ContextualLinks title="Put this into practice" links={blogContextualLinks()} />
           </div>
 
           {relatedPosts.length > 0 && <RelatedPosts posts={relatedPosts} />}

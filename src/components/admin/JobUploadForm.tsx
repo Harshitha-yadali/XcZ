@@ -124,6 +124,7 @@ const jobListingSchema = z.object({
   domain: z.string().min(1, 'Domain is required'),
   location_type: z.enum(['Remote', 'Onsite', 'Hybrid']),
   location_city: z.string().optional(),
+  job_category: z.enum(['Fresher', 'Experienced', 'Internship'], { errorMap: () => ({ message: 'Select who this job is for' }) }),
   experience_required: z.string().min(1, 'Experience requirement is required'),
   qualification: z.string().min(1, 'Qualification is required'),
   eligible_years: z.string().optional().or(z.literal('')),
@@ -167,6 +168,8 @@ type AiJobFieldMap = Partial<Record<keyof JobFormData, AiJobFieldValue>> & {
   company?: AiJobFieldValue;
   role?: AiJobFieldValue;
   title?: AiJobFieldValue;
+  category?: AiJobFieldValue;
+  who_is_this_for?: AiJobFieldValue;
   city?: AiJobFieldValue;
   work_mode?: AiJobFieldValue;
   experience?: AiJobFieldValue;
@@ -432,6 +435,7 @@ const parseStructuredAdminJsonInput = (input: string): AiJobFieldMap | null => {
       company_name: pickFirstNonEmptyText(parsed.company_name, parsed.company),
       company_logo_url: extractUrlFromText(parsed.company_logo_url ?? parsed.company_logo),
       role_title: pickFirstNonEmptyText(parsed.role_title, parsed.role, parsed.title),
+      job_category: pickFirstNonEmptyText(parsed.job_category, parsed.category, parsed.who_is_this_for),
       package_amount: (parsed.package_amount ?? packageDetails?.amount) as AiJobFieldValue,
       package_type: pickFirstNonEmptyText(parsed.package_type, packageDetails?.type),
       domain: domainValues.join(', '),
@@ -702,6 +706,7 @@ const DEFAULT_JOB_FORM_VALUES: Partial<JobFormData> = {
   is_active: true,
   package_type: 'CTC',
   location_type: 'Remote',
+  job_category: 'Experienced',
   eligible_years: '',
   expires_at: '',
   skills: '',
@@ -1055,6 +1060,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
           domain: data.domain || '',
           location_type: data.location_type || 'Remote',
           location_city: data.location_city || '',
+          job_category: data.job_category || 'Experienced',
           experience_required: data.experience_required || '',
           qualification: data.qualification || '',
           eligible_years: eligibleYearsValue,
@@ -1145,6 +1151,7 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
       domain: data.domain,
       location_type: data.location_type,
       location_city: normalizeOptionalTextForSave(data.location_city),
+      job_category: data.job_category,
       experience_required: data.experience_required,
       qualification: data.qualification,
       eligible_years: normalizeOptionalTextForSave(data.eligible_years),
@@ -1667,6 +1674,21 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
           const normalizedLocationType = normalizeExtractedLocationType(locationModeHint, locationCityHint);
           applyFormValue('location_type', normalizedLocationType);
         }
+      }
+
+      const jobCategoryHint = pickFirstNonEmptyText(
+        parsed.job_category,
+        parsed.category,
+        parsed.who_is_this_for,
+        parsedAdminInput.job_category,
+        parsedAdminInput.category,
+        parsedAdminInput.who_is_this_for
+      );
+      if (jobCategoryHint) {
+        const normalizedCategory = jobCategoryHint.trim().toLowerCase();
+        if (normalizedCategory === 'fresher') applyFormValue('job_category', 'Fresher');
+        else if (normalizedCategory === 'experienced') applyFormValue('job_category', 'Experienced');
+        else if (normalizedCategory === 'internship' || normalizedCategory === 'intern') applyFormValue('job_category', 'Internship');
       }
 
       applyBooleanField('is_active', parsed.is_active);
@@ -2312,6 +2334,27 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
 
               {/* Requirements */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    <Users className="w-4 h-4 inline mr-1" />
+                    Who is this job for? *
+                  </label>
+                  <select
+                    {...register('job_category')}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-dark-200 dark:border-dark-300 dark:text-gray-100"
+                  >
+                    <option value="Fresher">Fresher</option>
+                    <option value="Experienced">Experienced</option>
+                    <option value="Internship">Internship</option>
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Drives the Fresher/Experienced/Internship filter job seekers use to search.
+                  </p>
+                  {errors.job_category && (
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.job_category.message}</p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     <Clock className="w-4 h-4 inline mr-1" />

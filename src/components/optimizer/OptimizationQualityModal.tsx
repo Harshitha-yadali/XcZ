@@ -233,7 +233,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#020712]/90 p-2 font-sans backdrop-blur-lg sm:p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-surface-deepest/90 p-2 font-sans backdrop-blur-lg sm:p-4"
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -453,7 +453,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
                           show: { opacity: 1, y: 0 },
                         }}
                         transition={{ duration: reduceMotion ? 0 : 0.18 }}
-                        className="flex min-h-0 flex-col justify-center overflow-hidden bg-[#07141d]/95 px-2.5 py-1.5 sm:px-3 sm:py-2 [@media(max-height:700px)]:px-2 [@media(max-height:700px)]:py-0.5"
+                        className="flex min-h-0 flex-col justify-center overflow-hidden bg-surface-deep/95 px-2.5 py-1.5 sm:px-3 sm:py-2 [@media(max-height:700px)]:px-2 [@media(max-height:700px)]:py-0.5"
                       >
                         <span className="line-clamp-2 text-[9px] font-medium leading-[1.2] text-slate-500 sm:text-[10px]">{row.label}</span>
                         <span className="mt-1 line-clamp-2 text-[10px] font-semibold leading-[1.2] text-slate-100 xs:text-[10.5px] sm:text-xs [@media(max-height:700px)]:mt-0.5">{row.value(activeTier)}</span>

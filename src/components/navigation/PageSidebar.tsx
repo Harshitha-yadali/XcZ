@@ -115,8 +115,8 @@ export const PageSidebar: React.FC<PageSidebarProps> = () => {
           onClick={() => handleNavigation(item.path)}
           className={`relative w-full flex items-center ${isExpanded ? 'justify-start gap-3 px-3' : 'justify-center'} p-3 rounded-lg transition-colors duration-150 ${
             active
-              ? 'text-[#00E6B8]'
-              : 'text-[#7A8CAA] hover:text-[#00E6B8]'
+              ? 'text-brand-500'
+              : 'text-ink-muted hover:text-brand-500'
           }`}
           whileTap={{ scale: 0.93 }}
         >
@@ -149,7 +149,7 @@ export const PageSidebar: React.FC<PageSidebarProps> = () => {
         initial={{ x: -64, opacity: 0 }}
         animate={{ x: 0, opacity: 1, width: isExpanded ? 232 : 64 }}
         transition={{ type: 'spring', stiffness: 280, damping: 28, opacity: { duration: 0.3 } }}
-        className="fixed left-0 top-14 sm:top-16 bottom-0 z-30 hidden md:flex flex-col bg-[#05131A] backdrop-blur-sm border-r border-[#0c1d25]"
+        className="fixed left-0 top-14 sm:top-16 bottom-0 z-30 hidden md:flex flex-col bg-surface-deep backdrop-blur-sm border-r border-surface"
       >
         {/* Tools Section */}
         <div className="flex-1 overflow-y-auto px-2 pt-3">

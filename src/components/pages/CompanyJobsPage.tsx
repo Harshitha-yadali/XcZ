@@ -14,7 +14,7 @@ import {
 import { JobListing } from '../../types/jobs';
 import { jobsService } from '../../services/jobsService';
 import { JobCard } from '../jobs/JobCard';
-import { useSEO, injectJsonLd, removeJsonLd } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 import { FloatingParticles } from '../ui';
 
 interface CompanyJobsPageProps {
@@ -40,16 +40,20 @@ export const CompanyJobsPage: React.FC<CompanyJobsPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [companyJobsJsonLd, setCompanyJobsJsonLd] = useState<Record<string, unknown> | null>(null);
+
   const displayName = companyName || (companySlug || '').replace(/-/g, ' ');
 
-  useSEO({
-    title: `${displayName} Jobs & Openings - Apply Now`,
-    description: `Browse ${total} latest job openings at ${displayName}. Find ${displayName} careers, fresher & experienced roles. Apply directly on PrimoBoost AI.`,
-    canonical: `/jobs/company/${companySlug}`,
-    ogType: 'website',
-    ogImage: companyLogo || undefined,
-    twitterCard: 'summary_large_image',
-  });
+  const seoTag = (
+    <Seo
+      title={`${displayName} Jobs & Openings - Apply Now`}
+      description={`Browse ${total} latest job openings at ${displayName}. Find ${displayName} careers, fresher & experienced roles. Apply directly on PrimoBoost AI.`}
+      canonicalPath={`/jobs/company/${companySlug}`}
+      ogType="website"
+      ogImage={companyLogo || undefined}
+      jsonLd={companyJobsJsonLd ?? undefined}
+    />
+  );
 
   useEffect(() => {
     const fetchCompanyJobs = async () => {
@@ -93,7 +97,7 @@ export const CompanyJobsPage: React.FC<CompanyJobsPageProps> = ({
             url: `https://primoboost.ai/jobs/${j.id}`,
           }));
 
-          injectJsonLd('company-jobs-structured-data', {
+          setCompanyJobsJsonLd({
             '@context': 'https://schema.org',
             '@graph': jobPostings,
           });
@@ -106,22 +110,27 @@ export const CompanyJobsPage: React.FC<CompanyJobsPageProps> = ({
     };
 
     fetchCompanyJobs();
-    return () => removeJsonLd('company-jobs-structured-data');
+    return () => setCompanyJobsJsonLd(null);
   }, [companySlug, navigate]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-        <div className="flex flex-col items-center">
-          <Loader2 className="w-12 h-12 animate-spin text-emerald-400 mb-4" />
-          <p className="text-lg text-slate-300">Loading {displayName} jobs...</p>
+      <>
+        {seoTag}
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+          <div className="flex flex-col items-center">
+            <Loader2 className="w-12 h-12 animate-spin text-emerald-400 mb-4" />
+            <p className="text-lg text-slate-300">Loading {displayName} jobs...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden lg:pl-16 bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]">
+    <>
+    {seoTag}
+    <div className="min-h-screen relative overflow-hidden lg:pl-16 bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.15),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(6,182,212,0.15),transparent_50%)]" />
       <FloatingParticles count={10} />
 
@@ -231,5 +240,6 @@ export const CompanyJobsPage: React.FC<CompanyJobsPageProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };

@@ -97,7 +97,7 @@ export const OfferOverlay: React.FC<OfferOverlayProps> = ({
             aria-modal="true"
             aria-labelledby="jd-offer-title"
             aria-describedby="jd-offer-description"
-            className={`relative my-auto w-full max-w-5xl overflow-hidden rounded-3xl border bg-[#07131c] shadow-[0_30px_100px_rgba(0,0,0,0.65)] ${
+            className={`relative my-auto w-full max-w-5xl overflow-hidden rounded-3xl border bg-surface-deep shadow-[0_30px_100px_rgba(0,0,0,0.65)] ${
               isChristmasMode ? "border-green-400/30" : "border-emerald-400/30"
             }`}
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
@@ -196,7 +196,7 @@ export const OfferOverlay: React.FC<OfferOverlayProps> = ({
 
               <div className="relative border-t border-white/10 bg-slate-950/45 p-5 sm:p-9 lg:border-l lg:border-t-0 lg:p-10">
                 <div className="flex h-full min-h-[390px] items-center justify-center">
-                  <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0c1925] p-4 shadow-2xl sm:p-5">
+                  <div className="w-full max-w-md rounded-2xl border border-white/10 bg-surface-sunken p-4 shadow-2xl sm:p-5">
                     <div className="flex items-center justify-between border-b border-white/10 pb-4">
                       <div className="flex items-center gap-3">
                         <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accentIconBg}`}>

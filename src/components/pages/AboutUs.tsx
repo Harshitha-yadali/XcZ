@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { useSEO } from "../../hooks/useSEO";
+import { Seo } from "../../seo/Seo";
 import {
   Users,
   Target,
@@ -62,13 +62,6 @@ export const AboutUs: React.FC = () => {
   const navigate = useNavigate();
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
 
-  useSEO({
-    title: 'About Us',
-    description: 'Learn about PrimoBoost AI — the AI-powered resume optimization platform trusted by 50,000+ professionals to land more interviews.',
-    canonical: '/about',
-    ogType: 'website',
-  });
-
   const stats = [
     { number: "50,000+", label: "Resumes Optimized", icon: <TrendingUp className="w-5 h-5" />, microcopy: "Trusted by professionals worldwide" },
     { number: "95%", label: "Success Rate", icon: <Award className="w-5 h-5" />, microcopy: "Achieved by our AI-driven approach" },
@@ -111,6 +104,13 @@ export const AboutUs: React.FC = () => {
   };
 
   return (
+    <>
+    <Seo
+      title="About Us"
+      description="Learn about PrimoBoost AI — the AI-powered resume optimization platform trusted by 50,000+ professionals to land more interviews."
+      canonicalPath="/about"
+      ogType="website"
+    />
     <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
       {/* Page Sidebar */}
       <PageSidebar />
@@ -478,5 +478,6 @@ export const AboutUs: React.FC = () => {
         <div className="h-8" />
       </div>
     </DarkPageWrapper>
+    </>
   );
 };

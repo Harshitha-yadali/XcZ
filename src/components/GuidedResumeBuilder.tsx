@@ -2923,7 +2923,7 @@ const handleGenerateProjectBullets = async (
   // --- END NEW ---
 
   return (
-   <div className="relative min-h-screen bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14] text-slate-100 pb-16 lg:pl-16 transition-colors duration-300 overflow-hidden">
+   <div className="relative min-h-screen bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest text-slate-100 pb-16 lg:pl-16 transition-colors duration-300 overflow-hidden">
       {/* Animated background gradients */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <GradientOrb className="w-[500px] h-[500px] -top-40 -left-40 bg-emerald-500/20" delay={0} />

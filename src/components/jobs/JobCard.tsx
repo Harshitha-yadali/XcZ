@@ -13,6 +13,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
+const JOB_CATEGORY_BADGE_CLASSES: Record<string, string> = {
+  Fresher: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  Experienced: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  Internship: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+};
+
 interface JobCardProps {
   job: JobListing & {
     match_score?: number;
@@ -199,6 +205,11 @@ export const JobCard: React.FC<JobCardProps> = ({
                 <h3 className="text-base sm:text-lg font-semibold text-white mb-1 truncate">
                   {job.role_title}
                 </h3>
+                {job.job_category && (
+                  <span className={`inline-block px-2 py-0.5 mb-1 rounded-full text-[10px] font-semibold uppercase tracking-wide border ${JOB_CATEGORY_BADGE_CLASSES[job.job_category] || 'bg-slate-700/40 text-slate-300 border-slate-600/50'}`}>
+                    {job.job_category}
+                  </span>
+                )}
                 <p className="text-sm text-slate-400 mb-2">
                   <span
                     role="link"

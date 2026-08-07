@@ -84,6 +84,15 @@ const ReferralDetailPage = lazy(() => import('./components/pages/ReferralDetailP
 const ReferralSubmissionPage = lazy(() => import('./components/pages/ReferralSubmissionPage').then(m => ({ default: m.ReferralSubmissionPage })));
 const AdminReferralsPage = lazy(() => import('./components/admin/AdminReferralsPage').then(m => ({ default: m.AdminReferralsPage })));
 
+// Programmatic + content SEO pages
+const RoleHubPage = lazy(() => import('./components/pages/seo/RoleHubPage').then(m => ({ default: m.RoleHubPage })));
+const RoleResumePage = lazy(() => import('./components/pages/seo/RoleResumePage').then(m => ({ default: m.RoleResumePage })));
+const CompanyHubPage = lazy(() => import('./components/pages/seo/CompanyHubPage').then(m => ({ default: m.CompanyHubPage })));
+const CompanyResumePage = lazy(() => import('./components/pages/seo/CompanyResumePage').then(m => ({ default: m.CompanyResumePage })));
+const ComparisonHubPage = lazy(() => import('./components/pages/seo/ComparisonHubPage').then(m => ({ default: m.ComparisonHubPage })));
+const ComparisonPage = lazy(() => import('./components/pages/seo/ComparisonPage').then(m => ({ default: m.ComparisonPage })));
+const SeoLandingPage = lazy(() => import('./components/pages/seo/SeoLandingPage').then(m => ({ default: m.SeoLandingPage })));
+
 function App() {
   const { isAuthenticated, user, markProfilePromptSeen, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -362,7 +371,7 @@ const handleDiwaliCTAClick = useCallback(() => {
     window.scrollTo(0, 0);
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
-  }, [location.pathname, location.search, location.hash]);
+  }, [location.pathname, location.hash]);
 
   useEffect(() => {
   console.log(
@@ -464,8 +473,8 @@ const handleDiwaliCTAClick = useCallback(() => {
   return (
     <div className={`min-h-screen pb-safe-bottom safe-area transition-colors duration-300 ${
       isChristmasSeason
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]'
-        : 'bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest'
+        : 'bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest'
     } text-slate-100`}>
       {/* Global Christmas Effects */}
       {isChristmasSeason && !isInterviewMode && (
@@ -651,6 +660,19 @@ const handleDiwaliCTAClick = useCallback(() => {
               </AdminRoute>
             }
           />
+          <Route path="/resume-for" element={<RoleHubPage />} />
+          <Route path="/resume-for/:roleSlug" element={<RoleResumePage />} />
+          <Route path="/resume-for-company" element={<CompanyHubPage />} />
+          <Route path="/resume-for-company/:companySlug" element={<CompanyResumePage />} />
+          <Route path="/compare" element={<ComparisonHubPage />} />
+          <Route path="/compare/:comparisonSlug" element={<ComparisonPage />} />
+          <Route path="/resume-keywords" element={<SeoLandingPage slug="resume-keywords" />} />
+          <Route path="/resume-templates" element={<SeoLandingPage slug="resume-templates" />} />
+          <Route path="/resume-examples" element={<SeoLandingPage slug="resume-examples" />} />
+          <Route path="/campus-placement-resume" element={<SeoLandingPage slug="campus-placement-resume" />} />
+          <Route path="/referral-message-templates" element={<SeoLandingPage slug="referral-message-templates" />} />
+          <Route path="/jd-resume-optimizer" element={<SeoLandingPage slug="jd-resume-optimizer" />} />
+          <Route path="/interview-questions" element={<SeoLandingPage slug="interview-questions" />} />
           <Route path="/blog" element={<EnhancedBlogPage isAuthenticated={isAuthenticated} onShowAuth={() => setShowAuthModal(true)} />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/webinars" element={<WebinarsPage onShowAuth={handleShowAuth} />} />
@@ -729,7 +751,7 @@ const handleDiwaliCTAClick = useCallback(() => {
         {showMobileMenu && (
           <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-label="Navigation menu" aria-modal="true">
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)} />
-            <div className="fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-[#05131A] shadow-2xl overflow-y-auto safe-area border-l border-[#0c1d25]">
+            <div className="fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-surface-deep shadow-2xl overflow-y-auto safe-area border-l border-surface">
               <div className="flex flex-col space-y-4 p-4">
                 <div className="flex items-center justify-between">
                   <button
@@ -748,13 +770,13 @@ const handleDiwaliCTAClick = useCallback(() => {
                   <button
                     onClick={() => setShowMobileMenu(false)}
                     aria-label="Close menu"
-                    className="min-w-touch min-h-touch p-2 text-[#7A8CAA] hover:text-slate-100 hover:bg-[#0c1d25] rounded-lg transition-colors"
+                    className="min-w-touch min-h-touch p-2 text-ink-muted hover:text-slate-100 hover:bg-surface rounded-lg transition-colors"
                   >
                     <X className="w-6 h-6" />
                   </button>
                 </div>
 
-                <div className="border-t border-[#0c1d25] pt-4">
+                <div className="border-t border-surface pt-4">
                   <nav className="flex flex-col space-y-1">
                     {[
                       { id: '/about', label: 'About Us', icon: <Info className="w-5 h-5" /> },
@@ -788,8 +810,8 @@ const handleDiwaliCTAClick = useCallback(() => {
                         }}
                         className={`flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
                           window.location.pathname === item.id
-                            ? 'bg-[rgba(0,230,184,0.12)] text-[#00E6B8]'
-                            : 'text-[#7A8CAA] hover:text-[#00E6B8] hover:bg-[#0c1d25]'
+                            ? 'bg-[rgba(0,230,184,0.12)] text-brand-500'
+                            : 'text-ink-muted hover:text-brand-500 hover:bg-surface'
                         }`}
                       >
                         {item.icon}
@@ -799,7 +821,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                   </nav>
                 </div>
 
-                <div className="border-t border-[#0c1d25] pt-4">
+                <div className="border-t border-surface pt-4">
                   <AuthButtons
                     onPageChange={handlePageChange}
                     onClose={() => setShowMobileMenu(false)}
@@ -807,15 +829,15 @@ const handleDiwaliCTAClick = useCallback(() => {
                   />
                 </div>
 
-                <div className="mt-auto pt-4 border-t border-[#0c1d25]">
-                  <div className="bg-[#0c1d25] rounded-xl p-4">
-                    <p className="text-sm text-[#7A8CAA] mb-2">Need help with your resume?</p>
+                <div className="mt-auto pt-4 border-t border-surface">
+                  <div className="bg-surface rounded-xl p-4">
+                    <p className="text-sm text-ink-muted mb-2">Need help with your resume?</p>
                     <button
                       onClick={() => {
                         handlePageChange('/');
                         setShowMobileMenu(false);
                       }}
-                      className="w-full bg-gradient-to-r from-[#00E6B8] to-cyan-500 text-[#05131A] font-semibold text-sm py-2.5 rounded-lg flex items-center justify-center space-x-2 hover:opacity-90 transition-opacity"
+                      className="w-full bg-gradient-to-r from-brand-500 to-cyan-500 text-surface-deep font-semibold text-sm py-2.5 rounded-lg flex items-center justify-center space-x-2 hover:opacity-90 transition-opacity"
                     >
                       <FileText className="w-4 h-4" />
                       <span>Optimize Now</span>
@@ -924,26 +946,26 @@ const AuthButtons: React.FC<{
   };
   return (
     <div>
-      <h3 className="text-sm font-semibold text-[#7A8CAA] mb-3">Account</h3>
+      <h3 className="text-sm font-semibold text-ink-muted mb-3">Account</h3>
       {isAuthenticated && user ? (
         <div className="space-y-1">
           <button
             type="button"
             onClick={() => { navigate('/profile'); onClose(); }}
-            className="w-full flex items-center space-x-3 px-4 py-3 bg-[#0c1d25] rounded-xl mb-3 text-left transition-all duration-200 hover:bg-[#102735]"
+            className="w-full flex items-center space-x-3 px-4 py-3 bg-surface rounded-xl mb-3 text-left transition-all duration-200 hover:bg-surface-raised"
           >
-            <div className="bg-gradient-to-br from-[#00E6B8] to-cyan-500 w-10 h-10 rounded-full flex items-center justify-center text-[#05131A] font-semibold">
+            <div className="bg-gradient-to-br from-brand-500 to-cyan-500 w-10 h-10 rounded-full flex items-center justify-center text-surface-deep font-semibold">
               {user.name.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2)}
             </div>
             <div className="flex-1 min-w-0 overflow-hidden">
               <p className="font-medium text-slate-100 truncate">{user.name}</p>
-              <p className="text-xs text-[#7A8CAA] truncate">{user.email}</p>
-              <p className="mt-1 text-xs text-[#00E6B8]">Open profile details</p>
+              <p className="text-xs text-ink-muted truncate">{user.email}</p>
+              <p className="mt-1 text-xs text-brand-500">Open profile details</p>
             </div>
           </button>
           <button
             onClick={() => { navigate('/profile?tab=wallet'); onClose(); }}
-            className="w-full flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-medium transition-all duration-200 text-[#7A8CAA] hover:text-[#00E6B8] hover:bg-[#0c1d25]"
+            className="w-full flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-medium transition-all duration-200 text-ink-muted hover:text-brand-500 hover:bg-surface"
           >
             <Wallet className="w-5 h-5" />
             <span>My Wallet</span>
@@ -960,7 +982,7 @@ const AuthButtons: React.FC<{
       ) : (
         <button
           onClick={handleLogin}
-          className="w-full flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-semibold transition-all duration-200 bg-gradient-to-r from-[#00E6B8] to-cyan-500 text-[#05131A] hover:opacity-90"
+          className="w-full flex items-center space-x-3 min-h-touch px-4 py-3 rounded-lg font-semibold transition-all duration-200 bg-gradient-to-r from-brand-500 to-cyan-500 text-surface-deep hover:opacity-90"
           type="button"
         >
           <LogIn className="w-5 h-5" />

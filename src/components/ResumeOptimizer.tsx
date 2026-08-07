@@ -26,7 +26,7 @@ import { ResumeData, UserType, MatchScore, DetailedScore, ExtractionResult, Scor
 import { ExportOptions, defaultExportOptions } from '../types/export';
 import { exportToPDF, exportToWord } from '../utils/exportUtils';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSEO } from '../hooks/useSEO';
+import { Seo } from '../seo/Seo';
 import { ResumePreviewControls } from './ResumePreviewControls';
 import { FullScreenPreviewModal } from './FullScreenPreviewModal';
 import { jobsService } from '../services/jobsService';
@@ -108,12 +108,14 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
 
-  useSEO({
-    title: 'JD-Based Resume Optimizer - Tailor Resume to Job Description',
-    description: 'Optimize your resume for any job description with AI-powered JD-based resume optimization. Get ATS-friendly, keyword-matched resumes tailored to specific roles. Increase your interview callback rate.',
-    keywords: 'JD based resume, job description based resume, resume from job description, JD resume builder, JD resume optimization, JD resume keywords, JD resume matching, JD resume AI tool, resume tailored to job description, resume optimized for JD, resume JD keyword mapping, resume JD alignment tool, JD resume score, JD resume rewrite, JD resume customization, ATS resume optimization tool, ATS resume keyword match, resume keyword optimizer, resume optimization AI, resume optimization tool, resume optimization for software engineer, resume optimization for fresher, resume optimization for experienced, PrimoBoost AI',
-    canonical: '/optimizer',
-  });
+  const seoTag = (
+    <Seo
+      title="JD-Based Resume Optimizer - Tailor Resume to Job Description"
+      description="Optimize your resume for any job description with AI-powered JD-based resume optimization. Get ATS-friendly, keyword-matched resumes tailored to specific roles. Increase your interview callback rate."
+      keywords="JD based resume, job description based resume, resume from job description, JD resume builder, JD resume optimization, JD resume keywords, JD resume matching, JD resume AI tool, resume tailored to job description, resume optimized for JD, resume JD keyword mapping, resume JD alignment tool, JD resume score, JD resume rewrite, JD resume customization, ATS resume optimization tool, ATS resume keyword match, resume keyword optimizer, resume optimization AI, resume optimization tool, resume optimization for software engineer, resume optimization for fresher, resume optimization for experienced, PrimoBoost AI"
+      canonicalPath="/optimizer"
+    />
+  );
 
   const jobContext = location.state as { jobId?: string; jobDescription?: string; roleTitle?: string; companyName?: string; fromJobApplication?: boolean } | null;
   const jobIdFromContext = jobContext?.jobId;
@@ -1152,6 +1154,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     ];
     return (
       <>
+        {seoTag}
         <MobileOptimizedInterface
           sections={mobileSections}
           onStartNewResume={handleStartNewResume}
@@ -1193,13 +1196,20 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       loadingMessage = 'Processing Your Information...';
       submessage = "We're updating your resume with the new sections you provided.";
     }
-    return <LoadingAnimation message={loadingMessage} submessage={submessage} />;
+    return (
+      <>
+        {seoTag}
+        <LoadingAnimation message={loadingMessage} submessage={submessage} />
+      </>
+    );
   }
   return (
-   <div className={`min-h-screen relative overflow-hidden pb-16 lg:pl-16 ${
+   <>
+    {seoTag}
+    <div className={`min-h-screen relative overflow-hidden pb-16 lg:pl-16 ${
       isChristmasMode
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#020617]'
-        : 'bg-gradient-to-b from-slate-900 via-slate-950 to-[#020617]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-slate-950'
+        : 'bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950'
     }`}>
       {/* Radial Glow Overlay - Subtle professional effect */}
       <div className={`pointer-events-none absolute inset-0 ${
@@ -1801,6 +1811,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
         userType={userType}
       />
     </div>
+   </>
   );
 };
 

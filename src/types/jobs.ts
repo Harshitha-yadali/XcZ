@@ -1,5 +1,7 @@
 // src/types/jobs.ts
 
+export type JobCategory = 'Fresher' | 'Experienced' | 'Internship';
+
 export interface JobListing {
   id: string;
   company_name: string;
@@ -14,6 +16,7 @@ export interface JobListing {
   domain: string;
   location_type: 'Remote' | 'Onsite' | 'Hybrid';
   location_city?: string;
+  job_category?: JobCategory | null;
   experience_required: string;
   qualification: string;
   eligible_years?: string | string[] | null;
@@ -88,6 +91,7 @@ export interface ApplicationLog {
 export interface JobFilters {
   domain?: string;
   location_type?: string;
+  job_category?: JobCategory | string;
   experience_required?: string;
   package_min?: number;
   package_max?: number;

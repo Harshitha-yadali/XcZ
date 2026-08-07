@@ -36,7 +36,7 @@ const cards = [
 
 export const AITechSection: React.FC = () => {
   return (
-    <section className="relative overflow-hidden text-white py-16 sm:py-20 lg:py-24 bg-gradient-to-br from-slate-900 via-slate-950 to-[#020617]">
+    <section className="relative overflow-hidden text-white py-16 sm:py-20 lg:py-24 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-950">
       <GradientOrb className="w-64 h-64 -top-24 -left-24 bg-cyan-500/20" delay={0} />
       <GradientOrb className="w-72 h-72 -bottom-24 -right-24 bg-cyan-500/20" delay={2} />
 

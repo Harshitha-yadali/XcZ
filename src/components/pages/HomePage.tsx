@@ -34,7 +34,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { authService } from '../../services/authService';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 interface HomePageProps {
   isAuthenticated: boolean;
@@ -414,7 +414,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
       >
         <GlassCard className="p-3 sm:p-5">
           <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-emerald-400/[0.12] to-transparent" />
-          <div className="relative rounded-[22px] border border-white/[0.08] bg-[#07131c]/90 p-4 sm:p-6">
+          <div className="relative rounded-[22px] border border-white/[0.08] bg-surface-deep/90 p-4 sm:p-6">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
               <div className="flex items-center gap-3">
                 <div className="grid h-10 w-10 place-items-center rounded-xl border border-emerald-300/20 bg-emerald-300/10">
@@ -433,7 +433,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
 
             <div className="grid gap-4 py-5 sm:grid-cols-[140px_1fr] sm:items-center">
               <div className="relative mx-auto grid h-28 w-28 place-items-center rounded-full bg-[conic-gradient(#34d399_0_72%,rgba(255,255,255,0.08)_72%_100%)]">
-                <div className="grid h-[94px] w-[94px] place-items-center rounded-full bg-[#091720] text-center">
+                <div className="grid h-[94px] w-[94px] place-items-center rounded-full bg-surface-sunken text-center">
                   <div>
                     <div className="text-3xl font-semibold tracking-tight text-white">72</div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">ATS score</div>
@@ -494,7 +494,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 1.1, ...spring }}
-        className="absolute -bottom-5 -left-2 hidden items-center gap-2 rounded-2xl border border-white/10 bg-[#0b1a23]/90 px-3.5 py-3 shadow-2xl backdrop-blur-xl sm:flex"
+        className="absolute -bottom-5 -left-2 hidden items-center gap-2 rounded-2xl border border-white/10 bg-surface-sunken/90 px-3.5 py-3 shadow-2xl backdrop-blur-xl sm:flex"
       >
         <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-400/10">
           <Zap className="h-4 w-4 text-blue-300" />
@@ -512,7 +512,7 @@ function OptimizerPreview({ onOptimize }: { onOptimize: () => void }) {
   return (
     <GlassCard className="p-3 sm:p-5 lg:p-6">
       <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-[22px] border border-white/[0.07] bg-[#09141d]/85 p-5">
+        <div className="rounded-[22px] border border-white/[0.07] bg-surface-deep/85 p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
               <FileText className="h-4 w-4 text-slate-500" />
@@ -595,7 +595,7 @@ function JobDiscoveryPreview({ onExplore }: { onExplore: () => void }) {
 
   return (
     <GlassCard className="p-3 sm:p-5">
-      <div className="rounded-[22px] border border-white/[0.07] bg-[#08141d]/90 p-4 sm:p-6">
+      <div className="rounded-[22px] border border-white/[0.07] bg-surface-deep/90 p-4 sm:p-6">
         <div className="flex flex-col gap-3 border-b border-white/[0.07] pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -661,19 +661,6 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [scoreChecksCompleted, setScoreChecksCompleted] = useState(500070);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  useSEO({
-    title: 'ATS Resume Checker & JD Optimizer',
-    description:
-      'Applied everywhere but still not getting interview calls? Check your resume against any job description, find ATS issues, and fix them with PrimoBoost AI.',
-    keywords:
-      'ATS resume checker, ATS score checker, resume optimizer, job description resume match, AI resume optimization, CareerBooster, resume review, interview preparation',
-    canonical: '/',
-    ogType: 'website',
-    ogTitle: 'Check What Is Blocking Your Resume From Shortlisting',
-    ogDescription: 'Get an ATS score, identify resume gaps, and fix them with PrimoBoost AI.',
-    twitterCard: 'summary_large_image',
-  });
-
   useEffect(() => {
     const fetchGlobalCount = async () => {
       try {
@@ -728,7 +715,15 @@ export const HomePage: React.FC<HomePageProps> = ({
   ];
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#050c13] text-slate-100 md:ml-16">
+    <>
+      <Seo
+        title="Check What Is Blocking Your Resume From Shortlisting"
+        description="Get an ATS score, identify resume gaps, and fix them with PrimoBoost AI."
+        keywords="ATS resume checker, ATS score checker, resume optimizer, job description resume match, AI resume optimization, CareerBooster, resume review, interview preparation"
+        canonicalPath="/"
+        ogType="website"
+      />
+      <main className="relative min-h-screen overflow-hidden bg-surface-deepest text-slate-100 md:ml-16">
       <div className="pointer-events-none fixed inset-0 md:left-16">
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:linear-gradient(to_bottom,black,transparent_65%)]" />
         <div className="absolute -left-48 -top-40 h-[620px] w-[620px] rounded-full bg-emerald-500/[0.12] blur-[140px]" />
@@ -851,7 +846,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.08 }}
-              className="bg-[#071019] p-6"
+              className="bg-surface-deep p-6"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -978,7 +973,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="relative rounded-[26px] border border-white/[0.08] bg-[#08131c]/85 p-6 text-center backdrop-blur-xl sm:p-8"
+                className="relative rounded-[26px] border border-white/[0.08] bg-surface-deep/85 p-6 text-center backdrop-blur-xl sm:p-8"
               >
                 <div className="relative mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-emerald-300/15 bg-gradient-to-br from-emerald-300/10 to-blue-400/10 shadow-[0_0_28px_rgba(52,211,153,0.08)]">
                   <item.icon className="h-6 w-6 text-emerald-200" />
@@ -1192,7 +1187,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.08 }}
-                className="rounded-[26px] border border-white/[0.08] bg-[#08131c]/80 p-6"
+                className="rounded-[26px] border border-white/[0.08] bg-surface-deep/80 p-6"
               >
                 <div className="flex gap-1 text-amber-300/80" aria-hidden="true">
                   {[0, 1, 2, 3, 4].map((star) => <Star key={star} className="h-3.5 w-3.5 fill-current" />)}
@@ -1297,7 +1292,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </motion.div>
       </section>
 
-      <footer className="relative border-t border-white/[0.07] bg-[#040a10] px-4 pb-8 pt-14 sm:px-6 lg:px-8">
+      <footer className="relative border-t border-white/[0.07] bg-surface-deepest px-4 pb-8 pt-14 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-10 border-b border-white/[0.07] pb-10 sm:grid-cols-2 lg:grid-cols-[1.3fr_repeat(3,1fr)]">
             <div>
@@ -1375,6 +1370,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </div>
       </footer>
-    </main>
+      </main>
+    </>
   );
 };

@@ -144,7 +144,7 @@ export const ProfilePreferencesTab: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-[#00E6B8] mr-2" />
+        <Loader2 className="w-6 h-6 animate-spin text-brand-500 mr-2" />
         <span className="text-slate-400">Loading preferences...</span>
       </div>
     );
@@ -167,9 +167,9 @@ export const ProfilePreferencesTab: React.FC = () => {
         </motion.div>
       )}
 
-      <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-5 space-y-5">
+      <div className="bg-surface-sunken rounded-xl border border-surface p-5 space-y-5">
         <div className="flex items-center gap-2 mb-1">
-          <Briefcase className="w-4 h-4 text-[#00E6B8]" />
+          <Briefcase className="w-4 h-4 text-brand-500" />
           <h3 className="text-sm font-semibold text-slate-200">Job Preferences</h3>
         </div>
 
@@ -179,7 +179,7 @@ export const ProfilePreferencesTab: React.FC = () => {
             <select
               value={preferences.role_type || 'both'}
               onChange={e => setPreferences(prev => ({ ...prev, role_type: e.target.value as any }))}
-              className="w-full bg-[#05131A] border border-[#0c1d25] text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E6B8] transition-colors"
+              className="w-full bg-surface-deep border border-surface text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition-colors"
             >
               {ROLE_TYPES.map(r => (
                 <option key={r.value} value={r.value}>{r.label}</option>
@@ -195,7 +195,7 @@ export const ProfilePreferencesTab: React.FC = () => {
               type="number"
               value={preferences.passout_year || ''}
               onChange={e => setPreferences(prev => ({ ...prev, passout_year: parseInt(e.target.value) || undefined }))}
-              className="w-full bg-[#05131A] border border-[#0c1d25] text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#00E6B8] transition-colors"
+              className="w-full bg-surface-deep border border-surface text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition-colors"
               min={2000}
               max={2035}
             />
@@ -216,15 +216,15 @@ export const ProfilePreferencesTab: React.FC = () => {
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTech())}
                   placeholder="Search 200+ technologies..."
-                  className="w-full pl-9 pr-3 py-2 bg-[#05131A] border border-[#0c1d25] text-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#00E6B8] transition-colors"
+                  className="w-full pl-9 pr-3 py-2 bg-surface-deep border border-surface text-slate-200 rounded-lg text-sm focus:outline-none focus:border-brand-500 transition-colors"
                 />
                 {showSuggestions && techSuggestions.length > 0 && (
-                  <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#0a1a24] border border-[#0c1d25] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                  <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-surface-sunken border border-surface rounded-lg shadow-xl max-h-48 overflow-y-auto">
                     {techSuggestions.map(suggestion => (
                       <button
                         key={suggestion}
                         onMouseDown={(e) => { e.preventDefault(); addTech(suggestion); }}
-                        className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-[rgba(0,230,184,0.1)] hover:text-[#00E6B8] transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-[rgba(0,230,184,0.1)] hover:text-brand-500 transition-colors"
                       >
                         {suggestion}
                       </button>
@@ -234,7 +234,7 @@ export const ProfilePreferencesTab: React.FC = () => {
               </div>
               <button
                 onClick={() => addTech()}
-                className="px-3 py-2 bg-[rgba(0,230,184,0.15)] text-[#00E6B8] rounded-lg text-sm font-medium hover:bg-[rgba(0,230,184,0.25)] transition-colors whitespace-nowrap"
+                className="px-3 py-2 bg-[rgba(0,230,184,0.15)] text-brand-500 rounded-lg text-sm font-medium hover:bg-[rgba(0,230,184,0.25)] transition-colors whitespace-nowrap"
               >
                 Add
               </button>
@@ -244,7 +244,7 @@ export const ProfilePreferencesTab: React.FC = () => {
             {(preferences.tech_interests || []).map(tech => (
               <span
                 key={tech}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#05131A] border border-[#0c1d25] text-slate-300 rounded-full text-xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-deep border border-surface text-slate-300 rounded-full text-xs"
               >
                 {tech}
                 <button onClick={() => removeTech(tech)} className="text-slate-500 hover:text-red-400 ml-1">&times;</button>
@@ -254,7 +254,7 @@ export const ProfilePreferencesTab: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-5 space-y-5">
+      <div className="bg-surface-sunken rounded-xl border border-surface p-5 space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Mail className="w-4 h-4 text-cyan-400" />
@@ -264,7 +264,7 @@ export const ProfilePreferencesTab: React.FC = () => {
             onClick={() => setIsSubscribed(!isSubscribed)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               isSubscribed
-                ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8]'
+                ? 'bg-[rgba(0,230,184,0.15)] text-brand-500'
                 : 'bg-slate-800 text-slate-500'
             }`}
           >
@@ -284,8 +284,8 @@ export const ProfilePreferencesTab: React.FC = () => {
                     onClick={() => setFrequency(f.value as any)}
                     className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                       frequency === f.value
-                        ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8] border border-[rgba(0,230,184,0.3)]'
-                        : 'bg-[#05131A] text-slate-400 border border-[#0c1d25] hover:border-slate-600'
+                        ? 'bg-[rgba(0,230,184,0.15)] text-brand-500 border border-[rgba(0,230,184,0.3)]'
+                        : 'bg-surface-deep text-slate-400 border border-surface hover:border-slate-600'
                     }`}
                   >
                     {f.label}
@@ -307,8 +307,8 @@ export const ProfilePreferencesTab: React.FC = () => {
                       onClick={() => toggleDomain(domain)}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
                         selectedDomains.includes(domain)
-                          ? 'bg-[rgba(0,230,184,0.15)] text-[#00E6B8] border-[rgba(0,230,184,0.3)]'
-                          : 'bg-[#05131A] text-slate-400 border-[#0c1d25] hover:border-slate-600'
+                          ? 'bg-[rgba(0,230,184,0.15)] text-brand-500 border-[rgba(0,230,184,0.3)]'
+                          : 'bg-surface-deep text-slate-400 border-surface hover:border-slate-600'
                       }`}
                     >
                       {domain}
@@ -318,7 +318,7 @@ export const ProfilePreferencesTab: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center gap-4 text-xs text-slate-500 pt-2 border-t border-[#0c1d25]">
+            <div className="flex items-center gap-4 text-xs text-slate-500 pt-2 border-t border-surface">
               <span>Total notifications: {stats.totalNotifications}</span>
               {stats.lastNotificationDate && (
                 <span>Last sent: {new Date(stats.lastNotificationDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
@@ -332,7 +332,7 @@ export const ProfilePreferencesTab: React.FC = () => {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[rgba(0,230,184,0.15)] text-[#00E6B8] rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[rgba(0,230,184,0.15)] text-brand-500 rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium disabled:opacity-50"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? 'Saving...' : 'Save Preferences'}

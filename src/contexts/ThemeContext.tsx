@@ -32,7 +32,7 @@ const defaultColors: ThemeColors = {
   badgeBorder: 'border-emerald-400/30',
   badgeText: 'text-emerald-300',
   successColor: 'emerald-400',
-  backgroundGradient: 'from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]',
+  backgroundGradient: 'from-teal-dark-900 via-surface-sunken to-surface-deepest',
 };
 
 const christmasColors: ThemeColors = {
@@ -44,7 +44,7 @@ const christmasColors: ThemeColors = {
   badgeBorder: 'border-red-400/30',
   badgeText: 'text-red-300',
   successColor: 'green-400',
-  backgroundGradient: 'from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]',
+  backgroundGradient: 'from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest',
 };
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {

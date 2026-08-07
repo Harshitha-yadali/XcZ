@@ -31,6 +31,7 @@ import {
 import { supabase } from '../../lib/supabaseClient';
 import { JobListing } from '../../types/jobs';
 import { Breadcrumb } from '../common/Breadcrumb';
+import { RichText } from '../common/RichText';
 import { generateCompanyDescription } from '../../services/geminiService';
 
 type HoverAction = 'optimize' | 'score' | 'apply';
@@ -540,9 +541,7 @@ export const JobApplicationPage: React.FC = () => {
                 <p className="text-slate-300">Generating company description with AI...</p>
               </div>
             ) : (
-              <p className="text-slate-300 leading-relaxed mb-6 whitespace-pre-line">
-                {companyDescription}
-              </p>
+              <RichText content={companyDescription} className="mb-6" />
             )}
 
             {job.company_website && (
@@ -560,9 +559,7 @@ export const JobApplicationPage: React.FC = () => {
 
             <div className="mt-8">
               <h3 className="text-xl font-bold text-slate-100 mb-3">Job Description</h3>
-              <p className="text-slate-300 leading-relaxed whitespace-pre-line">
-                {job.description}
-              </p>
+              <RichText content={job.description} />
             </div>
 
             {job.qualification && (

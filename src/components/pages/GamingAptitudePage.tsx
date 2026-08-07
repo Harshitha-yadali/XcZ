@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 import {
   Trophy,
   Star,
@@ -33,12 +33,14 @@ export const GamingAptitudePage: React.FC<GamingAptitudePageProps> = ({
   const { user } = useAuth();
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
 
-  useSEO({
-    title: 'Gaming Aptitude Tests',
-    description: 'Practice company-specific aptitude and reasoning tests in a gamified format. Improve your chances for top company placements.',
-    canonical: '/gaming',
-    ogType: 'website',
-  });
+  const seoTag = (
+    <Seo
+      title="Gaming Aptitude Tests"
+      description="Practice company-specific aptitude and reasoning tests in a gamified format. Improve your chances for top company placements."
+      canonicalPath="/gaming"
+      ogType="website"
+    />
+  );
 
   const [, setCompanies] = useState<CompanyWithProgress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,19 +82,24 @@ export const GamingAptitudePage: React.FC<GamingAptitudePageProps> = ({
 
   if (loading) {
     return (
-      <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
-        <PageSidebar />
-        <div className="md:ml-16 min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <Gamepad2 className="w-12 h-12 text-emerald-400 mx-auto mb-4 animate-pulse" />
-            <p className="text-slate-400">Loading gaming section...</p>
+      <>
+        {seoTag}
+        <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
+          <PageSidebar />
+          <div className="md:ml-16 min-h-screen flex items-center justify-center">
+            <div className="text-center">
+              <Gamepad2 className="w-12 h-12 text-emerald-400 mx-auto mb-4 animate-pulse" />
+              <p className="text-slate-400">Loading gaming section...</p>
+            </div>
           </div>
-        </div>
-      </DarkPageWrapper>
+        </DarkPageWrapper>
+      </>
     );
   }
 
   return (
+    <>
+    {seoTag}
     <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
       <PageSidebar />
       <div className="md:ml-16 container mx-auto px-4 py-12">
@@ -349,5 +356,6 @@ export const GamingAptitudePage: React.FC<GamingAptitudePageProps> = ({
         )}
       </div>
     </DarkPageWrapper>
+    </>
   );
 };

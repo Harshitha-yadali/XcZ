@@ -32,7 +32,7 @@ import { userPreferencesService } from '../../services/userPreferencesService';
 import { aiJobMatchingService } from '../../services/aiJobMatchingService';
 import { useAutoApply } from '../../hooks/useAutoApply';
 import { profileResumeService } from '../../services/profileResumeService';
-import { useSEO, injectJsonLd, removeJsonLd } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 interface JobsPageProps {
   isAuthenticated: boolean;
@@ -40,42 +40,13 @@ interface JobsPageProps {
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
 }
 
-const getFiltersFromSearchParams = (params: URLSearchParams): JobFilters => {
-  const filters: JobFilters = {};
-
-  const search = params.get('search')?.trim();
-  const domain = params.get('domain')?.trim();
-  const locationType = params.get('location_type')?.trim();
-  const experienceRequired = params.get('experience_required')?.trim();
-  const eligibleYear = params.get('eligible_year')?.trim();
-  const packageMin = params.get('package_min');
-  const packageMax = params.get('package_max');
-  const sortBy = params.get('sort_by');
-  const sortOrder = params.get('sort_order');
-
-  if (search) filters.search = search;
-  if (domain) filters.domain = domain;
-  if (locationType) filters.location_type = locationType;
-  if (experienceRequired) filters.experience_required = experienceRequired;
-  if (eligibleYear) filters.eligible_year = eligibleYear;
-  if (packageMin && !Number.isNaN(Number(packageMin))) filters.package_min = Number(packageMin);
-  if (packageMax && !Number.isNaN(Number(packageMax))) filters.package_max = Number(packageMax);
-  if (sortBy === 'posted_date' || sortBy === 'package_amount' || sortBy === 'company_name') {
-    filters.sort_by = sortBy;
-  }
-  if (sortOrder === 'asc' || sortOrder === 'desc') {
-    filters.sort_order = sortOrder;
-  }
-
-  return filters;
-};
-
 const buildSearchParamsFromFilters = (filters: JobFilters, page: number): URLSearchParams => {
   const params = new URLSearchParams({ page: page.toString() });
 
   if (filters.search) params.set('search', filters.search);
   if (filters.domain) params.set('domain', filters.domain);
   if (filters.location_type) params.set('location_type', filters.location_type);
+  if (filters.job_category) params.set('job_category', filters.job_category);
   if (filters.experience_required) params.set('experience_required', filters.experience_required);
   if (filters.eligible_year) params.set('eligible_year', filters.eligible_year);
   if (typeof filters.package_min === 'number') params.set('package_min', filters.package_min.toString());
@@ -97,17 +68,9 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   const prefersReducedMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  useSEO({
-    title: 'Latest Jobs - Fresher & Experienced Openings at Top Companies',
-    description: 'Browse latest job openings at Google, TCS, Infosys, Wipro, Amazon & more top companies in India. Find fresher jobs, experienced roles, remote positions. Apply directly or use AI-powered auto-apply on PrimoBoost AI.',
-    keywords: 'latest jobs India, fresher jobs, experienced jobs, remote jobs India, IT jobs India, software engineer jobs, data analyst jobs, full stack developer jobs, frontend developer jobs, backend developer jobs, DevOps jobs, cloud engineer jobs, QA tester jobs, business analyst jobs, product manager jobs, fresher IT jobs, entry level IT jobs, job portals India, ATS resume job matching, AI job matching, job search India, PrimoBoost AI',
-    canonical: '/jobs',
-    ogType: 'website',
-    twitterCard: 'summary_large_image',
-  });
-
   const [jobs, setJobs] = useState<JobListing[]>([]);
-  const [filters, setFilters] = useState<JobFilters>(() => getFiltersFromSearchParams(searchParams));
+  const [jobsJsonLd, setJobsJsonLd] = useState<Record<string, unknown> | null>(null);
+  const [filters, setFilters] = useState<JobFilters>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -226,8 +189,6 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   setIsLoading(true);
   setError(null);
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-
   try {
     const safePage = Number.isFinite(page) ? Math.max(1, page) : 1;
     const offset = (safePage - 1) * pageSize;
@@ -276,7 +237,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         ...(j.skills && j.skills.length > 0 ? { skills: j.skills.join(', ') } : {}),
         url: `https://primoboost.ai/jobs/${j.id}`,
       }));
-      injectJsonLd('jobs-structured-data', {
+      setJobsJsonLd({
         '@context': 'https://schema.org',
         '@graph': jobPostings,
       });
@@ -292,23 +253,6 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   useEffect(() => {
     loadJobs(currentPage, filters);
   }, [filters]);
-
-  useEffect(() => {
-    const pageParam = searchParams.get('page');
-    const pageNumber = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
-    const nextFilters = getFiltersFromSearchParams(searchParams);
-
-    if (JSON.stringify(nextFilters) !== JSON.stringify(filters)) {
-      setFilters(nextFilters);
-      setCurrentPage(pageNumber);
-      return;
-    }
-
-    if (pageNumber !== currentPage) {
-      setCurrentPage(pageNumber);
-      loadJobs(pageNumber, nextFilters);
-    }
-  }, [currentPage, filters, loadJobs, searchParams]);
 
   const handleFiltersChange = (newFilters: JobFilters) => {
     setFilters(newFilters);
@@ -391,10 +335,19 @@ const stats = [
 
 
   return (
+    <>
+    <Seo
+      title="Latest Jobs - Fresher & Experienced Openings at Top Companies"
+      description="Browse latest job openings at Google, TCS, Infosys, Wipro, Amazon & more top companies in India. Find fresher jobs, experienced roles, remote positions. Apply directly or use AI-powered auto-apply on PrimoBoost AI."
+      keywords="latest jobs India, fresher jobs, experienced jobs, remote jobs India, IT jobs India, software engineer jobs, data analyst jobs, full stack developer jobs, frontend developer jobs, backend developer jobs, DevOps jobs, cloud engineer jobs, QA tester jobs, business analyst jobs, product manager jobs, fresher IT jobs, entry level IT jobs, job portals India, ATS resume job matching, AI job matching, job search India, PrimoBoost AI"
+      canonicalPath="/jobs"
+      ogType="website"
+      jsonLd={jobsJsonLd ?? undefined}
+    />
     <div className={`min-h-screen relative overflow-hidden lg:pl-16 ${
       isChristmasMode
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]'
-        : 'bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest'
+        : 'bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest'
     }`}>
       {/* Radial Glow Overlay */}
       <div className={`pointer-events-none absolute inset-0 ${
@@ -719,5 +672,6 @@ const stats = [
         onComplete={handleOnboardingComplete}
       />
     </div>
+    </>
   );
 };

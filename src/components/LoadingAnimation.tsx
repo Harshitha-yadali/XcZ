@@ -241,7 +241,7 @@ export const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
   const currentQuote = QUOTES[currentQuoteIndex];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#070b14] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-surface-deepest p-4">
       <div className="card-surface p-8 text-center max-w-lg w-full transform transition-all duration-500">
         
         {/* Animated Icon */}

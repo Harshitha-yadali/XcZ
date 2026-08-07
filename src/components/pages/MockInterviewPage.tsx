@@ -10,7 +10,7 @@ import { InterviewSummaryReport } from '../interview/InterviewSummaryReport';
 import { InterviewConfig } from '../../types/interview';
 import { UserResume } from '../../types/resumeInterview';
 import { ArrowLeft, Sparkles } from 'lucide-react';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 // Animated gradient orb component
 const GradientOrb: React.FC<{ className?: string; delay?: number }> = ({ className, delay = 0 }) => (
@@ -43,13 +43,6 @@ export const MockInterviewPage: React.FC<MockInterviewPageProps> = ({
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isChristmasMode, colors } = useTheme();
-
-  useSEO({
-    title: 'AI Mock Interview - Practice with AI Interviewer',
-    description: 'Practice interviews with our AI-powered mock interview system. Get real-time feedback, scoring, and improvement suggestions for technical and behavioral interviews.',
-    keywords: 'AI mock interview, mock interview online, technical interview practice, behavioral interview practice, interview preparation tool, AI interview feedback, coding interview practice, HR interview practice, interview scoring, interview improvement, PrimoBoost AI',
-    canonical: '/mock-interview',
-  });
 
   const [currentStage, setCurrentStage] = useState<FlowStage>('welcome');
   const [interviewConfig, setInterviewConfig] = useState<InterviewConfig | null>(null);
@@ -97,7 +90,7 @@ export const MockInterviewPage: React.FC<MockInterviewPageProps> = ({
   };
 
   const renderWelcomeScreen = () => (
-    <div className="relative min-h-screen bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14] text-slate-100 lg:pl-16 overflow-hidden">
+    <div className="relative min-h-screen bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest text-slate-100 lg:pl-16 overflow-hidden">
       {/* Animated background gradients */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <GradientOrb className="w-[500px] h-[500px] -top-40 -left-40 bg-indigo-500/20" delay={0} />
@@ -241,6 +234,12 @@ export const MockInterviewPage: React.FC<MockInterviewPageProps> = ({
 
   return (
     <>
+      <Seo
+        title="AI Mock Interview - Practice with AI Interviewer"
+        description="Practice interviews with our AI-powered mock interview system. Get real-time feedback, scoring, and improvement suggestions for technical and behavioral interviews."
+        keywords="AI mock interview, mock interview online, technical interview practice, behavioral interview practice, interview preparation tool, AI interview feedback, coding interview practice, HR interview practice, interview scoring, interview improvement, PrimoBoost AI"
+        canonicalPath="/mock-interview"
+      />
       {currentStage === 'welcome' && renderWelcomeScreen()}
 
       {currentStage === 'setup' && (

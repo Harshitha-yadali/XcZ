@@ -16,7 +16,7 @@ import { BlogStats } from '../blog/BlogStats';
 import { BlogFilters } from '../blog/BlogFilters';
 import { Pagination } from '../common/Pagination';
 import { Breadcrumb } from '../common/Breadcrumb';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 
 interface EnhancedBlogPageProps {
   isAuthenticated: boolean;
@@ -29,13 +29,6 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
 }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  useSEO({
-    title: 'Blog - Career Tips, Resume Advice & Interview Guides',
-    description: 'Read expert articles on resume building, ATS optimization, interview preparation, and career growth. Stay updated with the latest job market insights.',
-    keywords: 'resume tips, ATS resume tips, resume building guide, interview preparation tips, career growth advice, job search tips, resume optimization tips, ATS optimization guide, resume keyword tips, resume formatting guide, job market insights India, PrimoBoost AI blog',
-    canonical: '/blog',
-  });
 
   const [posts, setPosts] = useState<BlogPostWithRelations[]>([]);
   const [categories, setCategories] = useState<BlogCategory[]>([]);
@@ -139,10 +132,17 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
 
   return (
+    <>
+    <Seo
+      title="Blog - Career Tips, Resume Advice & Interview Guides"
+      description="Read expert articles on resume building, ATS optimization, interview preparation, and career growth. Stay updated with the latest job market insights."
+      keywords="resume tips, ATS resume tips, resume building guide, interview preparation tips, career growth advice, job search tips, resume optimization tips, ATS optimization guide, resume keyword tips, resume formatting guide, job market insights India, PrimoBoost AI blog"
+      canonicalPath="/blog"
+    />
     <div className={`min-h-screen lg:pl-16 transition-colors duration-300 ${
       isChristmas
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]'
-        : 'bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest'
+        : 'bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest'
     }`}>
       <div className="bg-slate-900/80 backdrop-blur-xl shadow-lg border-b border-slate-800/50 sticky top-0 z-40">
         <div className="w-full max-w-full mx-auto px-4 sm:px-6">
@@ -302,5 +302,6 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
         )}
       </div>
     </div>
+    </>
   );
 };

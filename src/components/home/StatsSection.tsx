@@ -127,7 +127,7 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
             >
               <Card
                 padding="lg"
-                className="card-surface text-left flex flex-col sm:flex-row items-start gap-3 sm:gap-4 bg-[#0D1B2A]/80 border border-[#1f2a3c] shadow-lg hover:bg-[#0D1B2A] hover:border-[#2a3a4f] transition-all duration-300 group h-full backdrop-blur-sm"
+                className="card-surface text-left flex flex-col sm:flex-row items-start gap-3 sm:gap-4 bg-surface/80 border border-[#1f2a3c] shadow-lg hover:bg-surface hover:border-[#2a3a4f] transition-all duration-300 group h-full backdrop-blur-sm"
               >
                 <motion.div
                   className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-b ${stat.accentBg} ${stat.accentRing} border flex-shrink-0`}
@@ -142,10 +142,10 @@ export const StatsSection: React.FC<StatsSectionProps> = ({
                   <div className="text-xl sm:text-2xl font-bold text-white leading-tight tabular-nums">
                     <CountUp to={stat.rawValue} format={stat.format} isInView={isStatsInView} />
                   </div>
-                  <div className="text-xs sm:text-sm font-medium text-[#C4CFDE] leading-snug">
+                  <div className="text-xs sm:text-sm font-medium text-ink-soft leading-snug">
                     {stat.label}
                   </div>
-                  <p className="text-[10px] sm:text-xs text-[#C4CFDE] leading-relaxed hidden sm:block">
+                  <p className="text-[10px] sm:text-xs text-ink-soft leading-relaxed hidden sm:block">
                     {stat.microcopy}
                   </p>
                 </div>

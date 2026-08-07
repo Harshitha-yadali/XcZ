@@ -63,7 +63,7 @@ import type { Subscription } from '../types/payment';
 import { paymentService } from '../services/paymentService';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useSEO } from '../hooks/useSEO';
+import { Seo } from '../seo/Seo';
 import type { PremiumScoreResult } from '../services/premiumScoreEngine';
 import { PremiumResultsDashboard } from './score/PremiumResultsDashboard';
 
@@ -157,12 +157,6 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  useSEO({
-    title: 'ATS Resume Score Checker - Free Resume Analysis & ATS Compatibility Test',
-    description: 'Check your resume ATS score against 30 deterministic, evidence-backed checks. Get detailed keyword analysis, formatting validation, and actionable improvement suggestions.',
-    keywords: 'ATS resume score, ATS resume checker, ATS resume score checker, ATS resume analysis, ATS resume scan, ATS resume test, ATS resume compatibility, ATS resume screening, ATS resume parsing test, ATS resume keyword checker, ATS resume keyword analysis, ATS resume keyword optimization, ATS resume scoring system, ATS resume AI, resume score checker, resume keyword score, resume keyword heatmap, resume keyword report, resume ATS compatibility test, resume optimization score, ATS resume India, ATS resume fresher, ATS resume experienced, PrimoBoost AI',
-    canonical: '/score-checker',
-  });
   const location = useLocation();
   const [extractionResult, setExtractionResult] = useState<ExtractionResult>({ text: '', extraction_mode: 'TEXT', trimmed: false });
   const [parsedResumeData, setParsedResumeData] = useState<ParsedResume | null>(null);
@@ -606,13 +600,19 @@ if (hasScoreCheckCredits) {
 
   return (
     <>
+      <Seo
+        title="ATS Resume Score Checker - Free Resume Analysis & ATS Compatibility Test"
+        description="Check your resume ATS score against 30 deterministic, evidence-backed checks. Get detailed keyword analysis, formatting validation, and actionable improvement suggestions."
+        keywords="ATS resume score, ATS resume checker, ATS resume score checker, ATS resume analysis, ATS resume scan, ATS resume test, ATS resume compatibility, ATS resume screening, ATS resume parsing test, ATS resume keyword checker, ATS resume keyword analysis, ATS resume keyword optimization, ATS resume scoring system, ATS resume AI, resume score checker, resume keyword score, resume keyword heatmap, resume keyword report, resume ATS compatibility test, resume optimization score, ATS resume India, ATS resume fresher, ATS resume experienced, PrimoBoost AI"
+        canonicalPath="/score-checker"
+      />
       {isAnalyzing ? (
         <LoadingAnimation
           message={loadingStep}
           submessage="Please wait while we analyze your resume."
         />
       ) : (
-        <div className="relative min-h-screen flex flex-col bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14] text-slate-100 px-4 sm:px-0 lg:pl-16 transition-colors duration-300 overflow-hidden">
+        <div className="relative min-h-screen flex flex-col bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest text-slate-100 px-4 sm:px-0 lg:pl-16 transition-colors duration-300 overflow-hidden">
           {/* Animated background gradients */}
           <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
             <GradientOrb className="w-[500px] h-[500px] -top-40 -left-40 bg-emerald-500/20" delay={0} />
@@ -1315,12 +1315,40 @@ if (hasScoreCheckCredits) {
 
                     <motion.div
                       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.45 }}
+                      className="bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-400/30 rounded-2xl p-6 sm:p-8 text-center"
+                    >
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold uppercase tracking-wide mb-3">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        {scoreResult.overallScore >= 80 ? 'Almost there' : 'Fixable right now'}
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-slate-100 mb-2">
+                        {scoreResult.overallScore >= 80
+                          ? "Close the last few points to stand out"
+                          : `Your ${scoreResult.overallScore}/100 score is costing you interview calls`}
+                      </h3>
+                      <p className="text-slate-300 max-w-xl mx-auto mb-6">
+                        The AI Resume Optimizer rewrites your resume against this job description to fix exactly
+                        what's flagged above — same issues, done in minutes.
+                      </p>
+                      <button
+                        onClick={() => navigate('/optimizer')}
+                        className="px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-emerald-400 hover:to-cyan-400 transition-all duration-300 shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2"
+                      >
+                        <Target className="w-4.5 h-4.5" />
+                        Optimize My Resume Now
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.5, delay: 0.5 }}
                       className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4"
                     >
                       <button
                         onClick={handleCheckAnotherResume}
-                        className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-emerald-400 hover:to-cyan-400 transition-all duration-300 shadow-lg shadow-emerald-500/25 flex items-center gap-2"
+                        className="px-8 py-3 bg-slate-800 text-slate-200 font-semibold rounded-xl hover:bg-slate-700 transition-all duration-300 border border-slate-700 flex items-center gap-2"
                       >
                         Check Another Resume
                         <ArrowRight className="w-4 h-4" />

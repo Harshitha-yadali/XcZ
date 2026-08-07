@@ -381,7 +381,7 @@ export const Holly: React.FC<{ className?: string }> = ({ className }) => (
 
 // Christmas background wrapper
 export const ChristmasBackground: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="relative min-h-screen bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14] text-slate-100">
+  <div className="relative min-h-screen bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest text-slate-100">
     {/* Festive gradient overlays */}
     <div className="fixed inset-0 pointer-events-none">
       <FestiveOrb className="w-[500px] h-[500px] -top-40 -left-40" color="red" />
@@ -417,8 +417,8 @@ export const DarkPageWrapper: React.FC<{
   return (
     <div className={`relative min-h-screen text-slate-100 overflow-x-hidden ${
       isChristmas
-        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-[#070b14]'
-        : 'bg-gradient-to-b from-[#0a1e1e] via-[#0d1a1a] to-[#070b14]'
+        ? 'bg-gradient-to-b from-[#1a0a0f] via-[#0f1a0f] to-surface-deepest'
+        : 'bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest'
     } ${className}`}>
       {/* Background gradients */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">

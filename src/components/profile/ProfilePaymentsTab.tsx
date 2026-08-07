@@ -75,7 +75,7 @@ export const ProfilePaymentsTab: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-[#00E6B8] mr-2" />
+        <Loader2 className="w-6 h-6 animate-spin text-brand-500 mr-2" />
         <span className="text-slate-400">Loading payment history...</span>
       </div>
     );
@@ -83,7 +83,7 @@ export const ProfilePaymentsTab: React.FC = () => {
 
   if (transactions.length === 0) {
     return (
-      <div className="text-center py-16 bg-[#0a1a24] rounded-xl border border-[#0c1d25]">
+      <div className="text-center py-16 bg-surface-sunken rounded-xl border border-surface">
         <Receipt className="w-14 h-14 text-slate-600 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-slate-200 mb-2">No Transactions</h3>
         <p className="text-slate-400 max-w-sm mx-auto">
@@ -100,16 +100,16 @@ export const ProfilePaymentsTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-4">
+        <div className="bg-surface-sunken rounded-xl border border-surface p-4">
           <div className="flex items-center gap-2 mb-2">
-            <IndianRupee className="w-4 h-4 text-[#00E6B8]" />
+            <IndianRupee className="w-4 h-4 text-brand-500" />
             <span className="text-xs text-slate-500 uppercase tracking-wider">Total Spent</span>
           </div>
           <p className="text-2xl font-bold text-slate-100">
             {formatAmount(totalSpent)}
           </p>
         </div>
-        <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-4">
+        <div className="bg-surface-sunken rounded-xl border border-surface p-4">
           <div className="flex items-center gap-2 mb-2">
             <ShoppingBag className="w-4 h-4 text-cyan-400" />
             <span className="text-xs text-slate-500 uppercase tracking-wider">Purchases</span>
@@ -118,7 +118,7 @@ export const ProfilePaymentsTab: React.FC = () => {
             {transactions.filter(t => t.status === 'success').length}
           </p>
         </div>
-        <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-4 col-span-2 sm:col-span-1">
+        <div className="bg-surface-sunken rounded-xl border border-surface p-4 col-span-2 sm:col-span-1">
           <div className="flex items-center gap-2 mb-2">
             <CreditCard className="w-4 h-4 text-amber-400" />
             <span className="text-xs text-slate-500 uppercase tracking-wider">Saved</span>
@@ -139,7 +139,7 @@ export const ProfilePaymentsTab: React.FC = () => {
                 key={tx.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-[#0a1a24] border border-[#0c1d25] rounded-xl p-4 hover:border-[rgba(0,230,184,0.15)] transition-colors"
+                className="bg-surface-sunken border border-surface rounded-xl p-4 hover:border-[rgba(0,230,184,0.15)] transition-colors"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -160,8 +160,8 @@ export const ProfilePaymentsTab: React.FC = () => {
                   </div>
                 </div>
                 {(tx.coupon_code || tx.wallet_deduction_amount > 0) && (
-                  <div className="flex items-center gap-3 text-xs text-slate-500 mt-2 pt-2 border-t border-[#0c1d25]">
-                    {tx.coupon_code && <span>Coupon: <span className="text-[#00E6B8]">{tx.coupon_code}</span></span>}
+                  <div className="flex items-center gap-3 text-xs text-slate-500 mt-2 pt-2 border-t border-surface">
+                    {tx.coupon_code && <span>Coupon: <span className="text-brand-500">{tx.coupon_code}</span></span>}
                     {tx.wallet_deduction_amount > 0 && <span>Wallet used: {formatAmount(tx.wallet_deduction_amount)}</span>}
                   </div>
                 )}

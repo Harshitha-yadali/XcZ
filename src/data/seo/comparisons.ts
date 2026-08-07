@@ -1,0 +1,156 @@
+import type { RoleFaq } from './roles';
+
+export interface ComparisonSide {
+  name: string;
+  points: string[];
+}
+
+export interface ComparisonPageData {
+  slug: string;
+  title: string;
+  metaDescription: string;
+  intro: string;
+  optionA: ComparisonSide;
+  optionB: ComparisonSide;
+  verdict: string;
+  faqs: RoleFaq[];
+}
+
+export const RESUME_COMPARISONS: ComparisonPageData[] = [
+  {
+    slug: 'ats-resume-checker-vs-manual-review',
+    title: 'ATS Resume Checker vs Manual Resume Review',
+    metaDescription: 'ATS resume checker vs manual review, compared: speed, consistency, cost and what each actually catches — so you know when to use which.',
+    intro: 'Both approaches try to answer the same question — "will this resume get shortlisted?" — but they check very different things.',
+    optionA: {
+      name: 'ATS Resume Checker',
+      points: [
+        'Instant, free results — no waiting for a reviewer',
+        'Consistently checks keyword match, formatting parseability, and structure against a specific JD',
+        'Repeatable — re-check after every edit at no extra cost',
+        'Cannot judge writing quality, tone, or whether an achievement actually sounds impressive to a human',
+      ],
+    },
+    optionB: {
+      name: 'Manual Resume Review',
+      points: [
+        'Catches tone, phrasing and narrative issues a script cannot',
+        'Can give role-specific career advice, not just formatting feedback',
+        'Slower — usually hours to days, and often paid',
+        'Quality varies a lot by reviewer; not consistent or repeatable',
+      ],
+    },
+    verdict: 'Use an ATS checker first to fix mechanical, pass/fail issues for free, then get human eyes on tone and story once the resume already clears ATS screening — doing it in the other order wastes a reviewer\'s time on formatting problems a tool would have caught instantly.',
+    faqs: [
+      { question: 'Can an ATS checker replace human feedback entirely?', answer: 'No — it solves a different problem. An ATS checker tells you whether you\'ll get past the algorithm; a human tells you whether the content is actually persuasive once a recruiter opens it.' },
+    ],
+  },
+  {
+    slug: 'ai-resume-optimizer-vs-generic-templates',
+    title: 'AI Resume Optimizer vs Generic Resume Templates',
+    metaDescription: 'AI resume optimizer vs generic resume templates: which actually improves shortlist rate, and why a template alone rarely fixes ATS or keyword-match issues.',
+    intro: 'A good-looking template solves layout. It does nothing about whether your resume\'s content matches what a specific job description is actually asking for.',
+    optionA: {
+      name: 'AI Resume Optimizer',
+      points: [
+        'Tailors bullet points and keywords to a specific job description, not just a generic "best practice" list',
+        'Flags missing skills/keywords the JD explicitly asks for',
+        'Content changes with every job you apply to',
+        'Still requires you to supply real, truthful experience — it improves phrasing and targeting, not fabricates achievements',
+      ],
+    },
+    optionB: {
+      name: 'Generic Resume Template',
+      points: [
+        'Fixes visual layout and ATS-parseable formatting quickly',
+        'Same content regardless of which job you\'re applying to',
+        'Doesn\'t address keyword match against a specific JD at all',
+        'Fast and free, good as a starting structure',
+      ],
+    },
+    verdict: 'Start from an ATS-friendly template for structure, then run the content through a JD-based optimizer for every application — template solves formatting, optimizer solves relevance, and you need both.',
+    faqs: [],
+  },
+  {
+    slug: 'jd-tailored-resume-vs-generic-resume',
+    title: 'JD-Tailored Resume vs One Generic Resume',
+    metaDescription: 'Sending one generic resume everywhere vs tailoring it to each job description: the real impact on ATS match rate and shortlist odds.',
+    intro: 'The single biggest reason strong candidates get filtered out isn\'t lack of skill — it\'s a resume that never explicitly mentions what the specific job description is scanning for.',
+    optionA: {
+      name: 'JD-Tailored Resume',
+      points: [
+        'Keywords and priority skills matched to each specific job posting',
+        'Higher ATS match score per application',
+        'Takes a few extra minutes per application (or seconds with an AI optimizer)',
+        'Requires re-checking each time you apply to a different role type',
+      ],
+    },
+    optionB: {
+      name: 'One Generic Resume for Every Job',
+      points: [
+        'Fastest to apply with — one file, send everywhere',
+        'Misses role-specific keywords, so ATS match score is usually lower and inconsistent',
+        'Reads as less relevant to recruiters scanning quickly',
+        'Fine only when applying to near-identical roles back-to-back',
+      ],
+    },
+    verdict: 'If you\'re applying to more than a handful of roles, tailoring pays for itself in shortlist rate — that\'s exactly the manual step an AI JD optimizer is built to automate.',
+    faqs: [],
+  },
+  {
+    slug: 'free-resume-checker-vs-paid-resume-writing-service',
+    title: 'Free Resume Checker vs Paid Resume Writing Service',
+    metaDescription: 'Free AI resume checker vs paid resume writing service: cost, turnaround time, and when it actually makes sense to pay for a human resume writer.',
+    intro: 'Both can improve a resume — the right choice depends on how much of the problem is mechanical (ATS/keywords) versus how much is narrative and positioning.',
+    optionA: {
+      name: 'Free AI Resume Checker',
+      points: [
+        'No cost, instant results, unlimited re-checks',
+        'Consistent scoring against ATS/JD criteria',
+        'Best for catching formatting, keyword and structure issues',
+        'Won\'t rewrite your career narrative or personal branding',
+      ],
+    },
+    optionB: {
+      name: 'Paid Resume Writing Service',
+      points: [
+        'A human can reposition your career story, not just fix keywords',
+        'Useful for senior/career-change resumes where narrative matters most',
+        'Costs money and takes days, with quality varying by writer',
+        'Doesn\'t guarantee ATS compatibility unless the writer explicitly checks for it',
+      ],
+    },
+    verdict: 'Run the free check first — it\'s often enough on its own, and if you still decide to pay for writing help, you\'ll get more value from that spend because the mechanical issues are already fixed.',
+    faqs: [],
+  },
+  {
+    slug: 'guided-resume-builder-vs-from-scratch-writing',
+    title: 'Guided Resume Builder vs Writing From Scratch',
+    metaDescription: 'Guided AI resume builder vs writing a resume from scratch in Word/Google Docs: speed, ATS-safety, and which fits freshers vs experienced professionals.',
+    intro: 'Both get you a finished resume file — the difference is how much of the formatting, structure and phrasing groundwork you have to do yourself.',
+    optionA: {
+      name: 'Guided Resume Builder',
+      points: [
+        'Section-by-section structure that\'s already ATS-friendly by default',
+        'Faster for freshers or anyone starting without an existing resume',
+        'Prompts for the details recruiters actually look for, so nothing important gets skipped',
+        'Less flexible for highly non-standard career paths',
+      ],
+    },
+    optionB: {
+      name: 'Writing From Scratch (Word/Docs)',
+      points: [
+        'Full control over layout and structure',
+        'Easy to accidentally use ATS-unfriendly formatting (tables, columns, text boxes, icons)',
+        'No built-in prompts — easy to miss sections recruiters expect',
+        'Better suited to experienced professionals with a strong existing resume to adapt',
+      ],
+    },
+    verdict: 'If you\'re starting from nothing, a guided builder gets you to a solid, ATS-safe first draft far faster than a blank document — you can always customize further once the structure is right.',
+    faqs: [],
+  },
+];
+
+export function getComparisonBySlug(slug: string): ComparisonPageData | undefined {
+  return RESUME_COMPARISONS.find((c) => c.slug === slug);
+}

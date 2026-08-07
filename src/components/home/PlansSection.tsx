@@ -57,7 +57,7 @@ export const PlansSection: React.FC<PlansSectionProps> = ({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className="absolute z-10 mt-2 w-full origin-top-right rounded-xl bg-[#0c111b] shadow-2xl border border-white/10"
+                  className="absolute z-10 mt-2 w-full origin-top-right rounded-xl bg-surface-deep shadow-2xl border border-white/10"
                 >
                   <div className="py-1">
                     {userSubscription ? (

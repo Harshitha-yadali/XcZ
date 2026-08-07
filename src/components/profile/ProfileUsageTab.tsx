@@ -66,7 +66,7 @@ export const ProfileUsageTab: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-[#00E6B8] mr-2" />
+        <Loader2 className="w-6 h-6 animate-spin text-brand-500 mr-2" />
         <span className="text-slate-400">Loading usage data...</span>
       </div>
     );
@@ -74,7 +74,7 @@ export const ProfileUsageTab: React.FC = () => {
 
   if (!subscription) {
     return (
-      <div className="text-center py-16 bg-[#0a1a24] rounded-xl border border-[#0c1d25]">
+      <div className="text-center py-16 bg-surface-sunken rounded-xl border border-surface">
         <Crown className="w-14 h-14 text-slate-600 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-slate-200 mb-2">No Active Plan</h3>
         <p className="text-slate-400 mb-6 max-w-sm mx-auto">
@@ -82,7 +82,7 @@ export const ProfileUsageTab: React.FC = () => {
         </p>
         <button
           onClick={() => navigate('/pricing')}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[rgba(0,230,184,0.15)] text-[#00E6B8] rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-[rgba(0,230,184,0.15)] text-brand-500 rounded-lg hover:bg-[rgba(0,230,184,0.25)] transition-colors text-sm font-medium"
         >
           <Crown className="w-4 h-4" /> View Plans
         </button>
@@ -118,11 +118,11 @@ export const ProfileUsageTab: React.FC = () => {
           return (
             <div
               key={item.id}
-              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-[#0c1d25] bg-[#0a1a24] px-4 py-3 hover:border-[rgba(0,230,184,0.2)] transition-colors"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-surface bg-surface-sunken px-4 py-3 hover:border-[rgba(0,230,184,0.2)] transition-colors"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-[rgba(0,230,184,0.12)] flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-[#00E6B8]" />
+                  <TrendingUp className="w-5 h-5 text-brand-500" />
                 </div>
                 <div>
                   <p className="text-slate-200 text-sm font-semibold">
@@ -217,11 +217,11 @@ export const ProfileUsageTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-5">
+      <div className="bg-surface-sunken rounded-xl border border-surface p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[rgba(0,230,184,0.1)] flex items-center justify-center">
-              <Crown className="w-5 h-5 text-[#00E6B8]" />
+              <Crown className="w-5 h-5 text-brand-500" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-slate-200">
@@ -261,7 +261,7 @@ export const ProfileUsageTab: React.FC = () => {
                 key={ct.label}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-4 hover:border-[rgba(0,230,184,0.15)] transition-colors"
+                className="bg-surface-sunken rounded-xl border border-surface p-4 hover:border-[rgba(0,230,184,0.15)] transition-colors"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -287,15 +287,15 @@ export const ProfileUsageTab: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-[#0a1a24] rounded-xl border border-[#0c1d25] p-5">
+      <div className="bg-surface-sunken rounded-xl border border-surface p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-[#00E6B8]" />
+            <TrendingUp className="w-4 h-4 text-brand-500" />
             <h3 className="text-sm font-semibold text-slate-200">Optimization History</h3>
           </div>
           <button
             onClick={loadHistory}
-            className="text-xs text-[#00E6B8] hover:text-emerald-300 transition-colors"
+            className="text-xs text-brand-500 hover:text-emerald-300 transition-colors"
             disabled={historyLoading}
           >
             {historyLoading ? 'Refreshing...' : 'Refresh'}

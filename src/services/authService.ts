@@ -2,6 +2,7 @@
 import { User, LoginCredentials, SignupCredentials, EmailOtpCredentials } from '../types/auth';
 import { supabase } from '../lib/supabaseClient';
 import { deviceTrackingService } from './deviceTrackingService';
+import { getPendingReferralCode, clearPendingReferralCode } from '../utils/referralCapture';
 
 class AuthService {
   // Add a static variable to track the last time device activity was logged
@@ -43,6 +44,7 @@ class AuthService {
           ? {
               data: {
                 full_name: this.getFallbackName(normalizedEmail),
+                ...(getPendingReferralCode() ? { referralCode: getPendingReferralCode() } : {}),
               },
             }
           : {}),
@@ -185,6 +187,7 @@ class AuthService {
 
     if (created) {
       await this.sendWelcomeEmail(data.user.id, email, displayName);
+      clearPendingReferralCode();
     }
 
     try {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useSEO } from '../../hooks/useSEO';
+import { Seo } from '../../seo/Seo';
 import { DarkPageWrapper, ChristmasTree, GiftBox } from '../ui';
 import { Card } from '../common/Card';
 import { PageSidebar } from '../navigation/PageSidebar';
@@ -32,13 +32,6 @@ const itemVariants = {
 
 export const Contact: React.FC = () => {
   const isChristmas = new Date().getMonth() === 11 || new Date().getMonth() === 0;
-
-  useSEO({
-    title: 'Contact Us',
-    description: 'Get in touch with the PrimoBoost AI team. We\'re here to help with resume optimization, ATS scoring, and career growth.',
-    canonical: '/contact',
-    ogType: 'website',
-  });
 
   const contactInfo = [
     {
@@ -106,6 +99,13 @@ export const Contact: React.FC = () => {
   ];
 
   return (
+    <>
+    <Seo
+      title="Contact Us"
+      description="Get in touch with the PrimoBoost AI team. We're here to help with resume optimization, ATS scoring, and career growth."
+      canonicalPath="/contact"
+      ogType="website"
+    />
     <DarkPageWrapper showSnow={isChristmas} showSanta={isChristmas}>
       {/* Page Sidebar */}
       <PageSidebar />
@@ -339,5 +339,6 @@ export const Contact: React.FC = () => {
         <div className="h-8" />
       </div>
     </DarkPageWrapper>
+    </>
   );
 };

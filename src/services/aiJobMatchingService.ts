@@ -130,9 +130,12 @@ Return only the JSON array, no text, no markdown.`;
         if (!yearMatch) return false;
       }
 
-      // Filter by role type
+      // Filter by role type. Prefer the structured job_category field; fall back to the
+      // old "intern" substring guess only for jobs posted before that column existed.
       if (preferences.roleType !== 'both') {
-        const isInternship = job.experience_required.toLowerCase().includes('intern');
+        const isInternship = job.job_category
+          ? job.job_category === 'Internship'
+          : job.experience_required.toLowerCase().includes('intern');
         if (preferences.roleType === 'internship' && !isInternship) return false;
         if (preferences.roleType === 'fulltime' && isInternship) return false;
       }
