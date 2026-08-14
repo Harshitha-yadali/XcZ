@@ -10,6 +10,9 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import { motion, AnimatePresence } from 'framer-motion';
 import { OfferOverlay } from './components/OfferOverlay';
 import { DiwaliOfferBanner } from './components/DiwaliOfferBanner';
+import { IndependenceOfferBanner } from './components/IndependenceOfferBanner';
+import { isIndependenceWindow } from './config/independenceOffer';
+import { TricolorConfetti } from './components/ui/IndependenceTheme';
 import { SnowEffect, SantaSleigh } from './components/ui/ChristmasTheme';
 import { PageSidebar } from './components/navigation/PageSidebar';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -124,6 +127,7 @@ function App() {
  const [showWelcomeOffer, setShowWelcomeOffer] = useState(false);
   // Disable Diwali homepage banner
   const [showDiwaliBanner, setShowDiwaliBanner] = useState(false);
+  const [independenceBannerDismissed, setIndependenceBannerDismissed] = useState(false);
 
   const [messageGenerationInterrupted, setMessageGenerationInterrupted] = useState(false);
   const [postAuthCallback, setPostAuthCallback] = useState<(() => void) | null>(null);
@@ -295,8 +299,12 @@ function App() {
 
 const handleDiwaliCTAClick = useCallback(() => {
   handleShowSubscriptionPlansDirectly();
-  
+
 }, [handleShowSubscriptionPlansDirectly]);
+
+  const handleIndependenceBannerClose = useCallback(() => {
+    setIndependenceBannerDismissed(true);
+  }, []);
 
   const handlePageChange = useCallback(
     (path: string) => {
@@ -470,6 +478,10 @@ const handleDiwaliCTAClick = useCallback(() => {
   // Check if it's Christmas season
   const isChristmasSeason = new Date().getMonth() === 11 || new Date().getMonth() === 0;
 
+  // Independence Day offer (11-15 Aug)
+  const showIndependenceBanner =
+    isIndependenceWindow() && !independenceBannerDismissed && !isInterviewMode && !isResetPasswordMode;
+
   return (
     <div className={`min-h-screen pb-safe-bottom safe-area transition-colors duration-300 ${
       isChristmasSeason
@@ -484,11 +496,20 @@ const handleDiwaliCTAClick = useCallback(() => {
         </>
       )}
 
+      {/* Independence Day effects + banner */}
+      {isIndependenceWindow() && !isInterviewMode && <TricolorConfetti intensity="light" />}
+      {showIndependenceBanner && (
+        <IndependenceOfferBanner
+          onCTAClick={handleDiwaliCTAClick}
+          onClose={handleIndependenceBannerClose}
+        />
+      )}
+
       {/* Diwali Banner - Hide in interview mode and reset password mode */}
       {showDiwaliBanner && !isInterviewMode && !isResetPasswordMode && <DiwaliOfferBanner onCTAClick={handleDiwaliCTAClick} />}
 
       {/* Add padding-top to account for the banner */}
-      <div className={showDiwaliBanner && !isInterviewMode && !isResetPasswordMode ? 'pt-20 sm:pt-24' : ''}>
+      <div className={(showDiwaliBanner && !isInterviewMode && !isResetPasswordMode) || showIndependenceBanner ? 'pt-20 sm:pt-24' : ''}>
         {showSuccessNotification && (
           <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 p-3 text-white rounded-lg shadow-lg animate-fade-in-down ${
             isChristmasSeason ? 'bg-gradient-to-r from-red-500 to-green-600' : 'bg-emerald-500'
