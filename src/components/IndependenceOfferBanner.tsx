@@ -57,63 +57,58 @@ export const IndependenceOfferBanner: React.FC<IndependenceOfferBannerProps> = (
       >
         {/* Readability layer over the white middle of the tricolour */}
         <div className="bg-slate-950/70">
-          <div className="container mx-auto px-4 py-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
-                <div className="hidden sm:flex items-center space-x-2 flex-shrink-0">
-                  <IndiaFlag width={38} />
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse text-orange-300" />
-                </div>
+          {/* w-full, not `container`: the xs:320px breakpoint caps .container at 320px on phones */}
+          <div className="w-full max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <IndiaFlag width={26} className="flex-shrink-0" />
+              <Sparkles className="hidden sm:block w-5 h-5 animate-pulse text-orange-300 flex-shrink-0" />
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3">
-                    <h3 className="text-base sm:text-lg md:text-xl font-bold truncate">
-                      Independence Day Special
-                    </h3>
-                    <span className="text-xl sm:text-2xl md:text-3xl font-extrabold bg-white text-orange-600 px-2 py-0.5 sm:px-3 sm:py-1 rounded-lg shadow-lg inline-block">
-                      {INDEPENDENCE_OFFER.discountPercentage}% OFF
-                    </span>
-                  </div>
-                  <p className="text-xs sm:text-sm md:text-base mt-1">
-                    Code:{' '}
-                    <span className="font-bold bg-white text-green-700 px-1.5 py-0.5 sm:px-2 rounded">
-                      {INDEPENDENCE_OFFER.code}
-                    </span>
-                  </p>
+              <div className="min-w-0">
+                <h3 className="hidden sm:block text-base md:text-lg font-bold leading-tight">
+                  Independence Day Special
+                </h3>
+                <div className="flex items-center gap-1.5 sm:gap-2 sm:mt-1">
+                  <span className="text-base sm:text-xl font-extrabold bg-white text-orange-600 px-1.5 sm:px-2.5 py-0.5 rounded-md shadow whitespace-nowrap flex-shrink-0">
+                    {INDEPENDENCE_OFFER.discountPercentage}% OFF
+                  </span>
+                  <span className="hidden sm:inline text-sm text-white/80 whitespace-nowrap">Code</span>
+                  <span className="font-bold bg-white text-green-700 px-1.5 sm:px-2 py-0.5 rounded text-[11px] sm:text-sm whitespace-nowrap flex-shrink-0">
+                    {INDEPENDENCE_OFFER.code}
+                  </span>
                 </div>
               </div>
 
               {/* Countdown - md and up */}
-              <div className="hidden md:flex items-center space-x-2 flex-shrink-0">
+              <div className="hidden md:flex items-center gap-2 flex-shrink-0">
                 {[
-                  { value: timeLeft.days, label: 'Days' },
+                  { value: timeLeft.days, label: timeLeft.days === 1 ? 'Day' : 'Days' },
                   { value: timeLeft.hours, label: 'Hours' },
                   { value: timeLeft.minutes, label: 'Mins' },
                   { value: timeLeft.seconds, label: 'Secs' },
                 ].map(({ value, label }) => (
                   <div
                     key={label}
-                    className="text-center bg-white/20 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg backdrop-blur-sm"
+                    className="text-center bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm"
                   >
-                    <div className="text-lg sm:text-xl font-bold">{value}</div>
-                    <div className="text-xs">{label}</div>
+                    <div className="text-lg font-bold leading-tight">{value}</div>
+                    <div className="text-[10px]">{label}</div>
                   </div>
                 ))}
               </div>
 
               <button
                 onClick={onCTAClick}
-                className="bg-white text-orange-600 font-bold px-3 py-1.5 sm:px-4 sm:py-2 md:px-6 rounded-lg hover:bg-orange-50 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 text-sm sm:text-base flex-shrink-0"
+                className="ml-auto bg-white text-orange-600 font-bold px-2.5 py-1.5 sm:px-5 sm:py-2 rounded-lg hover:bg-orange-50 transition-colors shadow-lg text-xs sm:text-base whitespace-nowrap flex-shrink-0"
               >
-                Claim Now
+                Claim<span className="hidden sm:inline"> Now</span>
               </button>
 
               <button
                 onClick={onClose}
-                className="absolute top-2 right-2 text-white/70 hover:text-white transition-colors"
+                className="text-white/70 hover:text-white transition-colors flex-shrink-0 p-0.5"
                 aria-label="Close banner"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
           </div>

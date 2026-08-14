@@ -509,7 +509,15 @@ const handleDiwaliCTAClick = useCallback(() => {
       {showDiwaliBanner && !isInterviewMode && !isResetPasswordMode && <DiwaliOfferBanner onCTAClick={handleDiwaliCTAClick} />}
 
       {/* Add padding-top to account for the banner */}
-      <div className={(showDiwaliBanner && !isInterviewMode && !isResetPasswordMode) || showIndependenceBanner ? 'pt-20 sm:pt-24' : ''}>
+      <div
+        className={
+          showIndependenceBanner
+            ? 'pt-16 sm:pt-24'
+            : showDiwaliBanner && !isInterviewMode && !isResetPasswordMode
+            ? 'pt-20 sm:pt-24'
+            : ''
+        }
+      >
         {showSuccessNotification && (
           <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 p-3 text-white rounded-lg shadow-lg animate-fade-in-down ${
             isChristmasSeason ? 'bg-gradient-to-r from-red-500 to-green-600' : 'bg-emerald-500'
