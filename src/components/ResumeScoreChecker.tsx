@@ -162,7 +162,9 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
   const [parsedResumeData, setParsedResumeData] = useState<ParsedResume | null>(null);
   const [jobDescription, setJobDescription] = useState('');
   const [jobTitle, setJobTitle] = useState('');
-  const [scoringMode, setScoringMode] = useState<ScoringMode | null>(null);
+  // JD-based is the only scoring mode offered here, so start on it and skip the
+  // one-option picker. 'general' still exists for GuidedResumeBuilder/InputWizard.
+  const [scoringMode, setScoringMode] = useState<ScoringMode | null>('jd_based');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [scoreResult, setScoreResult] = useState<ATSScore16Parameter | null>(null);
@@ -483,19 +485,6 @@ if (hasScoreCheckCredits) {
 
 
 
-  const handleSelectScoringMode = (mode: ScoringMode) => {
-    setScoringMode(mode);
-    // Don't auto-advance to step 1, wait for user type selection
-    
-    // Scroll to user type selection after a short delay
-    setTimeout(() => {
-      const userTypeSection = document.querySelector('[data-user-type-section]');
-      if (userTypeSection) {
-        userTypeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 300);
-  };
-
   const handleContinueToUpload = () => {
     if (scoringMode && userType) {
       setCurrentStep(1);
@@ -659,83 +648,18 @@ if (hasScoreCheckCredits) {
                 >
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-400/30 mb-6">
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-emerald-300 text-sm font-medium">Step 1 of 3 - Choose Scoring Method</span>
+                    <span className="text-emerald-300 text-sm font-medium">Step 1 of 2 - Your Experience Level</span>
                   </div>
                   <h1 className="text-3xl md:text-4xl font-bold text-slate-100 mb-4">
                     Get Your Resume <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">Score</span>
                   </h1>
                   <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-                    Our AI analyzes your resume against industry standards and ATS requirements to help you land more interviews
+                    We score your resume against a specific job description to show keyword matches,
+                    skill gaps, and role-specific fixes before you apply
                   </p>
                 </motion.div>
 
-                {/* Scoring Method Cards */}
-                <div className="max-w-2xl mx-auto mb-12">
-                  {/* JD-Based Scoring Card - Only Option */}
-                  <motion.button
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.1 }}
-                    whileHover={{ scale: 1.02, y: -4 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => handleSelectScoringMode('jd_based')}
-                    className={`relative w-full p-6 rounded-2xl border text-left transition-all duration-300 overflow-hidden group ${
-                      scoringMode === 'jd_based'
-                        ? 'border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 shadow-[0_0_40px_rgba(16,185,129,0.25)]'
-                        : 'border-slate-700/50 hover:border-emerald-400/40 bg-slate-900/60 hover:bg-slate-800/60'
-                    }`}
-                  >
-                    {/* Recommended Badge */}
-                    <div className="absolute top-4 right-4">
-                      <span className="px-3 py-1 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white text-xs rounded-full font-semibold shadow-lg">
-                        Recommended
-                      </span>
-                    </div>
-
-                    {/* Icon with Glow */}
-                    <div className="relative mb-6">
-                      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                        scoringMode === 'jd_based'
-                          ? 'bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-[0_0_30px_rgba(16,185,129,0.5)]'
-                          : 'bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 group-hover:from-emerald-500/30 group-hover:to-cyan-500/30'
-                      }`}>
-                        <Target className={`w-8 h-8 ${scoringMode === 'jd_based' ? 'text-white' : 'text-emerald-400'}`} />
-                      </div>
-                    </div>
-
-                    <h3 className="text-xl font-bold text-slate-100 mb-2">Score Against a Job</h3>
-                    <p className="text-slate-400 text-sm mb-6">
-                      Compare your resume against a specific job description for targeted optimization
-                    </p>
-
-                    {/* Features List */}
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                        </div>
-                        <span className="text-slate-300 text-sm">Keyword match analysis</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                        </div>
-                        <span className="text-slate-300 text-sm">Skills gap identification</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                        </div>
-                        <span className="text-slate-300 text-sm">Role-specific recommendations</span>
-                      </div>
-                    </div>
-
-                    {/* Selection Indicator */}
-                    {scoringMode === 'jd_based' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-cyan-500" />
-                    )}
-                  </motion.button>
-                </div>
+                {/* Scoring method is always JD-based here - no picker to show */}
 
                 {/* User Type Selection */}
                 {scoringMode && (
@@ -747,10 +671,6 @@ if (hasScoreCheckCredits) {
                     data-user-type-section
                   >
                     <div className="text-center mb-6">
-                      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-400/30 mb-4">
-                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        <span className="text-amber-300 text-sm font-medium">Step 2 of 3</span>
-                      </div>
                       <h3 className="text-xl font-semibold text-slate-100 mb-2">What's your experience level?</h3>
                       <p className="text-slate-400">This helps us apply the right evaluation criteria for your resume</p>
                     </div>
@@ -932,7 +852,7 @@ if (hasScoreCheckCredits) {
                       className="bg-slate-800/80 hover:bg-slate-700/80 text-slate-100 font-semibold py-2 px-4 rounded-xl transition-all duration-300 flex items-center space-x-2 border border-slate-700/50 hover:border-emerald-400/30"
                     >
                       <ArrowLeft className="w-5 h-5" />
-                      <span>Back to Scoring Method</span>
+                      <span>Back to Experience Level</span>
                     </button>
                   </motion.div>
                   <motion.div 
