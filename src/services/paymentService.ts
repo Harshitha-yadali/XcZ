@@ -120,6 +120,7 @@ const JD_OPTIMIZATION_PRICING_PLANS: SubscriptionPlan[] = JD_OPTIMIZATION_TIERS.
     features: [
       `${optimizationPackage.size} ${tier.name}${optimizationPackage.size === 1 ? '' : tier.id === 'quick' ? 's' : ' runs'}`,
       `₹${optimizationPackage.perOptimization.toFixed(2)} per ${tier.unitLabel}`,
+      'Before/after ATS score included',
     ],
     popular: tier.id === 'smart' && optimizationPackage.size === 25,
     durationInHours: 0,

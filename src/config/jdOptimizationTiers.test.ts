@@ -95,9 +95,9 @@ describe('JD optimization quality tiers', () => {
     }
   });
 
-  it('makes Quick a one-pass full rewrite without the separate project-analysis step', () => {
+  it('makes Quick a full rewrite plus one refinement pass, without the separate project-analysis step', () => {
     const quick = getJdOptimizationTier('quick');
-    expect(quick.aiPasses).toBe(1);
+    expect(quick.aiPasses).toBe(2);
     expect(quick.summaryRewriting).toBe(true);
     expect(quick.experienceRewriting).toBe(true);
     expect(quick.projectRewriting).toBe(true);

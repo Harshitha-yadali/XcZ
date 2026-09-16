@@ -16,14 +16,31 @@ const repoFile = (relativePath: string) =>
  * collapse two paid tiers onto identical behaviour the way commit cd6c63f did.
  */
 describe('JD optimization tiers — runtime differentiators', () => {
-  it('gives each tier a distinct model, and Deep more passes than Smart than Quick', () => {
+  it('gives each tier a distinct model, and never more passes than the tier above', () => {
     const quick = getJdOptimizationTier('quick');
     const smart = getJdOptimizationTier('smart');
     const deep = getJdOptimizationTier('deep');
 
     expect(new Set([quick.modelId, smart.modelId, deep.modelId]).size).toBe(3);
-    expect(quick.aiPasses).toBeLessThan(smart.aiPasses);
+    expect(quick.aiPasses).toBeLessThanOrEqual(smart.aiPasses);
     expect(smart.aiPasses).toBeLessThan(deep.aiPasses);
+  });
+
+  /**
+   * Quick and Smart now run the same number of passes, so pass count alone no
+   * longer separates them. These are the differentiators that remain, and the
+   * price gap rests on them: a cheaper model, the 'light' mode that skips the
+   * 16-parameter rewrite, and no project analysis.
+   */
+  it('keeps Quick below Smart on model, mode, and project analysis', () => {
+    const quick = getJdOptimizationTier('quick');
+    const smart = getJdOptimizationTier('smart');
+
+    expect(quick.modelId).not.toBe(smart.modelId);
+    expect(quick.mode).toBe('light');
+    expect(smart.mode).not.toBe('light');
+    expect(quick.projectAnalysis).toBe(false);
+    expect(smart.projectAnalysis).toBe(true);
   });
 
   it('maps each tier onto a distinct optimization mode', () => {

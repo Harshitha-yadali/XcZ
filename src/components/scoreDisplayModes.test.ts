@@ -42,7 +42,9 @@ const result = {
 } as any;
 
 describe('Quick, Smart, and Deep score presentation', () => {
-  it('shows no numeric score or comparison for Quick', () => {
+  // Quick is a paid tier and the before/after is already computed for it, so
+  // hiding the numbers gave the cheapest buyer no proof the rewrite worked.
+  it('shows the before and after comparison for Quick', () => {
     const html = renderToStaticMarkup(React.createElement(ScoreDeltaDisplay, {
       result,
       mode: 'quick',
@@ -50,14 +52,11 @@ describe('Quick, Smart, and Deep score presentation', () => {
 
     expect(html).toContain('Quick Rewrite Complete');
     expect(html).toContain('Optimization Findings');
-    expect(html).not.toContain('Before Optimization');
-    expect(html).not.toContain('After Optimization');
-    expect(html).not.toContain('ATS points');
-    expect(html).not.toContain('56');
-    expect(html).not.toContain('78');
-    expect(html).not.toContain('44%');
-    expect(html).not.toContain('88%');
-    expect(html).not.toContain('/100');
+    expect(html).toContain('Before Optimization');
+    expect(html).toContain('After Optimization');
+    expect(html).toContain('ATS points');
+    expect(html).toContain('56');
+    expect(html).toContain('78');
   });
 
   it.each(['smart', 'deep'])('shows canonical Before and After scores for %s', () => {
@@ -73,7 +72,7 @@ describe('Quick, Smart, and Deep score presentation', () => {
     expect(html).toContain('ATS points');
   });
 
-  it('keeps the Quick fallback score-free', () => {
+  it('shows scores in the Quick fallback too', () => {
     const html = renderToStaticMarkup(React.createElement(Parameter16ScoreDisplay, {
       mode: 'quick',
       compact: true,
@@ -89,12 +88,10 @@ describe('Quick, Smart, and Deep score presentation', () => {
       }],
     }));
 
-    expect(html).toContain('Quick Rewrite Complete');
     expect(html).toContain('Hard Skills');
-    expect(html).not.toContain('56%');
-    expect(html).not.toContain('78%');
-    expect(html).not.toContain('40%');
-    expect(html).not.toContain('Before');
-    expect(html).not.toContain('After');
+    expect(html).toContain('56%');
+    expect(html).toContain('78%');
+    expect(html).toContain('Before');
+    expect(html).toContain('After');
   });
 });
