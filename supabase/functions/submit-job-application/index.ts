@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { denied, getCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,7 +49,12 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { user } = await getCaller(req);
+    if (!user) return denied("Sign in required.", 401, corsHeaders);
+
     const applicationData: JobApplicationRequest = await req.json();
+    // Never trust a userId from the body — the service-role client bypasses RLS.
+    applicationData.userId = user.id;
 
     const requiredFields = [
       'userId',

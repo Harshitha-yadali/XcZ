@@ -104,13 +104,21 @@ export async function fulfillPaymentOrder(params: FulfillPaymentOrderParams): Pr
   }
 
   if (!transactionAlreadySuccessful) {
-    const { error: updateTransactionError } = await supabase
+    const { data: claimedRows, error: updateTransactionError } = await supabase
       .from("payment_transactions")
       .update({ payment_id: razorpayPaymentId, status: "success", order_id: razorpayOrderId, wallet_deduction_amount: walletDeduction, coupon_code: couponCode, discount_amount: discountAmount })
       .eq("id", transactionId)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id");
 
     if (updateTransactionError) throw new Error("Failed to update payment transaction status.");
+
+    // The pending -> success flip is the claim. If a concurrent call (client
+    // verify vs. webhook, or a replay) flipped it first, that call grants
+    // everything; granting here too would double the subscription and wallet rows.
+    if (!claimedRows || claimedRows.length === 0) {
+      return { alreadyFulfilled: true, subscriptionId: null };
+    }
   }
 
   if (Object.keys(selectedAddOns).length > 0) {

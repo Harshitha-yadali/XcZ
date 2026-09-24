@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { load } from "npm:cheerio@1.0.0";
+import { getCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,6 @@ const corsHeaders = {
 
 const MAX_HTML_CHARS = 180000;
 const MAX_TEXT_CHARS = 24000;
-const ADMIN_EMAIL = "primoboostai@gmail.com";
 const SPIRE_PUBLIC_API_BASE = "https://io.spire2grow.com/ies/v1/p";
 const SPIRE_PUBLIC_ASSET_BASE = "https://io-public.spire2grow.com";
 const SPIRE_SEARCH_PAGE_SIZE = 250;
@@ -2642,34 +2642,12 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return jsonResponse({ success: false, error: "Authorization header missing." }, 401);
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser(token);
-
-    if (userError || !user) {
+    // Admin comes from user_profiles.role; user_metadata is user-editable.
+    const caller = await getCaller(req);
+    if (!caller.user && !caller.isService) {
       return jsonResponse({ success: false, error: "Unauthorized request." }, 401);
     }
-
-    const appMetadata =
-      user.app_metadata && typeof user.app_metadata === "object"
-        ? (user.app_metadata as Record<string, unknown>)
-        : {};
-    const userMetadata =
-      user.user_metadata && typeof user.user_metadata === "object"
-        ? (user.user_metadata as Record<string, unknown>)
-        : {};
-    const userRole = safeString(appMetadata.role) || safeString(userMetadata.role);
-    const isAdmin =
-      safeString(user.email).toLowerCase() === ADMIN_EMAIL || userRole.toLowerCase() === "admin";
-
-    if (!isAdmin) {
+    if (!caller.isAdmin) {
       return jsonResponse({ success: false, error: "Admin access required." }, 403);
     }
 

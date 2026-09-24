@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { EmailService, logEmailSend } from '../_shared/emailService.ts';
+import { denied, getCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,7 +29,12 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const { user } = await getCaller(req);
+    if (!user?.email) return denied("Sign in required.", 401, corsHeaders);
+
     const emailData: EmailRequest = await req.json();
+    // Only ever email the signed-in user; the address in the body is untrusted.
+    emailData.recipientEmail = user.email;
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

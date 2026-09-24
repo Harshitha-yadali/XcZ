@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { EmailService } from '../_shared/emailService.ts';
+import { denyUnlessServiceOrAdmin } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +41,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+
+  const deny = await denyUnlessServiceOrAdmin(req, corsHeaders);
+  if (deny) return deny;
 
   try {
     const emailData: JobDigestRequest = await req.json();

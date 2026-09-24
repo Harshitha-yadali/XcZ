@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { denied, getCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,8 +29,13 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { user } = await getCaller(req);
+    if (!user) return denied("Sign in required.", 401, corsHeaders);
+
     const body: AutoApplyRequest = await req.json();
-    const { applicationId, userId, applicationUrl, resumePdfUrl, platform } = body;
+    const { applicationId, applicationUrl, resumePdfUrl, platform } = body;
+    // Never trust a userId from the body — it selects whose credentials vault is read.
+    const userId = user.id;
 
     console.log(`Starting auto-apply for application ${applicationId}`);
 
@@ -82,7 +88,8 @@ Deno.serve(async (req: Request) => {
         form_data_captured: result.formData || {},
         time_taken_seconds: timeTaken,
       })
-      .eq('id', applicationId);
+      .eq('id', applicationId)
+      .eq('user_id', userId);
 
     if (updateError) {
       console.error('Error updating application status:', updateError);

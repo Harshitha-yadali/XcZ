@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { EmailService, logEmailSend } from '../_shared/emailService.ts';
+import { denyUnlessServiceOrAdmin } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,6 +26,9 @@ Deno.serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  const deny = await denyUnlessServiceOrAdmin(req, corsHeaders);
+  if (deny) return deny;
 
   try {
     const emailData: BlogPostEmailRequest = await req.json();

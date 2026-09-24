@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { denied, getCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,9 @@ Deno.serve(async (req: Request) => {
       headers: corsHeaders,
     });
   }
+
+  const { user } = await getCaller(req);
+  if (!user) return denied("Sign in required.", 401, corsHeaders);
 
   try {
     const url = new URL(req.url);
@@ -59,6 +63,7 @@ Deno.serve(async (req: Request) => {
       .from('auto_apply_logs')
       .select('*')
       .eq('id', applicationId)
+      .eq('user_id', user.id)
       .maybeSingle();
 
     if (error) {
