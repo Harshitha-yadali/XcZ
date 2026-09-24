@@ -48,14 +48,33 @@ function validateBullets(
   });
 }
 
-function filterSkills(candidate: Skill[] | undefined, evidence: Skill[] | undefined): Skill[] {
+// Every string value in the resume (not JSON keys, so "github" the field name
+// can't vouch for "GitHub" the skill).
+const textValues = (value: unknown): string[] =>
+  typeof value === 'string' ? [value]
+    : Array.isArray(value) ? value.flatMap(textValues)
+    : value && typeof value === 'object' ? Object.values(value).flatMap(textValues)
+    : [];
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ponytail: whole-word match, so a skill that is also an English word ("Go")
+// can pass on prose alone; switch to a skills taxonomy lookup if that shows up.
+const mentionedIn = (corpus: string, skill: string): boolean => {
+  const term = skill.trim().toLowerCase();
+  return term.length > 0 && new RegExp(`(^|[^a-z0-9+#])${escapeRegex(term)}(?=$|[^a-z0-9+#])`).test(corpus);
+};
+
+function filterSkills(candidate: Skill[] | undefined, evidence: Skill[] | undefined, evidenceCorpus = ''): Skill[] {
   const allowed = new Set(
     (evidence || []).flatMap((category) => category.list || []).map(normalize),
   );
 
   return (candidate || [])
     .map((category) => {
-      const list = (category.list || []).filter((skill) => allowed.has(normalize(skill)));
+      const list = (category.list || []).filter(
+        (skill) => allowed.has(normalize(skill)) || mentionedIn(evidenceCorpus, skill),
+      );
       return { ...category, list, count: list.length };
     })
     .filter((category) => category.list.length > 0);
@@ -115,7 +134,10 @@ export function validateAndRepairResume(
     };
   });
 
-  const filteredSkills = filterSkills(candidate.skills, evidence.skills);
+  // A resume without a skills section still evidences the tools named in its
+  // objective, bullets, and projects.
+  const evidenceCorpus = textValues(evidence).join(' \n ').toLowerCase();
+  const filteredSkills = filterSkills(candidate.skills, evidence.skills, evidenceCorpus);
   const candidateSkillCount = (candidate.skills || []).reduce((sum, category) => sum + (category.list?.length || 0), 0);
   const filteredSkillCount = filteredSkills.reduce((sum, category) => sum + category.list.length, 0);
   if (filteredSkillCount < candidateSkillCount) {

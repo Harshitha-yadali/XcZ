@@ -54,6 +54,32 @@ describe('resumeEvidenceValidator', () => {
     expect(result.violations.length).toBeGreaterThan(0);
   });
 
+  it('keeps skills evidenced elsewhere in the resume when there is no skills section', () => {
+    const noSkillsSection: ResumeData = {
+      ...evidence,
+      summary: undefined,
+      careerObjective: 'Entry-level engineer applying Java, Python, SQL, and RESTful API fundamentals.',
+      projects: [{ title: 'Result System', bullets: ['Optimized MySQL schemas for student records.'] }],
+      skills: [],
+    };
+    const candidate: ResumeData = {
+      ...JSON.parse(JSON.stringify(noSkillsSection)),
+      skills: [
+        { category: 'Programming Languages', count: 3, list: ['Java', 'Python', 'SQL'] },
+        { category: 'Databases', count: 2, list: ['MySQL', 'MongoDB'] },
+        { category: 'Cloud & DevOps', count: 1, list: ['Kubernetes'] },
+      ],
+    };
+
+    const result = validateAndRepairResume(noSkillsSection, candidate);
+
+    expect(result.resume.skills).toEqual([
+      { category: 'Programming Languages', count: 3, list: ['Java', 'Python', 'SQL'] },
+      { category: 'Databases', count: 1, list: ['MySQL'] },
+    ]);
+    expect(result.violations.some((item) => item.section === 'skills')).toBe(true);
+  });
+
   it('never adds projects when the evidence resume has none', () => {
     const noProjects = { ...evidence, projects: [] };
     const candidate = { ...noProjects, projects: [{ title: 'Generated', bullets: ['Generated project.'] }] };
