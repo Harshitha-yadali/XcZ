@@ -46,13 +46,14 @@ export const NotificationMetrics: React.FC = () => {
 
   const triggerManualDigest = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetchWithSupabaseFallback(
         getSupabaseEdgeFunctionUrl('process-daily-job-digest'),
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
           },
         }
       );

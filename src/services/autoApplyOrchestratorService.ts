@@ -359,12 +359,13 @@ class AutoApplyOrchestratorService {
     platform: string
   ): Promise<void> {
     const edgeFunctionUrl = getSupabaseEdgeFunctionUrl('auto-apply-submit');
+    const { data: { session } } = await supabase.auth.getSession();
 
     const response = await fetchWithSupabaseFallback(edgeFunctionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
         applicationId,

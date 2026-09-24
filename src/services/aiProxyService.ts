@@ -9,6 +9,7 @@ import {
   getOpenRouterModelsToTry,
   shouldRetryWithNextOpenRouterModel,
 } from './openrouterModelConfig';
+import { supabase } from '../lib/supabaseClient';
 
 const PROXY_URL = getSupabaseEdgeFunctionUrl('ai-proxy');
 const buildEdgeFunctionUrl = (baseUrl: string, functionName: string) =>
@@ -57,6 +58,10 @@ const callProxy = async (service: string, action: string, params: Record<string,
     );
   }
 
+  // Signed-in users get the full proxy; the anon key only unlocks free models.
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token || SUPABASE_ANON_KEY;
+
   for (let attemptIndex = 0; attemptIndex < attemptUrls.length; attemptIndex += 1) {
     const requestUrl = attemptUrls[attemptIndex];
     const response = await fetchWithSupabaseFallback(requestUrl, {
@@ -64,7 +69,7 @@ const callProxy = async (service: string, action: string, params: Record<string,
       headers: {
         'Content-Type': 'application/json',
         apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ service, action, ...params }),
     });

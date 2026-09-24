@@ -11,6 +11,10 @@ vi.mock('../config/env', () => ({
   getSupabaseEdgeFunctionUrl: () => 'https://public.example.com/functions/v1/ai-proxy',
 }));
 
+vi.mock('../lib/supabaseClient', () => ({
+  supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
+}));
+
 import { openrouter } from './aiProxyService';
 import { FREE_OPENROUTER_MODELS, GEMMA_4_26B_FREE_MODEL, QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
 

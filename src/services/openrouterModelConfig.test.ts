@@ -4,8 +4,10 @@ import {
   CLAUDE_OPUS_4_8_MODEL,
   DEFAULT_OPENROUTER_MODEL,
   DEEP_OPTIMIZATION_MODEL,
+  FIRST_PASS_OPTIMIZATION_MODEL,
   FREE_OPENROUTER_MODELS,
   GEMINI_3_5_FLASH_LITE_MODEL,
+  GPT_6_LUNA_MODEL,
   GEMMA_4_26B_FREE_MODEL,
   GEMMA_4_31B_FREE_MODEL,
   GPT_5_6_TERRA_MODEL,
@@ -66,6 +68,13 @@ describe('openrouterModelConfig', () => {
       CLAUDE_OPUS_4_8_MODEL,
       ...FREE_OPENROUTER_MODELS,
     ]);
+  });
+
+  it('runs the Luna first pass alone so failures reach the tier-model fallback', () => {
+    expect(FIRST_PASS_OPTIMIZATION_MODEL).toBe(GPT_6_LUNA_MODEL);
+    expect(ALLOWED_OPENROUTER_MODELS).toContain(GPT_6_LUNA_MODEL);
+    expect(getOpenRouterModelsToTry(GPT_6_LUNA_MODEL)).toEqual([GPT_6_LUNA_MODEL]);
+    expect(getOpenRouterTemperature(GPT_6_LUNA_MODEL, 0.3)).toBeUndefined();
   });
 
   it('prefers the shared default model when none is requested', () => {
