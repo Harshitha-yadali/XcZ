@@ -1680,9 +1680,11 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         parsed.job_category,
         parsed.category,
         parsed.who_is_this_for,
+        parsed.job_for,
         parsedAdminInput.job_category,
         parsedAdminInput.category,
-        parsedAdminInput.who_is_this_for
+        parsedAdminInput.who_is_this_for,
+        parsedAdminInput.job_for
       );
       if (jobCategoryHint) {
         const normalizedCategory = jobCategoryHint.trim().toLowerCase();

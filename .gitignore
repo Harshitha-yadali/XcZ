@@ -4,3 +4,4 @@ node_modules/
 .claude/
 .codex-tmp-*/
 supabase/.temp/
+.gstack/

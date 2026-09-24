@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy, useLayoutEffect } from 'react';
-import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent } from 'lucide-react';
+import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent, Package } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/navigation/Navigation';
@@ -8,7 +8,6 @@ import { paymentService } from './services/paymentService';
 import { AlertModal } from './components/AlertModal';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { OfferOverlay } from './components/OfferOverlay';
 import { DiwaliOfferBanner } from './components/DiwaliOfferBanner';
 import { IndependenceOfferBanner } from './components/IndependenceOfferBanner';
 import { isIndependenceWindow } from './config/independenceOffer';
@@ -86,6 +85,8 @@ const ReferralsPage = lazy(() => import('./components/pages/ReferralsPage').then
 const ReferralDetailPage = lazy(() => import('./components/pages/ReferralDetailPage').then(m => ({ default: m.ReferralDetailPage })));
 const ReferralSubmissionPage = lazy(() => import('./components/pages/ReferralSubmissionPage').then(m => ({ default: m.ReferralSubmissionPage })));
 const AdminReferralsPage = lazy(() => import('./components/admin/AdminReferralsPage').then(m => ({ default: m.AdminReferralsPage })));
+const SoftwareToolsPage = lazy(() => import('./components/pages/SoftwareToolsPage').then(m => ({ default: m.SoftwareToolsPage })));
+const AdminSoftwareToolsPage = lazy(() => import('./components/admin/AdminSoftwareToolsPage').then(m => ({ default: m.AdminSoftwareToolsPage })));
 
 // Programmatic + content SEO pages
 const RoleHubPage = lazy(() => import('./components/pages/seo/RoleHubPage').then(m => ({ default: m.RoleHubPage })));
@@ -124,7 +125,6 @@ function App() {
   const [planSelectionFeatureId, setPlanSelectionFeatureId] = useState<string | undefined>(undefined);
   const [initialExpandAddons, setInitialExpandAddons] = useState(true);
 
- const [showWelcomeOffer, setShowWelcomeOffer] = useState(false);
   // Disable Diwali homepage banner
   const [showDiwaliBanner, setShowDiwaliBanner] = useState(false);
   const [independenceBannerDismissed, setIndependenceBannerDismissed] = useState(false);
@@ -437,23 +437,6 @@ const handleDiwaliCTAClick = useCallback(() => {
   }
 }, [isAuthenticated, user, user?.hasSeenProfilePrompt, isLoading, postAuthCallback, location.pathname]);
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    if (location.pathname === '/') {
-      timer = setTimeout(() => {
-        setShowWelcomeOffer(true);
-      }, 2000);
-    } else {
-      setShowWelcomeOffer(false);
-    }
-
-    return () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, [location.pathname]);
 
   const commonPageProps = {
     isAuthenticated: isAuthenticated,
@@ -689,6 +672,15 @@ const handleDiwaliCTAClick = useCallback(() => {
               </AdminRoute>
             }
           />
+          <Route path="/software-tools" element={<SoftwareToolsPage />} />
+          <Route
+            path="/admin/software-tools"
+            element={
+              <AdminRoute>
+                <AdminSoftwareToolsPage />
+              </AdminRoute>
+            }
+          />
           <Route path="/resume-for" element={<RoleHubPage />} />
           <Route path="/resume-for/:roleSlug" element={<RoleResumePage />} />
           <Route path="/resume-for-company" element={<CompanyHubPage />} />
@@ -817,6 +809,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       { id: '/session', label: 'Resume Session', icon: <Sparkles className="w-5 h-5" /> },
                       ...(isAuthenticated ? [{ id: '/my-bookings', label: 'My Bookings', icon: <BookOpen className="w-5 h-5" /> }] : []),
                       { id: '/referrals', label: 'Referrals', icon: <Users className="w-5 h-5" /> },
+                      { id: '/software-tools', label: 'Software Tools', icon: <Package className="w-5 h-5" /> },
                       { id: '/careers', label: 'Careers', icon: <Briefcase className="w-5 h-5" /> },
                       { id: '/jobs', label: 'Latest Jobs', icon: <Briefcase className="w-5 h-5" /> },
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/jobs', label: 'Admin Panel', icon: <Crown className="w-5 h-5" /> }] : []),
@@ -827,6 +820,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/email-testing', label: 'Email Testing', icon: <Mail className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/sessions', label: 'Session Schedule', icon: <Calendar className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/coupons', label: 'Plan Coupons', icon: <TicketPercent className="w-5 h-5" /> }] : []),
+                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/software-tools', label: 'Software Tools Mgmt', icon: <Package className="w-5 h-5" /> }] : []),
                       { id: '/tutorials', label: 'Tutorials', icon: <BookOpen className="w-5 h-5" /> },
                       { id: '/contact', label: 'Contact', icon: <Phone className="w-5 h-5" /> },
                       ...(isAuthenticated ? [{ id: 'wallet', label: 'Referral & Wallet', icon: <Wallet className="w-5 h-5" /> }] : []),
@@ -932,14 +926,6 @@ const handleDiwaliCTAClick = useCallback(() => {
           onAction={alertActionCallback}
         />
 
-        {showWelcomeOffer && (
-          <OfferOverlay
-            isOpen={showWelcomeOffer}
-            onClose={() => setShowWelcomeOffer(false)}
-            targetPath="/optimizer"
-            ctaLabel="Open JD Optimizer"
-          />
-        )}
       
 
       </div>

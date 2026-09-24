@@ -19,6 +19,7 @@ import {
   CalendarCheck,
   Video,
   TicketPercent,
+  Package,
 } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
@@ -87,6 +88,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
     { id: "/webinars", label: "Webinars", icon: <Sparkles className="w-4 h-4" /> },
     { id: "/gaming", label: "Gaming", icon: <Gamepad2 className="w-4 h-4" /> },
     { id: "/referrals", label: "Referrals", icon: <Users className="w-4 h-4" /> },
+    { id: "/software-tools", label: "Software Tools", icon: <Package className="w-4 h-4" /> },
     { id: "/careers", label: "Careers", icon: <Users className="w-4 h-4" /> },
     { id: "/contact", label: "Contact", icon: <Phone className="w-4 h-4" /> },
     ...(isAuthenticated
@@ -120,6 +122,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
     { id: "/admin/users", label: "Manage Users", icon: <Users className="w-4 h-4" /> },
     { id: "/admin/sessions", label: "Session Schedule", icon: <Sparkles className="w-4 h-4" /> },
     { id: "/admin/coupons", label: "Plan Coupons", icon: <TicketPercent className="w-4 h-4" /> },
+    { id: "/admin/software-tools", label: "Software Tools", icon: <Package className="w-4 h-4" /> },
     { id: "/admin/referrals", label: "Referral Mgmt", icon: <Shield className="w-4 h-4" /> },
   ];
 
