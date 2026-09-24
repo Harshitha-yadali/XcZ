@@ -183,14 +183,14 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
             <div className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-700/50 p-4">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center">
                 <BarChart3 className="w-5 h-5 mr-2 text-emerald-400" />
-                Score Improvements
+                {optimizationTier === 'quick' ? 'Rewrite Summary' : 'Score Improvements'}
               </h2>
               {jdOptimizationResult ? (
                 <ScoreDeltaDisplay
                   result={jdOptimizationResult}
                   userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                   scoreSummaryOverride={scoreSummaryOverride || undefined}
-                  mode="comparison"
+                  mode={optimizationTier === 'quick' ? 'quick' : 'comparison'}
                 />
               ) : parameter16Scores ? (
                 <Parameter16ScoreDisplay
@@ -200,7 +200,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                   overallAfter={parameter16Scores.overallAfter}
                   improvement={parameter16Scores.improvement}
                   compact={true}
-                  mode="comparison"
+                  mode={optimizationTier === 'quick' ? 'quick' : 'comparison'}
                 />
               ) : null}
             </div>

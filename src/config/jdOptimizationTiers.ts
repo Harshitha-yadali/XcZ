@@ -72,7 +72,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     accuracyCheck: 'Basic',
     bestFor: 'Fast basic rewrite',
     cta: 'Run Quick Scan',
-    description: 'A fast rewrite of the full resume for the selected job, with your before/after ATS score.',
+    description: 'A fast basic rewrite of the full resume for the selected job.',
   },
   {
     id: 'smart',

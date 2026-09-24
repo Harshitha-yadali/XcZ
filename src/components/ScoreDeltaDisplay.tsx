@@ -42,9 +42,8 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
   const showReachedTarget = reachedTarget || displayAfter.score >= 90;
   const isScan = mode === 'scan';
   const isQuick = mode === 'quick';
-  // Quick is paid, so it shows the before/after it already computed. Only the
-  // free scan stays score-free.
-  const hideScores = isScan;
+  // Quick is sold as a fast rewrite, not a scored run; only Smart and Deep show numbers.
+  const hideScores = isScan || isQuick;
 
   const toggleCategory = (name: string) => {
     setExpandedCategory(expandedCategory === name ? null : name);

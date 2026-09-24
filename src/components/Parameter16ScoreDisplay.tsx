@@ -55,7 +55,7 @@ export const Parameter16ScoreDisplay: React.FC<Parameter16ScoreDisplayProps> = (
 }) => {
   const isScan = mode === 'scan';
   const isQuick = mode === 'quick';
-  const hideScores = isScan;
+  const hideScores = isScan || isQuick;
   const scores = isScan ? (beforeScores || afterScores || []) : (afterScores || beforeScores || []);
   const currentScore = overallBefore ?? overallAfter ?? 0;
   
