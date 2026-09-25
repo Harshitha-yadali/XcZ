@@ -130,6 +130,12 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   useEffect(() => {
     jobDescriptionRef.current = jobDescription;
   }, [jobDescription]);
+
+  // Warm the optimizer chunk while it still matches this build; a deploy mid-session
+  // would otherwise delete its hashed file before the user clicks Optimize.
+  useEffect(() => {
+    import('../services/enhancedJdOptimizerService').catch(() => {});
+  }, []);
   const [userType, setUserType] = useState<UserType>('fresher');
   const [scoringMode, setScoringMode] = useState<ScoringMode>('general');
   const [autoScoreOnUpload, setAutoScoreOnUpload] = useState(true);
