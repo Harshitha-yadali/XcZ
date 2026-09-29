@@ -21,6 +21,12 @@ import { LoadingAnimation } from './LoadingAnimation';
 // import { generateBeforeScore, generateAfterScore, getDetailedResumeScore, reconstructResumeText } from '../services/scoringService';
 import { reconstructResumeText } from '../services/scoringService'; // Keep only reconstructResumeText utility
 import { getOptimizationTierRemaining, paymentService } from '../services/paymentService';
+
+const toTierCredits = (subscription: Parameters<typeof getOptimizationTierRemaining>[0]) => ({
+  quick: getOptimizationTierRemaining(subscription, 'quick'),
+  smart: getOptimizationTierRemaining(subscription, 'smart'),
+  deep: getOptimizationTierRemaining(subscription, 'deep'),
+});
 import { authService } from '../services/authService'; // ADDED: Import authService
 import { ResumeData, UserType, MatchScore, DetailedScore, ExtractionResult, ScoringMode } from '../types/resume';
 import { ExportOptions, defaultExportOptions } from '../types/export';
@@ -227,7 +233,7 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     creditRestored: boolean;
   } | null>(null);
   const [showOptimizationQuality, setShowOptimizationQuality] = useState(false);
-  const [availableOptimizationCredits, setAvailableOptimizationCredits] = useState(0);
+  const [tierCredits, setTierCredits] = useState(() => toTierCredits(null));
   const [processingQualityTier, setProcessingQualityTier] = useState<JdOptimizationTierId | null>(null);
   const [qualitySelectionError, setQualitySelectionError] = useState<string | null>(null);
   const selectedOptimizationTierRef = useRef<JdOptimizationTierId>(DEFAULT_JD_OPTIMIZATION_TIER);
@@ -385,7 +391,6 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
 
       const reservation = await paymentService.reserveOptimization(user!.id, qualityTier.id, optimizationRunId);
       if (!reservation.success || !reservation.reservationId) {
-        setAvailableOptimizationCredits(reservation.remaining || 0);
         throw new Error(reservation.error || `No ${qualityTier.name} usage is available.`);
       }
       creditReservationId = reservation.reservationId;
@@ -789,15 +794,12 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     if (!requestedTier) {
       try {
         const latestSubscription = await paymentService.getUserSubscription(user.id);
-        const remainingCredits = latestSubscription
-          ? Math.max(0, latestSubscription.optimizationsTotal - latestSubscription.optimizationsUsed)
-          : 0;
-        setAvailableOptimizationCredits(remainingCredits);
+        setTierCredits(toTierCredits(latestSubscription));
         setQualitySelectionError(null);
         setShowOptimizationQuality(true);
       } catch (creditError) {
         console.error('Failed to load optimization credit balance:', creditError);
-        setAvailableOptimizationCredits(0);
+        setTierCredits(toTierCredits(null));
         setQualitySelectionError('We could not load your credit balance. You can still choose a service and retry.');
         setShowOptimizationQuality(true);
       }
@@ -825,7 +827,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       const latestUserSubscription = await paymentService.getUserSubscription(user.id);
       const remainingCredits = getOptimizationTierRemaining(latestUserSubscription, qualityTier.id);
       if (remainingCredits < qualityTier.creditCost) {
-        setAvailableOptimizationCredits(remainingCredits);
+        setTierCredits(toTierCredits(latestUserSubscription));
         setQualitySelectionError(
           `${qualityTier.name} requires ${qualityTier.creditCost} ${qualityTier.creditCost === 1 ? 'credit' : 'credits'}. Choose a service to continue.`,
         );
@@ -900,7 +902,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     try {
       const latestSubscription = await paymentService.getUserSubscription(user.id);
       const remainingCredits = getOptimizationTierRemaining(latestSubscription, tierId);
-      setAvailableOptimizationCredits(remainingCredits);
+      setTierCredits(toTierCredits(latestSubscription));
 
       if (remainingCredits >= tier.creditCost) {
         selectedOptimizationTierRef.current = tierId;
@@ -945,7 +947,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       await refreshUserSubscription();
       const refreshedSubscription = await paymentService.getUserSubscription(user.id);
       const refreshedCredits = getOptimizationTierRemaining(refreshedSubscription, tierId);
-      setAvailableOptimizationCredits(refreshedCredits);
+      setTierCredits(toTierCredits(refreshedSubscription));
 
       if (refreshedCredits < tier.creditCost) {
         throw new Error('Payment succeeded, but the credits are still syncing. Please wait a moment and choose the service again.');
@@ -1798,6 +1800,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       <OptimizationQualityModal
         isOpen={showOptimizationQuality}
         processingTier={processingQualityTier}
+        tierCredits={tierCredits}
         error={qualitySelectionError}
         onClose={() => {
           if (!processingQualityTier) {

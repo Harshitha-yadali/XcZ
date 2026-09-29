@@ -13,6 +13,7 @@ import {
 interface OptimizationQualityModalProps {
   isOpen: boolean;
   processingTier: JdOptimizationTierId | null;
+  tierCredits?: Record<JdOptimizationTierId, number>;
   error?: string | null;
   onClose: () => void;
   onChoose: (tierId: JdOptimizationTierId, packageSize: JdOptimizationPackageSize) => void | Promise<void>;
@@ -118,7 +119,14 @@ const tierPalette: Record<JdOptimizationTierId, {
   },
 };
 
-const PriceBlock = ({ tier, optimizationPackage, compact = false }: { tier: JdOptimizationTier; optimizationPackage: JdOptimizationPackage; compact?: boolean }) => (
+const PriceBlock = ({ tier, optimizationPackage, credits = 0, compact = false }: { tier: JdOptimizationTier; optimizationPackage: JdOptimizationPackage; credits?: number; compact?: boolean }) => credits > 0 ? (
+  <div className={compact ? 'text-right' : 'mt-1'}>
+    <div className={`font-['Poppins'] font-bold leading-none tracking-[-0.045em] tabular-nums text-emerald-300 ${compact ? 'text-2xl sm:text-3xl' : 'text-xl xl:text-2xl'}`}>
+      {credits} left
+    </div>
+    <div className="mt-1 text-[9px] font-semibold text-slate-400 sm:text-[10px]">Already paid · no charge</div>
+  </div>
+) : (
   <div className={compact ? 'text-right' : 'mt-1'}>
     <div className="flex items-end gap-1.5 tabular-nums">
       <span className={`font-['Poppins'] font-bold leading-none tracking-[-0.045em] text-white ${compact ? 'text-2xl sm:text-3xl' : 'text-xl xl:text-2xl'}`}>
@@ -135,6 +143,7 @@ const PriceBlock = ({ tier, optimizationPackage, compact = false }: { tier: JdOp
 export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> = ({
   isOpen,
   processingTier,
+  tierCredits,
   error,
   onClose,
   onChoose,
@@ -144,10 +153,13 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   const processingTierRef = useRef(processingTier);
+  const tierCreditsRef = useRef(tierCredits);
   const reduceMotion = useReducedMotion();
 
   onCloseRef.current = onClose;
   processingTierRef.current = processingTier;
+  tierCreditsRef.current = tierCredits;
+  const creditsFor = (tierId: JdOptimizationTierId) => tierCredits?.[tierId] ?? 0;
 
   const activeTier = JD_OPTIMIZATION_TIERS.find((tier) => tier.id === selectedTier) || JD_OPTIMIZATION_TIERS[1];
   const getSelectedPackage = (tier: JdOptimizationTier) =>
@@ -155,7 +167,12 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedTier(DEFAULT_JD_OPTIMIZATION_TIER);
+    // Open on a tier the user already paid for, so they aren't nudged into buying another.
+    const credits = tierCreditsRef.current;
+    const ownedTier = credits?.[DEFAULT_JD_OPTIMIZATION_TIER]
+      ? DEFAULT_JD_OPTIMIZATION_TIER
+      : JD_OPTIMIZATION_TIERS.find((tier) => (credits?.[tier.id] ?? 0) > 0)?.id;
+    setSelectedTier(ownedTier || DEFAULT_JD_OPTIMIZATION_TIER);
     previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -206,7 +223,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
     return (
       <motion.button
         type="button"
-        data-default-focus={tier.id === DEFAULT_JD_OPTIMIZATION_TIER ? 'true' : undefined}
+        data-default-focus="true"
         onClick={() => onChoose(tier.id, optimizationPackage.size)}
         disabled={Boolean(processingTier)}
         whileHover={reduceMotion || processingTier ? undefined : { y: -2, scale: 1.005 }}
@@ -223,7 +240,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
         <span className="absolute inset-0 -z-10 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[120%]" aria-hidden="true" />
         <span className="relative inline-flex items-center justify-center gap-2">
           {isProcessing ? <Loader2 className={`h-4 w-4 ${reduceMotion ? '' : 'animate-spin'}`} aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-          <span>{isProcessing ? 'Processing…' : `Continue with ${tier.name} · ₹${optimizationPackage.offerPrice}`}</span>
+          <span>{isProcessing ? 'Processing…' : creditsFor(tier.id) > 0 ? `Use ${tier.name} · ${creditsFor(tier.id)} left` : `Continue with ${tier.name} · ₹${optimizationPackage.offerPrice}`}</span>
         </span>
       </motion.button>
     );
@@ -335,7 +352,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
                       </span>
                       <h3 className="mt-1.5 font-['Poppins'] text-base font-semibold tracking-[-0.025em] text-white 2xl:text-lg">{tier.name}</h3>
                       <p className="mt-0.5 text-[9px] font-medium text-slate-500">Regular rate ₹{tier.regularRate}/{tier.unitLabel}</p>
-                      <PriceBlock tier={tier} optimizationPackage={getSelectedPackage(tier)} />
+                      <PriceBlock tier={tier} optimizationPackage={getSelectedPackage(tier)} credits={creditsFor(tier.id)} />
                       <p className="mt-1 line-clamp-2 text-[10px] font-medium leading-3.5 text-slate-400 2xl:text-[11px] [@media(max-height:700px)]:hidden">{tier.description}</p>
                       <span className={`mt-2 inline-flex h-7 w-full items-center justify-center rounded-lg border text-[10px] font-bold uppercase tracking-[0.08em] transition-colors ${
                         selectedTier === tier.id
@@ -401,7 +418,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
                         {selected && <Check className="h-3 w-3 shrink-0" strokeWidth={3} aria-hidden="true" />}
                         <span className="truncate">{tier.name}</span>
                       </span>
-                      <span className={`mt-0.5 block text-[10px] font-bold tabular-nums sm:text-xs ${selected ? 'text-slate-800' : 'text-slate-500'}`}>from ₹{tier.packages[0].offerPrice}</span>
+                      <span className={`mt-0.5 block text-[10px] font-bold tabular-nums sm:text-xs ${selected ? 'text-slate-800' : 'text-slate-500'}`}>{creditsFor(tier.id) > 0 ? `${creditsFor(tier.id)} left` : `from ₹${tier.packages[0].offerPrice}`}</span>
                     </motion.button>
                   );
                 })}
@@ -432,7 +449,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
                       <p className="mt-1 line-clamp-2 max-w-[42rem] text-[9px] font-medium leading-3.5 text-slate-400 xs:text-[10px] sm:text-[11px] [@media(max-height:700px)]:hidden">{activeTier.description}</p>
                     </div>
                     <div>
-                      <PriceBlock tier={activeTier} optimizationPackage={getSelectedPackage(activeTier)} compact />
+                      <PriceBlock tier={activeTier} optimizationPackage={getSelectedPackage(activeTier)} credits={creditsFor(activeTier.id)} compact />
                     </div>
                   </div>
 
