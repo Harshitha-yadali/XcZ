@@ -17,7 +17,6 @@ const ALLOWED_OPENROUTER_MODELS = new Set([
   "openai/gpt-5.6-terra",
   "google/gemini-3.5-flash-lite",
   "anthropic/claude-opus-4.8",
-  "openai/gpt-6-luna",
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -29,18 +28,7 @@ const DEFAULT_OPENROUTER_MODEL = ALLOWED_OPENROUTER_MODELS.has(configuredDefault
   : "google/gemma-4-31b-it:free";
 const MODELS_WITH_FIXED_SAMPLING = new Set([
   "openai/gpt-5.6-terra",
-  "openai/gpt-6-luna",
 ]);
-// Models served by ZenMux (OpenAI-compatible) instead of OpenRouter.
-const ZENMUX_MODELS = new Set([
-  "openai/gpt-6-luna",
-]);
-
-// Returns [url, apiKey] for the provider serving this model; apiKey is empty when unset.
-const chatEndpointFor = (model: string): [string, string] =>
-  ZENMUX_MODELS.has(model)
-    ? ["https://zenmux.ai/api/v1/chat/completions", Deno.env.get("ZENMUX_API_KEY") || ""]
-    : ["https://openrouter.ai/api/v1/chat/completions", Deno.env.get("OPENROUTER_API_KEY") || ""];
 
 const resolveAllowedModel = (requestedModel: unknown): string | null => {
   const model = typeof requestedModel === "string" && requestedModel.trim()
@@ -95,9 +83,9 @@ async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
       const model = resolveAllowedModel(params.model);
       if (!model) return jsonResponse({ error: "Requested model is not in the approved model allowlist" }, 400);
       if (isGuest && !model.endsWith(":free")) return jsonResponse({ error: "Sign in required for this model." }, 401);
-      const [url, apiKey] = chatEndpointFor(model);
-      if (!apiKey) return jsonResponse({ error: `API key not configured for ${model}` }, 500);
-      const res = await fetch(url, {
+      const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+      if (!apiKey) return jsonResponse({ error: "OPENROUTER_API_KEY not configured" }, 500);
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -118,9 +106,9 @@ async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
       const model = resolveAllowedModel(params.model);
       if (!model) return jsonResponse({ error: "Requested model is not in the approved model allowlist" }, 400);
       if (isGuest && !model.endsWith(":free")) return jsonResponse({ error: "Sign in required for this model." }, 401);
-      const [url, apiKey] = chatEndpointFor(model);
-      if (!apiKey) return jsonResponse({ error: `API key not configured for ${model}` }, 500);
-      const res = await fetch(url, {
+      const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+      if (!apiKey) return jsonResponse({ error: "OPENROUTER_API_KEY not configured" }, 500);
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,

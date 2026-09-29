@@ -57,7 +57,6 @@ import {
   type JdOptimizationTierId,
 } from '../config/jdOptimizationTiers';
 import { findRequiredMissingSections } from '../utils/resumeMissingSections';
-import { FIRST_PASS_OPTIMIZATION_MODEL } from '../services/openrouterModelConfig';
 
 // src/components/ResumeOptimizer.tsx
 const cleanResumeText = (text: string): string => {
@@ -404,26 +403,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
         const { EnhancedJdOptimizerService } = await import('../services/enhancedJdOptimizerService');
         
         const resumeText = reconstructResumeText(resumeData);
-        const runFirstPass = (model: string) => EnhancedJdOptimizerService.optimizeResume(
+        const optimizationResult = await EnhancedJdOptimizerService.optimizeResume(
           resumeData,
           resumeText,
           currentJobDescription,
           targetRole,
           qualityTier.mode,
-          model,
+          qualityTier.modelId,
           optimizationRunId,
           userType,
         );
-        // Luna drafts pass 1 cheaply; its single provider is flaky, so the tier model covers failures.
-        let firstPassModel = FIRST_PASS_OPTIMIZATION_MODEL;
-        let optimizationResult;
-        try {
-          optimizationResult = await runFirstPass(firstPassModel);
-        } catch (lunaError) {
-          console.warn(`First pass on ${firstPassModel} failed, using ${qualityTier.modelId}:`, lunaError);
-          firstPassModel = qualityTier.modelId;
-          optimizationResult = await runFirstPass(firstPassModel);
-        }
         
         finalOptimizedResume = {
           ...optimizationResult.optimizedResume,
@@ -523,7 +512,6 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                 ...loopResult.gapClassification,
                 optimizationTier: qualityTier.id,
                 requestedModel: qualityTier.modelId,
-                firstPassModel,
                 creditsCharged: qualityTier.creditCost,
                 aiPasses: qualityTier.aiPasses,
                 scoringVersion: loopResult.scoringVersion,
