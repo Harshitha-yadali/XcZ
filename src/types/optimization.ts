@@ -6,6 +6,6 @@ export interface OptimizationSession {
   after_score?: number | null;
   reached_target?: boolean | null;
   processing_time_ms?: number | null;
-  changes_applied?: number | null;
+  changes_applied?: unknown[] | number | null; // jsonb array in DB
   iterations_count?: number | null;
 }

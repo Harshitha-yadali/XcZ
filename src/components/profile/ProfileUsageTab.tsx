@@ -149,7 +149,7 @@ export const ProfileUsageTab: React.FC = () => {
                 </div>
                 {item.changes_applied !== null && item.changes_applied !== undefined && (
                   <div className="text-slate-400 text-xs">
-                    {item.changes_applied} changes • {item.iterations_count || 1} iters
+                    {Array.isArray(item.changes_applied) ? item.changes_applied.length : item.changes_applied} changes • {item.iterations_count || 1} iters
                   </div>
                 )}
                 {item.processing_time_ms !== null && item.processing_time_ms !== undefined && (
