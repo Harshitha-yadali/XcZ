@@ -93,6 +93,31 @@ describe('aiProxyService', () => {
     warnSpy.mockRestore();
   });
 
+  it('rotates to the next model when one replies with no content', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    fetchWithSupabaseFallback
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: null } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'Polished text' } }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      openrouter.chatWithSystem('system', 'user', { model: FREE_OPENROUTER_MODELS[0] }),
+    ).resolves.toBe('Polished text');
+    expect(fetchWithSupabaseFallback).toHaveBeenCalledTimes(2);
+
+    warnSpy.mockRestore();
+  });
+
   it('does not warn when the requested model serves the request directly', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 

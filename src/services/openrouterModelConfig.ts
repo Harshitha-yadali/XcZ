@@ -49,7 +49,11 @@ const MODEL_UNAVAILABLE_ERROR_PATTERNS = [
   'no providers available',
 ] as const;
 
-const normalizeModelId = (model?: string) => model?.trim() || '';
+// Reasoning models can return HTTP 200 with no content after spending the whole
+// token budget on thinking. Treated as a failure so the rotation moves on.
+export const EMPTY_OPENROUTER_RESPONSE_ERROR = 'model returned an empty response';
+
+const normalizeModelId =(model?: string) => model?.trim() || '';
 
 export const supportsCustomSamplingParameters = (model?: string) =>
   normalizeModelId(model) !== GPT_5_6_TERRA_MODEL;
@@ -100,4 +104,6 @@ export const shouldRetryWithNextOpenRouterModel = (
   modelsToTry: readonly string[],
 ) =>
   currentIndex < modelsToTry.length - 1 &&
-  (isRateLimitLikeOpenRouterError(error) || isUnavailableOpenRouterModelError(error));
+  (isRateLimitLikeOpenRouterError(error) ||
+    isUnavailableOpenRouterModelError(error) ||
+    getErrorMessage(error).includes(EMPTY_OPENROUTER_RESPONSE_ERROR));

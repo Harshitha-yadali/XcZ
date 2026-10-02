@@ -45,7 +45,10 @@ Please provide an improved version that:
 Improved Description:`;
 
     try {
-      return await this.callAI(systemPrompt, userPrompt, 0.7);
+      const polished = await this.callAI(systemPrompt, userPrompt, 0.7);
+      // An empty reply must fail: the caller overwrites the stored description with it.
+      if (!polished.trim()) throw new Error('AI returned an empty description');
+      return polished;
     } catch (error) {
       console.error('Error polishing job description:', error);
       throw new Error('Failed to polish job description. Please try again later.');

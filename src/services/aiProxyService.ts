@@ -5,6 +5,7 @@ import {
   getSupabaseEdgeFunctionUrl,
 } from '../config/env';
 import {
+  EMPTY_OPENROUTER_RESPONSE_ERROR,
   getOpenRouterTemperature,
   getOpenRouterModelsToTry,
   shouldRetryWithNextOpenRouterModel,
@@ -124,6 +125,14 @@ const warnIfServedByFallbackModel = (modelsToTry: readonly string[], servedIndex
   });
 };
 
+const requireContent = (result: any, model: string): string => {
+  const content = result.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error(`AI ${EMPTY_OPENROUTER_RESPONSE_ERROR} (${model})`);
+  }
+  return content;
+};
+
 export const openrouter = {
   async chat(prompt: string, options: { model?: string; temperature?: number; maxTokens?: number } = {}) {
     const modelsToTry = getOpenRouterModelsToTry(options.model);
@@ -139,8 +148,9 @@ export const openrouter = {
           maxTokens: options.maxTokens ?? 4000,
         });
 
+        const content = requireContent(result, modelsToTry[i]);
         warnIfServedByFallbackModel(modelsToTry, i);
-        return result.choices?.[0]?.message?.content || '';
+        return content;
       } catch (error) {
         lastError = error;
         const shouldRetryWithNext = shouldRetryWithNextOpenRouterModel(error, i, modelsToTry);
@@ -165,8 +175,9 @@ export const openrouter = {
           ...(temperature === undefined ? {} : { temperature }),
         });
 
+        const content = requireContent(result, modelsToTry[i]);
         warnIfServedByFallbackModel(modelsToTry, i);
-        return result.choices?.[0]?.message?.content || '';
+        return content;
       } catch (error) {
         lastError = error;
         const shouldRetryWithNext = shouldRetryWithNextOpenRouterModel(error, i, modelsToTry);
