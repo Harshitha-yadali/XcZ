@@ -68,7 +68,8 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        await send(`/${igUserId}/messages`, {
+        // With a Facebook Login (Page) token, DMs are sent through the Page, not the Instagram account.
+        await send(`/${Deno.env.get("FACEBOOK_PAGE_ID") || igUserId}/messages`, {
           recipient: { comment_id: comment.id },
           message: { text: `Here is the apply link you asked for:\n${jobLink(siteUrl, post.job_id, post.hook_variant)}` },
         });
