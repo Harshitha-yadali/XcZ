@@ -1232,6 +1232,11 @@ export const JobUploadForm: React.FC<JobUploadFormProps> = ({ mode = 'create' })
         supabase.functions.invoke('notify-telegram-job-update', { body: { jobId: newJob.id } }).catch((err) => {
           console.warn('notify-telegram-job-update failed (non-blocking):', err);
         });
+        // Fire-and-forget: queue an Instagram Reel for this job at the next free posting
+        // slot. Same single-submit scoping as the two calls above.
+        supabase.functions.invoke('queue-instagram-job-post', { body: { jobId: newJob.id } }).catch((err) => {
+          console.warn('queue-instagram-job-post failed (non-blocking):', err);
+        });
       }
 
       setSubmitSuccess(true);

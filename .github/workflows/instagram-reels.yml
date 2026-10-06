@@ -1,0 +1,56 @@
+name: Instagram Reels
+
+# Renders the Reel for each job queued by queue-instagram-job-post. Runs about
+# 35 minutes before each posting slot (9:00, 13:00, 18:00 IST); the queue only
+# hands out slots that are at least 45 minutes away, so a queued job is always
+# rendered before its slot. Scheduled runs only fire from the default branch.
+on:
+  schedule:
+    - cron: '55 2,6,11 * * *' # 8:25, 12:25 and 17:25 IST
+  workflow_dispatch:
+
+concurrency: instagram-reels
+
+env:
+  TESSERACT_VERSION: '0.3.1'
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Tesseract's Linux bundle has no GPU or H.264 encoder of its own: it
+      # renders through Vulkan (Mesa lavapipe on a runner) and encodes with a
+      # separately installed FFmpeg.
+      - name: Install FFmpeg and a software Vulkan driver
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg unzip libvulkan1 mesa-vulkan-drivers libasound2t64
+
+      - name: Install Tesseract CLI
+        run: |
+          base="https://github.com/mirage-hq/tesseract/releases/download/v${TESSERACT_VERSION}"
+          archive="tesseract-${TESSERACT_VERSION}-linux-x86_64.zip"
+          cd "$RUNNER_TEMP"
+          curl -fL -O "$base/$archive" -O "$base/$archive.sha256"
+          sha256sum -c "$archive.sha256"
+          unzip -q "$archive" -d tesseract
+          bash "tesseract/tesseract-${TESSERACT_VERSION}-linux-x86_64/install.sh"
+          "$HOME/.local/share/Tesseract/bin/tsrct" --version
+
+      - name: Render queued Reels
+        run: |
+          export TSRCT="$HOME/.local/share/Tesseract/bin/tsrct"
+          export TSRCT_FFMPEG="$(command -v ffmpeg)"
+          node scripts/render-instagram-reels.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional: adds a spoken voiceover. Reels are silent without it.
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { denyUnlessServiceOrAdmin } from "../_shared/auth.ts";
+import { formatCompensation, formatEligibleYears, formatExperience, formatLocation } from "../_shared/jobFormat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,46 +33,6 @@ function escapeHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-}
-
-function formatCompensation(job: JobListingRow): string {
-  const amount = typeof job.package_amount === "number" ? job.package_amount : 0;
-  if (amount <= 0) return "Not disclosed";
-
-  const packageType = (job.package_type || "").toLowerCase();
-  if (packageType === "stipend") return `Rs.${Math.round(amount).toLocaleString("en-IN")} / month`;
-  if (packageType === "hourly") return `Rs.${Math.round(amount).toLocaleString("en-IN")} / hour`;
-
-  const inLakhs = amount / 100000;
-  const formattedLakhs = Number.isInteger(inLakhs) ? inLakhs.toString() : inLakhs.toFixed(1);
-  return `${formattedLakhs} LPA`;
-}
-
-function formatLocation(job: JobListingRow): string {
-  if (job.location_city && job.location_city.trim()) {
-    return `${job.location_city.trim()} (${job.location_type || "Not specified"})`;
-  }
-  return job.location_type || "Not specified";
-}
-
-function formatEligibleYears(job: JobListingRow): string {
-  const value = job.eligible_years;
-  if (!value) return "Not specified";
-
-  const items = Array.isArray(value)
-    ? value.map((item) => item.trim()).filter(Boolean)
-    : value
-        .split(value.includes(",") || value.includes("|") || value.includes("/") ? /[,|/]/ : /\s+/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-  return items.length ? items.join(", ") : "Not specified";
-}
-
-function formatExperience(job: JobListingRow): string {
-  return typeof job.experience_required === "string" && job.experience_required.trim()
-    ? job.experience_required.trim()
-    : "Not specified";
 }
 
 function buildTelegramMessage(job: JobListingRow, applyUrl: string): string {
