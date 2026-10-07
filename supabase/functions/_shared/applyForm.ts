@@ -56,11 +56,11 @@ export function detectPlatform(url: string): Platform {
 
 /** Why we cannot apply on this platform, or null when we can. */
 export function unsupportedReason(platform: Platform): string | null {
-  // ponytail: only the platforms dry-run tested against live forms. Add one
-  // here after scripts/auto-apply-dryrun.mjs fills its form correctly.
-  if (platform === 'greenhouse' || platform === 'lever') return null;
+  // Greenhouse and Lever are dry-run tested against live forms. Any other
+  // site is attempted with the same engine, under the extra checks in
+  // runApplication (no sign-in wall, and the form must take a resume).
+  if (platform === 'greenhouse' || platform === 'lever' || platform === 'other') return null;
   if (platform === 'workday') return 'Workday needs a new account for every company. We cannot create that for you yet, so please apply from the job link.';
-  if (platform === 'other') return 'We cannot auto-apply on this site yet. Please apply from the job link.';
   const name = platform[0].toUpperCase() + platform.slice(1);
   return `This job needs you to be signed in to ${name}. We do not sign in to ${name} for you, so please apply from the job link.`;
 }
@@ -266,6 +266,25 @@ export function clickSubmit(): any {
   return Boolean(button);
 }
 
+/** True when the page shows a password box, i.e. it wants a sign-in. */
+export function hasPasswordField(): any {
+  return [...document.querySelectorAll('input[type=password]')].some((el: any) => el.getClientRects().length > 0);
+}
+
+/**
+ * On a job posting without a form: returns the address its Apply link goes
+ * to, or clicks an Apply button and returns 'clicked'. Null when there is none.
+ */
+export function followApplyLink(): any {
+  const el: any = [...document.querySelectorAll('a, button')].find((candidate: any) =>
+    candidate.getClientRects().length > 0
+    && /^(apply|apply now|apply here|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
+  if (!el) return null;
+  if (el.tagName === 'A' && /^https?:/.test(el.href)) return el.href;
+  el.click();
+  return 'clicked';
+}
+
 /** What the page shows after the submit click. */
 export function readOutcome(): any {
   const text = document.body?.innerText || '';
@@ -307,12 +326,33 @@ export async function runApplication(page: Page, options: {
   await page.send('Page.navigate', { url: applyUrl(options.url) });
 
   // The form is drawn by script: wait until its field count stops changing.
-  let fields: FormField[] = [];
-  for (let attempt = 0, stable = 0; attempt < 40 && stable < 3; attempt++) {
-    await sleep(500);
-    const next: FormField[] = await page.evaluate(scanForm).catch(() => []);
-    stable = next.length > 1 && next.length === fields.length ? stable + 1 : 0;
-    fields = next;
+  const settle = async () => {
+    let found: FormField[] = [];
+    for (let attempt = 0, stable = 0; attempt < 40 && stable < 3; attempt++) {
+      await sleep(500);
+      const next: FormField[] = await page.evaluate(scanForm).catch(() => []);
+      stable = next.length > 1 && next.length === found.length ? stable + 1 : 0;
+      found = next;
+    }
+    return found;
+  };
+  const takesResume = (found: FormField[]) => found.some((field) => field.type === 'file');
+  let fields = await settle();
+
+  // An unknown site gets stricter checks, because the largest form on a page
+  // could be a search box or a newsletter signup: an application form is the
+  // one that takes a resume.
+  if (detectPlatform(options.url) === 'other') {
+    if (!takesResume(fields)) {
+      // Probably the job posting: follow its Apply link once and look again.
+      const next = await page.evaluate(followApplyLink).catch(() => null);
+      if (next && next !== 'clicked') await page.send('Page.navigate', { url: next });
+      if (next) fields = await settle();
+    }
+    if (await page.evaluate(hasPasswordField).catch(() => false)) {
+      return failed('This site asks you to sign in before applying, so the application was not sent.');
+    }
+    if (!takesResume(fields)) return failed('No application form was found at the job link.');
   }
   if (fields.length < 2) return failed('No application form was found at the job link. The job may be closed.');
 

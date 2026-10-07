@@ -36,6 +36,8 @@ export interface AutoApplyResult {
   matchScore?: number;
   error?: string;
   pdfUrl?: string;
+  /** When the form cannot be sent, hand over the tailored resume instead of reporting a failure. */
+  manualFallback?: boolean;
 }
 
 class AutoApplyOrchestratorService {
@@ -199,9 +201,9 @@ class AutoApplyOrchestratorService {
 
       const platform = this.detectPlatform(applicationUrl);
 
-      // Only these sites have a form we can submit. Everywhere else the user
-      // gets the tailored resume and the employer's link to finish it there.
-      if (platform !== 'greenhouse' && platform !== 'lever') {
+      // These sites need the user's own sign-in, so there is nothing we can
+      // submit: the user gets the tailored resume and the link to finish there.
+      if (['linkedin', 'naukri', 'indeed', 'workday'].includes(platform)) {
         return { success: false, error: 'MANUAL_APPLY', resumeId, matchScore, pdfUrl };
       }
 
@@ -215,6 +217,9 @@ class AutoApplyOrchestratorService {
 
       return await this.submitApplication(jobId, {
         success: false,
+        // An unknown site is only attempted; if its form cannot be sent, the
+        // user finishes there with the tailored resume.
+        manualFallback: platform === 'other',
         applicationId,
         resumeId,
         matchScore,
@@ -254,6 +259,9 @@ class AutoApplyOrchestratorService {
 
       if (outcome.status === 'needs_input') {
         return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
+      }
+      if (!outcome.success && pending.manualFallback) {
+        return { ...pending, success: false, error: 'MANUAL_APPLY', questions: undefined };
       }
       if (!outcome.success) {
         throw new Error(outcome.error || outcome.message || 'The application was not submitted.');
@@ -342,6 +350,8 @@ class AutoApplyOrchestratorService {
   private detectPlatform(url: string): string {
     const lowerUrl = url.toLowerCase();
     if (lowerUrl.includes('linkedin.com')) return 'linkedin';
+    if (lowerUrl.includes('naukri.com')) return 'naukri';
+    if (lowerUrl.includes('indeed.com')) return 'indeed';
     if (lowerUrl.includes('workday.com')) return 'workday';
     if (lowerUrl.includes('greenhouse.io')) return 'greenhouse';
     if (lowerUrl.includes('lever.co')) return 'lever';

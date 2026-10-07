@@ -24,7 +24,8 @@ describe('detectPlatform', () => {
   it('only lets through platforms that need no login', () => {
     expect(unsupportedReason('greenhouse')).toBeNull();
     expect(unsupportedReason('lever')).toBeNull();
-    for (const platform of ['linkedin', 'naukri', 'indeed', 'workday', 'other'] as const) {
+    expect(unsupportedReason('other')).toBeNull();
+    for (const platform of ['linkedin', 'naukri', 'indeed', 'workday'] as const) {
       expect(unsupportedReason(platform)).toBeTruthy();
     }
   });
