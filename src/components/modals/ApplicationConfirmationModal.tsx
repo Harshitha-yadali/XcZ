@@ -10,7 +10,6 @@ import {
   ExternalLink,
   RefreshCw,
   Zap,
-  User,
   Calendar,
   Building2
 } from 'lucide-react';
@@ -38,6 +37,26 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
   };
 
   const isSuccess = result.success && result.status === 'submitted';
+  // Not an error: the resume is tailored, the user submits on the employer's site.
+  const isManual = !isSuccess && Boolean(result.manual);
+  const tone = isSuccess ? 'green' : isManual ? 'blue' : 'red';
+  const tones = {
+    green: {
+      header: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
+      icon: 'bg-gradient-to-r from-green-500 to-emerald-500',
+      text: 'text-green-700 dark:text-green-300',
+    },
+    blue: {
+      header: 'bg-gradient-to-r from-blue-50 to-sky-50 dark:from-blue-900/20 dark:to-sky-900/20',
+      icon: 'bg-gradient-to-r from-blue-500 to-sky-500',
+      text: 'text-blue-700 dark:text-blue-300',
+    },
+    red: {
+      header: 'bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20',
+      icon: 'bg-gradient-to-r from-red-500 to-orange-500',
+      text: 'text-red-700 dark:text-red-300',
+    },
+  }[tone];
 
   return (
     <AnimatePresence>
@@ -50,11 +69,7 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
           className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] overflow-y-auto dark:bg-dark-100"
         >
           {/* Header */}
-          <div className={`relative p-6 border-b border-gray-200 dark:border-dark-300 ${
-            isSuccess 
-              ? 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20' 
-              : 'bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20'
-          }`}>
+          <div className={`relative p-6 border-b border-gray-200 dark:border-dark-300 ${tones.header}`}>
             <button
               onClick={onClose}
               className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-white/50"
@@ -63,27 +78,21 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
             </button>
 
             <div className="text-center pr-16">
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg ${
-                isSuccess 
-                  ? 'bg-gradient-to-r from-green-500 to-emerald-500' 
-                  : 'bg-gradient-to-r from-red-500 to-orange-500'
-              }`}>
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg ${tones.icon}`}>
                 {isSuccess ? (
                   <CheckCircle className="w-8 h-8 text-white" />
+                ) : isManual ? (
+                  <Download className="w-8 h-8 text-white" />
                 ) : (
                   <AlertTriangle className="w-8 h-8 text-white" />
                 )}
               </div>
               
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {isSuccess ? 'Application Submitted!' : 'Application Failed'}
+                {isSuccess ? 'Application Submitted!' : isManual ? 'Your tailored resume is ready' : 'Application Failed'}
               </h1>
               
-              <p className={`text-lg ${
-                isSuccess 
-                  ? 'text-green-700 dark:text-green-300' 
-                  : 'text-red-700 dark:text-red-300'
-              }`}>
+              <p className={`text-lg ${tones.text}`}>
                 {result.message}
               </p>
             </div>
@@ -109,17 +118,8 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Method:</span>
                   <span className="font-medium text-gray-900 dark:text-gray-100 flex items-center">
-                    {result.status === 'submitted' && result.screenshotUrl ? (
-                      <>
-                        <Zap className="w-4 h-4 mr-1 text-purple-600" />
-                        Auto Apply
-                      </>
-                    ) : (
-                      <>
-                        <User className="w-4 h-4 mr-1 text-blue-600" />
-                        Manual Apply
-                      </>
-                    )}
+                    <Zap className="w-4 h-4 mr-1 text-purple-600" />
+                    Auto Apply
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -132,12 +132,23 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
             </div>
 
             {/* Application Proof */}
-            <div className="bg-blue-50 rounded-xl p-4 mb-6 dark:bg-blue-900/20">
+            <div className={`bg-blue-50 rounded-xl p-4 mb-6 dark:bg-blue-900/20 ${result.resumeUrl || result.screenshotUrl ? '' : 'hidden'}`}>
               <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center">
                 <Eye className="w-5 h-5 mr-2" />
-                Application Proof
+                {isManual ? 'Finish your application' : 'Application Proof'}
               </h3>
               <div className="flex flex-wrap gap-3">
+                {isManual && result.fallbackUrl && (
+                  <a
+                    href={result.fallbackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open application page</span>
+                  </a>
+                )}
                 {result.resumeUrl && (
                   <a
                     href={result.resumeUrl}
@@ -165,7 +176,7 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
             </div>
 
             {/* Error Details (if failed) */}
-            {!isSuccess && result.error && (
+            {!isSuccess && !isManual && result.error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 dark:bg-red-900/20 dark:border-red-500/50">
                 <h3 className="font-semibold text-red-900 dark:text-red-300 mb-2">Error Details</h3>
                 <p className="text-red-700 dark:text-red-400 text-sm">{result.error}</p>

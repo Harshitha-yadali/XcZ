@@ -1,12 +1,16 @@
 import { supabase } from '../lib/supabaseClient';
-import { resumeAnalysisService } from './resumeAnalysisService';
+import { ResumeData } from '../types/resume';
 import {
   aiProjectSuggestionService,
   ProjectSuggestion,
 } from './aiProjectSuggestionService';
 import { optimizeResume } from './geminiService';
+import { QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
 import { exportToPDFBlob } from '../utils/exportUtils';
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+
+// Private bucket that already holds users' uploaded resumes.
+const RESUME_BUCKET = 'user-resumes';
 
 export interface AutoApplyStatus {
   step: 'analyzing' | 'suggesting_projects' | 'optimizing' | 'generating_pdf' | 'submitting' | 'completed' | 'failed';
@@ -72,8 +76,8 @@ class AutoApplyOrchestratorService {
       this.updateStatus(jobId, {
         step: 'analyzing',
         progress: 10,
-        message: 'Analyzing your resume against job requirements...',
-        currentAction: 'Calculating match score',
+        message: 'Reading your resume...',
+        currentAction: 'Loading your saved resume',
       });
 
       const userResume = (await this.getApplicant(userId)).resume_text;
@@ -81,40 +85,14 @@ class AutoApplyOrchestratorService {
         throw new Error('Please upload your resume first');
       }
 
-      const analysisResult = await resumeAnalysisService.analyzeResume(
-        userResume,
-        jobDescription
-      );
-
-      const matchScore = analysisResult.overallScore || 0;
-
-      if (matchScore < 80) {
-        this.updateStatus(jobId, {
-          step: 'suggesting_projects',
-          progress: 30,
-          message: `Match score: ${matchScore}%. Generating AI project suggestions...`,
-          currentAction: 'Creating personalized projects',
-        });
-
-        const projectSuggestions = await aiProjectSuggestionService.generateProjectSuggestions(
-          jobDescription,
-          userResume,
-          matchScore
-        );
-
-        return {
-          success: false,
-          matchScore,
-          error: 'PROJECT_SUGGESTIONS_REQUIRED',
-          ...projectSuggestions,
-        } as any;
-      }
-
+      // ponytail: no match-score gate or project suggestions before applying.
+      // That step called a scoring method that never existed; wire it to the
+      // real JD scorer if the "add a project first" prompt is wanted back.
       return await this.continueAutoApply(
         userId,
         jobId,
         userResume,
-        matchScore,
+        0,
         applicationUrl,
         companyName,
         roleTitle,
@@ -164,7 +142,7 @@ class AutoApplyOrchestratorService {
         finalResumeText = aiProjectSuggestionService.injectProjectIntoResume(
           resumeText,
           selectedProject,
-          selectedProject.selectionType || 'add'
+          selectedProject.selectionType === 'replace' ? 'replace' : 'add'
         );
       }
 
@@ -190,19 +168,18 @@ class AutoApplyOrchestratorService {
         applicant.github_profile_url || undefined,
         undefined,
         undefined,
-        roleTitle
+        roleTitle,
+        undefined,
+        undefined,
+        // The default free model often returns nothing for a prompt this size.
+        QUICK_OPTIMIZATION_MODEL
       );
       const pdfBlob = await exportToPDFBlob(resumeData, 'fresher');
-      const pdfUrl = await this.uploadResumePDF(userId, jobId, pdfBlob);
-
-      const resumeId = await this.saveOptimizedResume(
-        userId,
-        jobId,
-        resumeText,
-        finalResumeText,
-        matchScore,
-        pdfUrl
-      );
+      const pdfPath = await this.uploadResumePDF(userId, jobId, pdfBlob);
+      const resumeId = await this.saveOptimizedResume(userId, jobId, resumeData, pdfPath);
+      // The bucket is private, so the "view resume" link is a short-lived signed URL.
+      const { data: signed } = await supabase.storage.from(RESUME_BUCKET).createSignedUrl(pdfPath, 3600);
+      const pdfUrl = signed?.signedUrl;
 
       if (selectedProject) {
         await aiProjectSuggestionService.saveProjectSuggestions(
@@ -221,6 +198,12 @@ class AutoApplyOrchestratorService {
       });
 
       const platform = this.detectPlatform(applicationUrl);
+
+      // Only these sites have a form we can submit. Everywhere else the user
+      // gets the tailored resume and the employer's link to finish it there.
+      if (platform !== 'greenhouse' && platform !== 'lever') {
+        return { success: false, error: 'MANUAL_APPLY', resumeId, matchScore, pdfUrl };
+      }
 
       const applicationId = await this.createApplication(
         userId,
@@ -298,14 +281,23 @@ class AutoApplyOrchestratorService {
   private async getApplicant(userId: string) {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('resume_text, full_name, email_address, phone, linkedin_profile_url, github_profile_url')
+      .select('full_name, email_address, phone, linkedin_profile_url, github_profile_url')
       .eq('id', userId)
       .maybeSingle();
-
     if (error) throw error;
+
+    // The uploaded resume's text is saved with the job preferences, not the profile.
+    const { data: preferences, error: preferencesError } = await supabase
+      .from('user_job_preferences')
+      .select('resume_text')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (preferencesError) throw preferencesError;
+
     return {
-      resume_text: '', full_name: '', email_address: '', phone: '', linkedin_profile_url: '', github_profile_url: '',
+      full_name: '', email_address: '', phone: '', linkedin_profile_url: '', github_profile_url: '',
       ...data,
+      resume_text: preferences?.resume_text || '',
     };
   }
 
@@ -314,42 +306,31 @@ class AutoApplyOrchestratorService {
     jobId: string,
     pdfBlob: Blob
   ): Promise<string> {
-    const fileName = `${userId}/${jobId}_${Date.now()}.pdf`;
+    // The bucket only lets a user write inside the folder named after their id.
+    const fileName = `${userId}/auto-apply/${jobId}_${Date.now()}.pdf`;
 
     const { data, error } = await supabase.storage
-      .from('optimized-resumes')
-      .upload(fileName, pdfBlob, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
+      .from(RESUME_BUCKET)
+      .upload(fileName, pdfBlob, { contentType: 'application/pdf' });
 
     if (error) throw error;
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('optimized-resumes').getPublicUrl(data.path);
-
-    return publicUrl;
+    return data.path;
   }
 
+  /** Saves the tailored resume; pdf_url holds its path in the private resume bucket. */
   private async saveOptimizedResume(
     userId: string,
     jobListingId: string,
-    originalText: string,
-    optimizedText: string,
-    matchScore: number,
-    pdfUrl: string
+    resumeData: ResumeData,
+    pdfPath: string
   ): Promise<string> {
     const { data, error } = await supabase
       .from('optimized_resumes')
       .insert({
         user_id: userId,
         job_listing_id: jobListingId,
-        original_resume_text: originalText,
-        optimized_resume_text: optimizedText,
-        match_score: matchScore,
-        pdf_url: pdfUrl,
-        improvements_made: [],
+        resume_content: resumeData,
+        pdf_url: pdfPath,
       })
       .select('id')
       .single();
@@ -439,7 +420,7 @@ class AutoApplyOrchestratorService {
           company_logo_url
         ),
         optimized_resumes (
-          match_score,
+          match_score:optimization_score,
           pdf_url
         )
       `)

@@ -123,6 +123,8 @@ export interface AutoApplyResult {
   resumeUrl?: string;
   fallbackUrl?: string;
   error?: string;
+  /** Not sent because the site cannot be automated; the tailored resume is ready to use there. */
+  manual?: boolean;
 }
 
 export interface ApplicationHistory {

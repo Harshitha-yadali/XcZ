@@ -32,7 +32,6 @@ import { ProjectSuggestionModal } from '../modals/ProjectSuggestionModal';
 import { userPreferencesService } from '../../services/userPreferencesService';
 import { aiJobMatchingService } from '../../services/aiJobMatchingService';
 import { useAutoApply } from '../../hooks/useAutoApply';
-import { profileResumeService } from '../../services/profileResumeService';
 import { Seo } from '../../seo/Seo';
 
 interface JobsPageProps {
@@ -281,14 +280,10 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     }
 
     try {
-      // Check if user has profile data
-      const hasResume = await profileResumeService.hasUserResume(user.id);
-      if (!hasResume) {
-        // Show profile completion modal
-        if (onShowProfile) {
-          onShowProfile('profile');
-        }
-        alert('Please upload your resume in your profile before using auto-apply.');
+      // Auto-apply tailors the uploaded resume, so ask for one if it is missing.
+      const preferences = await userPreferencesService.getUserPreferences(user.id);
+      if (!preferences?.resume_text?.trim()) {
+        setShowOnboarding(true);
         return;
       }
 
@@ -640,11 +635,19 @@ const stats = [
         job={selectedJob}
         result={autoApplyResult ? {
           success: autoApplyResult.success,
-          message: autoApplyResult.error || 'Application submitted successfully',
+          message: autoApplyResult.success
+            ? 'Application submitted successfully'
+            : autoApplyResult.error === 'MANUAL_APPLY'
+              ? 'This company takes applications only on its own site. Download your tailored resume and finish the application there.'
+              : 'This application was not sent.',
           applicationId: autoApplyResult.applicationId || '',
           status: autoApplyResult.success ? 'submitted' : 'failed',
-          resumeUrl: autoApplyResult.pdfUrl
-        } : undefined}
+          resumeUrl: autoApplyResult.pdfUrl,
+          manual: autoApplyResult.error === 'MANUAL_APPLY',
+          error: autoApplyResult.error === 'MANUAL_APPLY' ? undefined : autoApplyResult.error,
+          // Nothing was sent, so offer the employer's own link.
+          fallbackUrl: autoApplyResult.success ? undefined : selectedJob?.application_link,
+        } : null}
       />
 
       <AutoApplyStatusModal

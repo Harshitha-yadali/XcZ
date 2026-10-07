@@ -17,7 +17,7 @@ interface AutoApplyRequest {
   answers?: Record<string, string>;
 }
 
-const RESUME_BUCKET = 'optimized-resumes';
+const RESUME_BUCKET = 'user-resumes';
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -117,12 +117,12 @@ Deno.serve(async (req: Request) => {
       .eq('id', application.resume_version_id)
       .eq('user_id', user.id)
       .maybeSingle();
-    // pdf_url is written by the client, so only accept a file in this user's own folder.
-    const publicPrefix = `${supabaseUrl}/storage/v1/object/public/${RESUME_BUCKET}/`;
-    const resumePath = resume?.pdf_url?.startsWith(publicPrefix)
-      ? decodeURIComponent(resume.pdf_url.slice(publicPrefix.length).split('?')[0])
-      : '';
-    if (!resumePath.startsWith(`${user.id}/`)) return fail('The tailored resume for this job was not found.');
+    // pdf_url is a path in the private resume bucket. It is written by the
+    // client, so only accept a file in this user's own folder.
+    const resumePath: string = resume?.pdf_url || '';
+    if (!resumePath.startsWith(`${user.id}/`) || resumePath.includes('..')) {
+      return fail('The tailored resume for this job was not found.');
+    }
     const { data: resumeFile, error: resumeError } = await supabase.storage.from(RESUME_BUCKET).download(resumePath);
     if (resumeError || !resumeFile) return fail('The tailored resume for this job could not be read.');
 
