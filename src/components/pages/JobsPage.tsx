@@ -24,7 +24,8 @@ import { JobCard } from '../jobs/JobCard';
 import { JobFilters as JobFiltersComponent } from '../jobs/JobFilters';
 import { OptimizedResumePreviewModal } from '../modals/OptimizedResumePreviewModal';
 import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationModal';
-import { AutoApplyProgressModal } from '../modals/AutoApplyProgressModal';
+import { AutoApplyStatusModal } from '../modals/AutoApplyStatusModal';
+import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
 import { Pagination } from '../common/Pagination';
 import { JobPreferencesOnboardingModal } from '../modals/JobPreferencesOnboardingModal';
 import { ProjectSuggestionModal } from '../modals/ProjectSuggestionModal';
@@ -98,6 +99,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     projectSuggestions,
     currentJob: autoApplyJob,
     result: autoApplyResult,
+    questions: autoApplyQuestions,
+    submitAnswers: submitAutoApplyAnswers,
     startAutoApply,
     handleProjectSelection,
     closeModals: closeAutoApplyModals,
@@ -644,15 +647,18 @@ const stats = [
         } : undefined}
       />
 
-      <AutoApplyProgressModal
+      <AutoApplyStatusModal
         isOpen={showStatusModal}
+        status={currentStatus}
+        jobTitle={autoApplyJob?.role_title}
+        companyName={autoApplyJob?.company_name}
+      />
+
+      <AutoApplyQuestionsModal
+        questions={autoApplyQuestions}
+        companyName={autoApplyJob?.company_name}
+        onSubmit={submitAutoApplyAnswers}
         onClose={() => closeAutoApplyModals()}
-        applicationId={autoApplyJob?.id || null}
-        jobTitle={autoApplyJob?.role_title || ''}
-        companyName={autoApplyJob?.company_name || ''}
-        onComplete={(result) => {
-          // Result is handled by the useAutoApply hook
-        }}
       />
 
       {showProjectModal && projectSuggestions && (

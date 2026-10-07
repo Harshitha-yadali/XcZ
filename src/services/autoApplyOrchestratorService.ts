@@ -4,7 +4,8 @@ import {
   aiProjectSuggestionService,
   ProjectSuggestion,
 } from './aiProjectSuggestionService';
-import jsPDF from 'jspdf';
+import { optimizeResume } from './geminiService';
+import { exportToPDFBlob } from '../utils/exportUtils';
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 
 export interface AutoApplyStatus {
@@ -14,8 +15,18 @@ export interface AutoApplyStatus {
   currentAction?: string;
 }
 
+/** A form field the employer requires that the profile could not answer. */
+export interface ApplyQuestion {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
+  options: string[];
+}
+
 export interface AutoApplyResult {
   success: boolean;
+  /** Set with error 'INPUT_REQUIRED': answer these, then call submitApplication again. */
+  questions?: ApplyQuestion[];
   applicationId?: string;
   resumeId?: string;
   matchScore?: number;
@@ -65,7 +76,7 @@ class AutoApplyOrchestratorService {
         currentAction: 'Calculating match score',
       });
 
-      const userResume = await this.getUserResume(userId);
+      const userResume = (await this.getApplicant(userId)).resume_text;
       if (!userResume) {
         throw new Error('Please upload your resume first');
       }
@@ -107,7 +118,8 @@ class AutoApplyOrchestratorService {
         applicationUrl,
         companyName,
         roleTitle,
-        null
+        null,
+        jobDescription
       );
     } catch (error: any) {
       console.error('Error in auto-apply:', error);
@@ -129,9 +141,16 @@ class AutoApplyOrchestratorService {
     applicationUrl: string,
     companyName: string,
     roleTitle: string,
-    selectedProject: ProjectSuggestion | null
+    selectedProject: ProjectSuggestion | null,
+    jobDescription = ''
   ): Promise<AutoApplyResult> {
     try {
+      const applicant = await this.getApplicant(userId);
+      // The project-selection step does not carry the resume text along.
+      resumeText = resumeText || applicant.resume_text;
+      if (!resumeText) {
+        throw new Error('Please upload your resume first');
+      }
       let finalResumeText = resumeText;
 
       if (selectedProject) {
@@ -152,11 +171,28 @@ class AutoApplyOrchestratorService {
       this.updateStatus(jobId, {
         step: 'generating_pdf',
         progress: 70,
-        message: 'Generating optimized resume PDF...',
+        message: 'Tailoring your resume to this job...',
         currentAction: 'Creating PDF document',
       });
 
-      const pdfBlob = await this.generateResumePDF(finalResumeText, roleTitle);
+      // ponytail: single-pass optimizer and a fixed 'fresher' layout. Use the
+      // optimizer page's multi-pass pipeline and the user's own type once
+      // auto-apply is tied to plan credits.
+      const resumeData = await optimizeResume(
+        finalResumeText,
+        jobDescription || `${roleTitle} at ${companyName}`,
+        'fresher',
+        applicant.full_name || undefined,
+        undefined,
+        applicant.email_address || undefined,
+        applicant.phone || undefined,
+        applicant.linkedin_profile_url || undefined,
+        applicant.github_profile_url || undefined,
+        undefined,
+        undefined,
+        roleTitle
+      );
+      const pdfBlob = await exportToPDFBlob(resumeData, 'fresher');
       const pdfUrl = await this.uploadResumePDF(userId, jobId, pdfBlob);
 
       const resumeId = await this.saveOptimizedResume(
@@ -194,28 +230,13 @@ class AutoApplyOrchestratorService {
         applicationUrl
       );
 
-      await this.triggerFormSubmission(
-        applicationId,
-        userId,
-        applicationUrl,
-        pdfUrl,
-        platform
-      );
-
-      this.updateStatus(jobId, {
-        step: 'completed',
-        progress: 100,
-        message: 'Application submitted successfully!',
-        currentAction: 'Done',
-      });
-
-      return {
-        success: true,
+      return await this.submitApplication(jobId, {
+        success: false,
         applicationId,
         resumeId,
         matchScore,
         pdfUrl,
-      };
+      });
     } catch (error: any) {
       console.error('Error continuing auto-apply:', error);
       this.updateStatus(jobId, {
@@ -228,44 +249,64 @@ class AutoApplyOrchestratorService {
     }
   }
 
-  private async getUserResume(userId: string): Promise<string> {
+  /**
+   * Sends the application through the employer's form. Reports success only
+   * when the employer's site confirmed it; if the form needs answers the
+   * profile lacks, returns them as questions instead.
+   */
+  async submitApplication(
+    jobId: string,
+    pending: AutoApplyResult,
+    answers?: Record<string, string>
+  ): Promise<AutoApplyResult> {
+    try {
+      this.updateStatus(jobId, {
+        step: 'submitting',
+        progress: 85,
+        message: 'Submitting application...',
+        currentAction: 'Filling out application form',
+      });
+
+      const outcome = await this.triggerFormSubmission(pending.applicationId!, answers);
+
+      if (outcome.status === 'needs_input') {
+        return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
+      }
+      if (!outcome.success) {
+        throw new Error(outcome.error || outcome.message || 'The application was not submitted.');
+      }
+
+      this.updateStatus(jobId, {
+        step: 'completed',
+        progress: 100,
+        message: 'Application submitted successfully!',
+        currentAction: 'Done',
+      });
+      return { ...pending, success: true, error: undefined, questions: undefined };
+    } catch (error: any) {
+      console.error('Error submitting application:', error);
+      this.updateStatus(jobId, {
+        step: 'failed',
+        progress: 0,
+        message: 'Application failed',
+        currentAction: error.message,
+      });
+      return { ...pending, success: false, error: error.message, questions: undefined };
+    }
+  }
+
+  private async getApplicant(userId: string) {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('resume_text')
+      .select('resume_text, full_name, email_address, phone, linkedin_profile_url, github_profile_url')
       .eq('id', userId)
       .maybeSingle();
 
     if (error) throw error;
-    return data?.resume_text || '';
-  }
-
-  private async generateResumePDF(resumeText: string, jobTitle: string): Promise<Blob> {
-    const pdf = new jsPDF();
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 20;
-    const maxWidth = pageWidth - margin * 2;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(20);
-    pdf.text('Resume', margin, 20);
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(12);
-    pdf.text(`Application for: ${jobTitle}`, margin, 30);
-
-    let yPosition = 45;
-    const lines = pdf.splitTextToSize(resumeText, maxWidth);
-
-    lines.forEach((line: string) => {
-      if (yPosition > pdf.internal.pageSize.getHeight() - margin) {
-        pdf.addPage();
-        yPosition = margin;
-      }
-      pdf.text(line, margin, yPosition);
-      yPosition += 7;
-    });
-
-    return pdf.output('blob');
+    return {
+      resume_text: '', full_name: '', email_address: '', phone: '', linkedin_profile_url: '', github_profile_url: '',
+      ...data,
+    };
   }
 
   private async uploadResumePDF(
@@ -353,11 +394,8 @@ class AutoApplyOrchestratorService {
 
   private async triggerFormSubmission(
     applicationId: string,
-    userId: string,
-    applicationUrl: string,
-    resumePdfUrl: string,
-    platform: string
-  ): Promise<void> {
+    answers?: Record<string, string>
+  ): Promise<{ success: boolean; status?: string; message?: string; error?: string; questions?: ApplyQuestion[] }> {
     const edgeFunctionUrl = getSupabaseEdgeFunctionUrl('auto-apply-submit');
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -367,13 +405,7 @@ class AutoApplyOrchestratorService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({
-        applicationId,
-        userId,
-        applicationUrl,
-        resumePdfUrl,
-        platform,
-      }),
+      body: JSON.stringify({ applicationId, answers }),
     });
 
     if (!response.ok) {
@@ -381,10 +413,7 @@ class AutoApplyOrchestratorService {
       throw new Error(`Form submission failed: ${error}`);
     }
 
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Form submission failed');
-    }
+    return response.json();
   }
 
   async getApplicationStatus(applicationId: string): Promise<any> {

@@ -884,8 +884,8 @@ function drawAdditionalSection(state: PageState, section: { title: string; bulle
 }
 
 
-// Main export function with mobile optimization
-export const exportToPDF = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<void> => {
+// Draws the resume into a jsPDF document; the callers decide what to do with it.
+const renderResumePDF = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<jsPDF> => {
   // Validate resume data before attempting export
   if (!resumeData) {
     throw new Error('Resume data is required for PDF export');
@@ -1021,13 +1021,7 @@ export const exportToPDF = async (resumeData: ResumeData, userType: UserType = '
       }
     }
 
-    const fileName = getFileName(resumeData, 'pdf');
-    if (isMobileDevice()) {
-      const pdfBlob = doc.output('blob');
-      triggerMobileDownload(pdfBlob, fileName);
-    } else {
-      doc.save(fileName);
-    }
+    return doc;
 
   } catch (error) {
     console.error('Error exporting to PDF:', error);
@@ -1042,6 +1036,21 @@ export const exportToPDF = async (resumeData: ResumeData, userType: UserType = '
     }
   }
 };
+
+// Main export function with mobile optimization
+export const exportToPDF = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<void> => {
+  const doc = await renderResumePDF(resumeData, userType, options);
+  const fileName = getFileName(resumeData, 'pdf');
+  if (isMobileDevice()) {
+    triggerMobileDownload(doc.output('blob'), fileName);
+  } else {
+    doc.save(fileName);
+  }
+};
+
+/** The same PDF as exportToPDF, returned instead of downloaded (for uploading). */
+export const exportToPDFBlob = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<Blob> =>
+  (await renderResumePDF(resumeData, userType, options)).output('blob');
 
 // Centralized getFileName function (from exportUtils.ts)
 export const getFileName = (resumeData: ResumeData, fileExtension: 'pdf' | 'doc'): string => {

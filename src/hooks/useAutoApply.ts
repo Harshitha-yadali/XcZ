@@ -12,6 +12,15 @@ import {
 } from '../services/aiProjectSuggestionService';
 import { JobListing } from '../types/jobs';
 
+const describeJob = (job: JobListing) =>
+  [
+    job.full_description || job.description,
+    job.short_description ? `\n\nKey Points: ${job.short_description}` : '',
+    job.qualification ? `\n\nQualifications: ${job.qualification}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
 export function useAutoApply() {
   const { user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -27,6 +36,31 @@ export function useAutoApply() {
   );
   const [currentJob, setCurrentJob] = useState<JobListing | null>(null);
   const [result, setResult] = useState<AutoApplyResult | null>(null);
+  // An application waiting on answers the employer's form requires.
+  const [pending, setPending] = useState<AutoApplyResult | null>(null);
+
+  // Routes an outcome: more input needed, or a final result for the confirmation modal.
+  const settle = useCallback((applyResult: AutoApplyResult) => {
+    setShowStatusModal(false);
+    if (!applyResult.success && applyResult.error === 'PROJECT_SUGGESTIONS_REQUIRED') {
+      setProjectSuggestions(applyResult as any);
+      setShowProjectModal(true);
+    } else if (!applyResult.success && applyResult.error === 'INPUT_REQUIRED') {
+      setPending(applyResult);
+    } else {
+      setResult(applyResult);
+    }
+  }, []);
+
+  const fail = useCallback((error: any) => {
+    setCurrentStatus({
+      step: 'failed',
+      progress: 0,
+      message: 'Application failed',
+      currentAction: error.message,
+    });
+    settle({ success: false, error: error.message });
+  }, [settle]);
 
   const startAutoApply = useCallback(
     async (job: JobListing) => {
@@ -40,13 +74,7 @@ export function useAutoApply() {
       setResult(null);
 
       try {
-        const jobDescription = [
-          job.full_description || job.description,
-          job.short_description ? `\n\nKey Points: ${job.short_description}` : '',
-          job.qualification ? `\n\nQualifications: ${job.qualification}` : '',
-        ]
-          .filter(Boolean)
-          .join('\n');
+        const jobDescription = describeJob(job);
 
         autoApplyOrchestratorService.registerStatusCallback(job.id, (status) => {
           setCurrentStatus(status);
@@ -60,27 +88,15 @@ export function useAutoApply() {
           job.application_link
         );
 
-        if (!applyResult.success && applyResult.error === 'PROJECT_SUGGESTIONS_REQUIRED') {
-          setProjectSuggestions(applyResult as any);
-          setShowProjectModal(true);
-          setShowStatusModal(false);
-        } else {
-          setResult(applyResult);
-        }
+        settle(applyResult);
       } catch (error: any) {
         console.error('Auto-apply error:', error);
-        setCurrentStatus({
-          step: 'failed',
-          progress: 0,
-          message: 'Application failed',
-          currentAction: error.message,
-        });
-        setResult({ success: false, error: error.message });
+        fail(error);
       } finally {
         setIsProcessing(false);
       }
     },
-    [user]
+    [user, settle, fail]
   );
 
   const handleProjectSelection = useCallback(
@@ -108,24 +124,38 @@ export function useAutoApply() {
           currentJob.application_link,
           currentJob.company_name,
           currentJob.role_title,
-          selectedProject
+          selectedProject,
+          describeJob(currentJob)
         );
 
-        setResult(finalResult);
+        settle(finalResult);
       } catch (error: any) {
         console.error('Error in project selection:', error);
-        setCurrentStatus({
-          step: 'failed',
-          progress: 0,
-          message: 'Application failed',
-          currentAction: error.message,
-        });
-        setResult({ success: false, error: error.message });
+        fail(error);
       } finally {
         setIsProcessing(false);
       }
     },
-    [user, currentJob, projectSuggestions, currentStatus]
+    [user, currentJob, projectSuggestions, currentStatus, settle, fail]
+  );
+
+  const submitAnswers = useCallback(
+    async (answers: Record<string, string>) => {
+      if (!currentJob || !pending) return;
+
+      setPending(null);
+      setShowStatusModal(true);
+      setIsProcessing(true);
+      try {
+        settle(await autoApplyOrchestratorService.submitApplication(currentJob.id, pending, answers));
+      } catch (error: any) {
+        console.error('Error submitting answers:', error);
+        fail(error);
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [currentJob, pending, settle, fail]
   );
 
   const closeModals = useCallback(() => {
@@ -136,6 +166,7 @@ export function useAutoApply() {
     }
     setCurrentJob(null);
     setProjectSuggestions(null);
+    setPending(null);
     setResult(null);
   }, [currentJob]);
 
@@ -147,6 +178,8 @@ export function useAutoApply() {
     projectSuggestions,
     currentJob,
     result,
+    questions: pending?.questions ?? null,
+    submitAnswers,
     startAutoApply,
     handleProjectSelection,
     closeModals,

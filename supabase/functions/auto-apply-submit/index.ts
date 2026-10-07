@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import { denied, getCaller } from "../_shared/auth.ts";
+import { openPage, type Page } from "../_shared/cdp.ts";
+import { answerKey, detectPlatform, runApplication, unsupportedReason, type ApplyResult } from "../_shared/applyForm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,11 +13,11 @@ const corsHeaders = {
 
 interface AutoApplyRequest {
   applicationId: string;
-  userId: string;
-  applicationUrl: string;
-  resumePdfUrl: string;
-  platform: string;
+  /** Answers to the questions a previous call returned, keyed by question key. */
+  answers?: Record<string, string>;
 }
+
+const RESUME_BUCKET = 'optimized-resumes';
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -32,88 +35,127 @@ Deno.serve(async (req: Request) => {
     const { user } = await getCaller(req);
     if (!user) return denied("Sign in required.", 401, corsHeaders);
 
-    const body: AutoApplyRequest = await req.json();
-    const { applicationId, applicationUrl, resumePdfUrl, platform } = body;
-    // Never trust a userId from the body — it selects whose credentials vault is read.
-    const userId = user.id;
+    const { applicationId, answers }: AutoApplyRequest = await req.json();
 
-    console.log(`Starting auto-apply for application ${applicationId}`);
-
-    const { data: userData, error: userError } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
+    // Everything is read from the caller's own rows: nothing in the body picks
+    // whose data is used or which site the browser visits.
+    const { data: application } = await supabase
+      .from('auto_apply_applications')
+      .select('id, application_url, resume_version_id, status')
+      .eq('id', applicationId)
+      .eq('user_id', user.id)
       .maybeSingle();
+    if (!application) return denied("Application not found.", 404, corsHeaders);
 
-    if (userError || !userData) {
-      throw new Error('User profile not found');
-    }
-
-    const { data: credentials, error: credError } = await supabase
-      .from('user_credentials_vault')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('platform', platform)
-      .maybeSingle();
-
+    const platform = detectPlatform(application.application_url);
     const startTime = Date.now();
 
-    let result;
-    switch (platform) {
-      case 'linkedin':
-        result = await handleLinkedInApplication(applicationUrl, resumePdfUrl, userData, credentials);
-        break;
-      case 'workday':
-        result = await handleWorkdayApplication(applicationUrl, resumePdfUrl, userData, credentials);
-        break;
-      case 'greenhouse':
-        result = await handleGreenhouseApplication(applicationUrl, resumePdfUrl, userData);
-        break;
-      case 'lever':
-        result = await handleLeverApplication(applicationUrl, resumePdfUrl, userData);
-        break;
-      default:
-        result = await handleGenericApplication(applicationUrl, resumePdfUrl, userData);
+    const finish = async (result: ApplyResult) => {
+      const submitted = result.status === 'submitted';
+      const { error: updateError } = await supabase
+        .from('auto_apply_applications')
+        .update({
+          platform,
+          status: submitted ? 'submitted' : result.status === 'failed' ? 'failed' : 'paused',
+          submission_time: submitted ? new Date().toISOString() : null,
+          error_message: submitted ? null : result.message || null,
+          paused_at_field: result.questions?.[0]?.label ?? null,
+          form_data_captured: result.filled || {},
+          time_taken_seconds: Math.floor((Date.now() - startTime) / 1000),
+        })
+        .eq('id', application.id)
+        .eq('user_id', user.id);
+      if (updateError) console.error('Error updating application status:', updateError);
+
+      if (submitted || result.status === 'failed') await updateAnalytics(supabase, user.id, platform, submitted);
+
+      return new Response(
+        JSON.stringify({
+          success: submitted,
+          status: result.status,
+          message: result.message,
+          error: submitted ? undefined : result.message,
+          questions: result.questions,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    };
+    const fail = (message: string) => finish({ status: 'failed', message });
+
+    // A second click must never send a second application.
+    if (application.status === 'submitted') {
+      return new Response(
+        JSON.stringify({ success: true, status: 'submitted', message: 'This application was already submitted.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+    const blocked = unsupportedReason(platform);
+    if (blocked) return fail(blocked);
 
-    const { error: updateError } = await supabase
-      .from('auto_apply_applications')
-      .update({
-        status: result.success ? 'submitted' : 'failed',
-        submission_time: result.success ? new Date().toISOString() : null,
-        error_message: result.error || null,
-        screenshot_url: result.screenshotUrl || null,
-        form_data_captured: result.formData || {},
-        time_taken_seconds: timeTaken,
-      })
-      .eq('id', applicationId)
-      .eq('user_id', userId);
+    const browserWs = Deno.env.get('BROWSER_WS');
+    if (!browserWs) return fail('Auto-apply is not switched on yet. Please apply from the job link.');
 
-    if (updateError) {
-      console.error('Error updating application status:', updateError);
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('full_name, email_address, phone, linkedin_profile_url, github_profile_url, current_location, apply_answers')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (!profile) return fail('Your profile was not found.');
+
+    const saved: Record<string, string> = { ...(profile.apply_answers || {}) };
+    const given = Object.entries(answers || {}).slice(0, 100);
+    if (given.length) {
+      for (const [key, value] of given) saved[answerKey(key)] = String(value).slice(0, 2000);
+      // Remembered, so the same question is not asked on the next job.
+      await supabase.from('user_profiles').update({ apply_answers: saved }).eq('id', user.id);
     }
 
-    if (result.success) {
-      await updateAnalytics(supabase, userId, platform, true);
-    } else {
-      await updateAnalytics(supabase, userId, platform, false);
-    }
+    const { data: resume } = await supabase
+      .from('optimized_resumes')
+      .select('pdf_url')
+      .eq('id', application.resume_version_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    // pdf_url is written by the client, so only accept a file in this user's own folder.
+    const publicPrefix = `${supabaseUrl}/storage/v1/object/public/${RESUME_BUCKET}/`;
+    const resumePath = resume?.pdf_url?.startsWith(publicPrefix)
+      ? decodeURIComponent(resume.pdf_url.slice(publicPrefix.length).split('?')[0])
+      : '';
+    if (!resumePath.startsWith(`${user.id}/`)) return fail('The tailored resume for this job was not found.');
+    const { data: resumeFile, error: resumeError } = await supabase.storage.from(RESUME_BUCKET).download(resumePath);
+    if (resumeError || !resumeFile) return fail('The tailored resume for this job could not be read.');
 
-    return new Response(
-      JSON.stringify({
-        success: result.success,
-        message: result.message,
-        error: result.error,
-      }),
-      {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
+    const fullName = profile.full_name || '';
+    let page: Page | null = null;
+    let result: ApplyResult;
+    try {
+      page = await openPage(browserWs);
+      result = await runApplication(page, {
+        url: application.application_url,
+        profile: {
+          fullName,
+          email: profile.email_address || user.email || '',
+          phone: profile.phone || '',
+          linkedin: profile.linkedin_profile_url || '',
+          github: profile.github_profile_url || '',
+          location: profile.current_location || '',
         },
-      }
-    );
+        saved,
+        resume: {
+          name: `${fullName.replace(/[^A-Za-z0-9]+/g, '_') || 'Resume'}_Resume.pdf`,
+          base64: encodeBase64(new Uint8Array(await resumeFile.arrayBuffer())),
+        },
+        submit: true,
+      });
+    } catch (error: any) {
+      console.error('Browser session failed:', error);
+      result = { status: 'failed', message: 'The browser session failed before the application was sent. Please try again.' };
+    } finally {
+      page?.close();
+    }
+
+    return finish(result);
   } catch (error: any) {
     console.error('Error in auto-apply:', error);
     return new Response(
@@ -131,81 +173,6 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
-
-async function handleLinkedInApplication(url: string, resumeUrl: string, userData: any, credentials: any) {
-  console.log('Handling LinkedIn application');
-
-  return {
-    success: true,
-    message: 'LinkedIn Easy Apply completed successfully',
-    formData: {
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      email: userData.email,
-      phone: userData.phone,
-    },
-  };
-}
-
-async function handleWorkdayApplication(url: string, resumeUrl: string, userData: any, credentials: any) {
-  console.log('Handling Workday application');
-
-  return {
-    success: true,
-    message: 'Workday application completed successfully',
-    formData: {
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      email: userData.email,
-      phone: userData.phone,
-    },
-  };
-}
-
-async function handleGreenhouseApplication(url: string, resumeUrl: string, userData: any) {
-  console.log('Handling Greenhouse application');
-
-  return {
-    success: true,
-    message: 'Greenhouse application completed successfully',
-    formData: {
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      email: userData.email,
-      phone: userData.phone,
-    },
-  };
-}
-
-async function handleLeverApplication(url: string, resumeUrl: string, userData: any) {
-  console.log('Handling Lever application');
-
-  return {
-    success: true,
-    message: 'Lever application completed successfully',
-    formData: {
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      email: userData.email,
-      phone: userData.phone,
-    },
-  };
-}
-
-async function handleGenericApplication(url: string, resumeUrl: string, userData: any) {
-  console.log('Handling generic application');
-
-  return {
-    success: true,
-    message: 'Application completed successfully',
-    formData: {
-      firstName: userData.first_name,
-      lastName: userData.last_name,
-      email: userData.email,
-      phone: userData.phone,
-    },
-  };
-}
 
 async function updateAnalytics(supabase: any, userId: string, platform: string, success: boolean) {
   const today = new Date().toISOString().split('T')[0];
