@@ -113,7 +113,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: resume } = await supabase
       .from('optimized_resumes')
-      .select('pdf_url')
+      .select('pdf_url, resume_content')
       .eq('id', application.resume_version_id)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -127,6 +127,14 @@ Deno.serve(async (req: Request) => {
     if (resumeError || !resumeFile) return fail('The tailored resume for this job could not be read.');
 
     const fullName = profile.full_name || '';
+    const content = resume?.resume_content || {};
+    const education = Array.isArray(content.education) ? content.education[0] : null;
+    // Whole skill names only, short enough for a typical 100-character box.
+    const skills: string[] = [];
+    for (const name of (Array.isArray(content.skills) ? content.skills : []).flatMap((group: any) => group?.list || [])) {
+      if ([...skills, name].join(', ').length > 100) break;
+      skills.push(String(name));
+    }
     let page: Page | null = null;
     let result: ApplyResult;
     try {
@@ -139,7 +147,11 @@ Deno.serve(async (req: Request) => {
           phone: profile.phone || '',
           linkedin: profile.linkedin_profile_url || '',
           github: profile.github_profile_url || '',
-          location: profile.current_location || '',
+          location: profile.current_location || content.location || '',
+          college: education?.school || '',
+          degree: education?.degree || '',
+          graduationYear: (String(education?.year || '').match(/\d{4}/g) || []).pop() || '',
+          skills: skills.join(', '),
         },
         saved,
         resume: {

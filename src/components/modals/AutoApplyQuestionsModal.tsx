@@ -77,7 +77,13 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
               ) : question.type === 'textarea' ? (
                 <textarea name={question.key} required rows={3} aria-label={question.label} className={inputClass} />
               ) : (
-                <input type="text" name={question.key} required aria-label={question.label} className={inputClass} />
+                <input
+                  type={question.type === 'date' ? 'date' : 'text'}
+                  name={question.key}
+                  required
+                  aria-label={question.label}
+                  className={inputClass}
+                />
               )}
             </fieldset>
           ))}

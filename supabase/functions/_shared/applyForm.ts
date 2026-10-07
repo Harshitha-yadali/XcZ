@@ -12,6 +12,11 @@ export interface ApplicantProfile {
   linkedin: string;
   github: string;
   location: string;
+  // Read from the tailored resume; empty when the resume does not say.
+  college?: string;
+  degree?: string;
+  graduationYear?: string;
+  skills?: string;
 }
 
 export interface FormField {
@@ -19,9 +24,11 @@ export interface FormField {
   label: string;
   // 'checks' is a group of checkboxes under one question; its answer is the
   // chosen options joined with ' | '.
-  type: 'text' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
+  type: 'text' | 'date' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
   required: boolean;
   options: string[];
+  /** Set when the form shows the country code beside the box, e.g. "+91": the box wants the number without it. */
+  dialCode?: string;
 }
 
 export interface Fill { id: number; type: FormField['type']; label: string; value: string }
@@ -78,10 +85,14 @@ function profileAnswer(label: string, profile: ApplicantProfile): string {
   if (/last name|surname|family name/.test(key)) return rest.join(' ');
   if (/\bname\b/.test(key) && !/company|employer|school|university|college|refer/.test(key)) return profile.fullName.trim();
   if (/e ?mail/.test(key)) return profile.email;
-  if (/phone|mobile/.test(key)) return profile.phone;
+  if (/phone|mobile|contact (number|no)\b/.test(key)) return profile.phone;
   if (/linkedin/.test(key)) return profile.linkedin;
   if (/github/.test(key)) return profile.github;
   if (/\b(city|location)\b/.test(key)) return profile.location;
+  if (/(graduat\w*|passing|pass ?out) year|year of (graduation|passing)/.test(key)) return profile.graduationYear || '';
+  if (/college|university|institute/.test(key)) return profile.college || '';
+  if (/degree|qualification/.test(key)) return profile.degree || '';
+  if (/\bskills\b/.test(key)) return profile.skills || '';
   return '';
 }
 
@@ -107,6 +118,11 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
     if (field.type === 'checkbox' && !/^(yes|true|on)$/i.test(value)) value = '';
+    if (value && field.dialCode) {
+      const digits = value.replace(/\D/g, '');
+      const code = field.dialCode.replace(/\D/g, '');
+      value = digits.startsWith(code) && digits.length > 10 ? digits.slice(code.length) : digits;
+    }
     if (value) fills.push({ id: field.id, type: field.type, label: field.label, value });
     else if (field.required && !missing.some((question) => question.key === key)) {
       missing.push({ key, label: field.label, type: field.type, options: field.options });
@@ -135,19 +151,23 @@ export function scanForm(): any {
   const labelOf = (el: any) => {
     const named = String(el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
       .map((id) => (document.getElementById(id) as any)?.innerText).filter(Boolean).join(' ');
-    let label = named || el.labels?.[0]?.innerText || el.getAttribute('aria-label') || el.placeholder || '';
+    const wrapper = el.closest('[role="combobox"]');
+    let label = named || el.labels?.[0]?.innerText || el.getAttribute('aria-label') || wrapper?.getAttribute('aria-label') || '';
     // No label element: the question is usually the text just above the field.
+    // A line without two letters is decoration, such as a "+91" country code.
     const own = el.tagName === 'SELECT' ? [...el.options].map((option: any) => clean(option.text)) : [];
     for (let box = el.parentElement, depth = 0; !label && box && depth < 4; box = box.parentElement, depth++) {
-      if (clean(firstLine(box)) && !own.includes(clean(firstLine(box)))) label = firstLine(box);
+      const line = clean(firstLine(box));
+      if (/[a-z].*[a-z]/i.test(line) && !own.includes(line)) label = firstLine(box);
     }
-    return label || el.name || '';
+    return label || el.placeholder || el.name || '';
   };
 
   const fields: any[] = [];
   const groups = new Map();
   for (const el of root.querySelectorAll('input, textarea, select')) {
-    const kind = el.tagName !== 'INPUT' ? el.tagName.toLowerCase() : el.getAttribute('role') === 'combobox' ? 'combobox' : el.type;
+    // The combobox role sits on the input itself or on a wrapper around it.
+    const kind = el.tagName !== 'INPUT' ? el.tagName.toLowerCase() : el.closest('[role="combobox"]') ? 'combobox' : el.type;
     if (['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(kind) || el.disabled) continue;
     // Custom dropdowns keep a hidden mirror input for validation; it is not a field.
     if (el.getAttribute('aria-hidden') === 'true') continue;
@@ -175,7 +195,8 @@ export function scanForm(): any {
     fields.push({
       id: fields.length,
       label: clean(label),
-      type: ['textarea', 'select', 'checkbox', 'combobox', 'file'].includes(kind) ? kind : 'text',
+      type: ['date', 'textarea', 'select', 'checkbox', 'combobox', 'file'].includes(kind) ? kind : 'text',
+      dialCode: (String(el.parentElement?.innerText || '').trim().match(/^\+\d{1,4}$/) || [])[0],
       required: el.required || el.getAttribute('aria-required') === 'true' || starred(label),
       options: kind === 'select' ? [...el.options].filter((option: any) => option.value).map((option: any) => clean(option.text)) : [],
     });
@@ -222,6 +243,7 @@ export function fillForm({ fills, resume }: any): any {
     }
   }
 
+  if (!resume) return { resumeAttached: true };
   const inputs: any[] = [...document.querySelectorAll('input[type=file]')];
   const input = inputs.find((candidate) => /resume|cv/i.test(`${candidate.id} ${candidate.name} ${candidate.labels?.[0]?.innerText || ''}`)) || inputs[0];
   if (!input) return { resumeAttached: false };
@@ -244,7 +266,7 @@ export function focusField(id: number): any {
 /** The choices of a custom dropdown that is currently open. */
 export function openOptions(id: number): any {
   const el: any = document.querySelector(`[data-pb-field="${id}"]`);
-  const list = document.getElementById(el?.getAttribute('aria-controls') || '');
+  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '');
   return list ? [...list.querySelectorAll('[role="option"]')].map((option: any) => String(option.innerText || '').replace(/\s+/g, ' ').trim()) : [];
 }
 
@@ -252,10 +274,19 @@ export function openOptions(id: number): any {
 export function pickOpenOption({ id, value }: any): any {
   const key = (text: any) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const el: any = document.querySelector(`[data-pb-field="${id}"]`);
-  const list = document.getElementById(el?.getAttribute('aria-controls') || '');
+  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '');
   const option: any = list && [...list.querySelectorAll('[role="option"]')].find((candidate: any) => key(candidate.innerText) === key(value));
+  // Some menus choose on mouse-down and never see a plain click.
+  for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+    option?.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+  }
   option?.click();
   return Boolean(option);
+}
+
+export function clickField(id: number): any {
+  (document.querySelector(`[data-pb-field="${id}"]`) as any)?.click();
+  return true;
 }
 
 export function clickSubmit(): any {
@@ -305,6 +336,20 @@ export function readOutcome(): any {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const failed = (message: string): ApplyResult => ({ status: 'failed', message });
+
+/** Opens a custom dropdown and returns its choices: by arrow key first, by click if that shows nothing. */
+async function openDropdown(page: Page, id: number): Promise<string[]> {
+  if (!(await page.evaluate(focusField, id))) return [];
+  await press(page, 'ArrowDown', 40);
+  await sleep(350);
+  let options: string[] = await page.evaluate(openOptions, id);
+  if (!options.length) {
+    await page.evaluate(clickField, id);
+    await sleep(350);
+    options = await page.evaluate(openOptions, id);
+  }
+  return options;
+}
 
 async function press(page: Page, key: string, keyCode: number) {
   for (const type of ['keyDown', 'keyUp']) {
@@ -356,33 +401,50 @@ export async function runApplication(page: Page, options: {
   }
   if (fields.length < 2) return failed('No application form was found at the job link. The job may be closed.');
 
-  // A custom dropdown only lists its choices while it is open.
-  for (const field of fields.filter((candidate) => candidate.type === 'combobox')) {
-    if (!(await page.evaluate(focusField, field.id))) continue;
-    await press(page, 'ArrowDown', 40);
-    await sleep(350);
-    field.options = await page.evaluate(openOptions, field.id);
-    await press(page, 'Escape', 27);
-  }
+  // Fills the given fields, or returns the questions that block it. Nothing is
+  // typed into the form while any required answer is missing.
+  const fillIn = async (targets: FormField[], resume: unknown) => {
+    // A custom dropdown only lists its choices while it is open.
+    for (const field of targets.filter((candidate) => candidate.type === 'combobox')) {
+      field.options = await openDropdown(page, field.id);
+      await press(page, 'Escape', 27);
+      // A menu that ignores Escape closes when its field is clicked again.
+      if ((await page.evaluate(openOptions, field.id)).length) await page.evaluate(clickField, field.id);
+    }
 
-  const { fills, missing } = planFill(fields, options.profile, options.saved);
-  if (missing.length) return { status: 'needs_input', questions: missing, fields };
+    const plan = planFill(targets, options.profile, options.saved);
+    if (plan.missing.length) return { ...plan, resumeAttached: false };
 
-  const { resumeAttached } = await page.evaluate(fillForm, { fills, resume: options.resume });
-  for (const fill of fills.filter((candidate) => candidate.type === 'combobox')) {
-    if (!(await page.evaluate(focusField, fill.id))) continue;
-    await press(page, 'ArrowDown', 40);
-    await sleep(350);
-    if (await page.evaluate(pickOpenOption, { id: fill.id, value: fill.value })) continue;
-    // ponytail: an autocomplete (city search) lists nothing until typed into,
-    // so type and take its first suggestion. Match the suggestion text if
-    // wrong cities show up.
-    await page.send('Input.insertText', { text: fill.value });
-    await sleep(1500);
-    await press(page, 'Enter', 13);
-    await sleep(300);
-  }
+    const { resumeAttached } = await page.evaluate(fillForm, { fills: plan.fills, resume });
+    for (const fill of plan.fills.filter((candidate) => candidate.type === 'combobox')) {
+      await openDropdown(page, fill.id);
+      if (await page.evaluate(pickOpenOption, { id: fill.id, value: fill.value })) continue;
+      // ponytail: an autocomplete (city search) lists nothing until typed into,
+      // so type and take its first suggestion. Match the suggestion text if
+      // wrong cities show up.
+      await page.send('Input.insertText', { text: fill.value });
+      await sleep(1500);
+      await press(page, 'Enter', 13);
+      await sleep(300);
+    }
+    return { ...plan, resumeAttached };
+  };
 
+  const first = await fillIn(fields, options.resume);
+  if (first.missing.length) return { status: 'needs_input', questions: first.missing, fields };
+
+  // Some forms add fields once earlier ones are answered (pick a degree, get
+  // a college list): look once more and handle only what is new.
+  await sleep(600);
+  // A text box that turned into a dropdown counts as new, so the kind is part of the key.
+  const seen = new Set(fields.map((field) => field.type + ' ' + answerKey(field.label)));
+  const rescanned: FormField[] = await page.evaluate(scanForm).catch(() => []);
+  const added = rescanned.filter((field) => field.type !== 'file' && !seen.has(field.type + ' ' + answerKey(field.label)));
+  const second = await fillIn(added, null);
+  if (second.missing.length) return { status: 'needs_input', questions: second.missing, fields: rescanned };
+
+  const fills = [...first.fills, ...second.fills];
+  const resumeAttached = first.resumeAttached;
   const filled = Object.fromEntries(fills.map((fill) => [fill.label, fill.value]));
   if (!resumeAttached && fields.some((field) => field.type === 'file' && field.required)) {
     return failed('The resume could not be attached to the form.');

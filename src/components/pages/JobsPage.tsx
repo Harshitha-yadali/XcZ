@@ -638,7 +638,7 @@ const stats = [
           message: autoApplyResult.success
             ? 'Application submitted successfully'
             : autoApplyResult.error === 'MANUAL_APPLY'
-              ? 'This company takes applications only on its own site. Download your tailored resume and finish the application there.'
+              ? `${autoApplyResult.manualReason || 'We could not submit this one for you.'} Your tailored resume is ready: download it and finish on the company's page.`
               : 'This application was not sent.',
           applicationId: autoApplyResult.applicationId || '',
           status: autoApplyResult.success ? 'submitted' : 'failed',

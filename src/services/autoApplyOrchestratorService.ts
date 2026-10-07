@@ -23,7 +23,7 @@ export interface AutoApplyStatus {
 export interface ApplyQuestion {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
+  type: 'text' | 'date' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
   options: string[];
 }
 
@@ -38,6 +38,8 @@ export interface AutoApplyResult {
   pdfUrl?: string;
   /** When the form cannot be sent, hand over the tailored resume instead of reporting a failure. */
   manualFallback?: boolean;
+  /** With error 'MANUAL_APPLY': why the form was not sent, in words for the user. */
+  manualReason?: string;
 }
 
 class AutoApplyOrchestratorService {
@@ -204,7 +206,14 @@ class AutoApplyOrchestratorService {
       // These sites need the user's own sign-in, so there is nothing we can
       // submit: the user gets the tailored resume and the link to finish there.
       if (['linkedin', 'naukri', 'indeed', 'workday'].includes(platform)) {
-        return { success: false, error: 'MANUAL_APPLY', resumeId, matchScore, pdfUrl };
+        return {
+          success: false,
+          error: 'MANUAL_APPLY',
+          manualReason: 'This site needs your own sign-in, so we cannot submit there for you.',
+          resumeId,
+          matchScore,
+          pdfUrl,
+        };
       }
 
       const applicationId = await this.createApplication(
@@ -261,7 +270,13 @@ class AutoApplyOrchestratorService {
         return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
       }
       if (!outcome.success && pending.manualFallback) {
-        return { ...pending, success: false, error: 'MANUAL_APPLY', questions: undefined };
+        return {
+          ...pending,
+          success: false,
+          error: 'MANUAL_APPLY',
+          manualReason: outcome.error || outcome.message,
+          questions: undefined,
+        };
       }
       if (!outcome.success) {
         throw new Error(outcome.error || outcome.message || 'The application was not submitted.');
