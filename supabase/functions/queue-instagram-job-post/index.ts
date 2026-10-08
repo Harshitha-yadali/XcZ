@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { denyUnlessServiceOrAdmin } from "../_shared/auth.ts";
-import { buildCaption, type JobCard, nextSlot, pickVariant } from "../_shared/instagram.ts";
+import { buildCaption, extractResponsibilities, type JobCard, nextSlot, pickVariant } from "../_shared/instagram.ts";
 import { formatCompensation, formatEligibleYears, formatExperience, formatLocation } from "../_shared/jobFormat.ts";
 
 const corsHeaders = {
@@ -33,7 +33,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: job, error: jobError } = await supabase
       .from("job_listings")
-      .select("id, company_name, role_title, location_type, location_city, package_amount, package_type, eligible_years, experience_required, is_active")
+      .select("id, company_name, role_title, location_type, location_city, package_amount, package_type, eligible_years, experience_required, is_active, description, full_description, skills")
       .eq("id", jobId)
       .maybeSingle();
 
@@ -47,6 +47,8 @@ Deno.serve(async (req: Request) => {
       experience: formatExperience(job),
       location: formatLocation(job),
       eligible: formatEligibleYears(job),
+      responsibilities: extractResponsibilities(job.full_description || job.description),
+      skills: Array.isArray(job.skills) ? job.skills.filter((skill: unknown) => typeof skill === "string" && skill.trim()).slice(0, 12) : [],
     };
 
     const { data: lastTested } = await supabase

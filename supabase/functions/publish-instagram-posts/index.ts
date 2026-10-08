@@ -92,10 +92,10 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       try {
-        // thumb_offset picks the cover: the Reel opens on an empty card, so use
-        // a frame from the hold at the end where every detail is visible.
+        // thumb_offset picks the cover: a frame from the opening scene once the
+        // company, role and package have all appeared.
         const { id: containerId } = await graph(`/${igUserId}/media`, token, {
-          media_type: "REELS", video_url: post.video_url, caption: post.caption, share_to_feed: "true", thumb_offset: "7000",
+          media_type: "REELS", video_url: post.video_url, caption: post.caption, share_to_feed: "true", thumb_offset: "3000",
         });
         await update(post.id, { status: "container_created", ig_container_id: containerId });
         summary.containersCreated++;

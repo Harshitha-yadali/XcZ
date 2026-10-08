@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
-import { buildCaption, jobLink, matchesKeyword, nextSlot, pickVariant, verifyMetaSignature } from './instagram.ts';
+import { buildCaption, extractResponsibilities, jobLink, matchesKeyword, nextSlot, pickVariant, verifyMetaSignature } from './instagram.ts';
 
 // Slots are 9:00, 13:00 and 18:00 IST = 03:30, 07:30 and 12:30 UTC.
 describe('nextSlot', () => {
@@ -53,6 +53,35 @@ describe('verifyMetaSignature', () => {
     expect(await verifyMetaSignature(`${body} `, signature, secret)).toBe(false);
     expect(await verifyMetaSignature(body, signature, 'other-secret')).toBe(false);
     expect(await verifyMetaSignature(body, null, secret)).toBe(false);
+  });
+});
+
+describe('extractResponsibilities', () => {
+  it('takes the lines under the responsibilities heading and stops at the next heading', () => {
+    const description = [
+      'About Juspay', 'We build payment infrastructure for India.', '',
+      '**Key Responsibilities:**',
+      '- Design and build scalable backend services.',
+      '* Write clean, tested code and take part in code reviews',
+      '3. Debug production issues and improve reliability;',
+      '- Mentor interns joining the team',
+      'Requirements', '- B.Tech in Computer Science',
+    ].join('\n');
+    expect(extractResponsibilities(description)).toEqual([
+      'Design and build scalable backend services',
+      'Write clean, tested code and take part in code reviews',
+      'Debug production issues and improve reliability',
+    ]);
+  });
+
+  it('reads HTML and inline bullets, and stops before the requirements', () => {
+    const html = "<h3>What you'll do</h3><ul><li>Own features from design to release</li><li>Work with product and design teams</li></ul><h3>Qualifications</h3><ul><li>Any graduate with good communication</li></ul>";
+    expect(extractResponsibilities(html)).toEqual(['Own features from design to release', 'Work with product and design teams']);
+  });
+
+  it('returns nothing when there is no responsibilities heading', () => {
+    expect(extractResponsibilities('A great company. We are hiring freshers for a support role in Pune.')).toEqual([]);
+    expect(extractResponsibilities(null)).toEqual([]);
   });
 });
 

@@ -35,7 +35,8 @@ export interface Fill { id: number; type: FormField['type']; label: string; valu
 export interface Question { key: string; label: string; type: FormField['type']; options: string[] }
 
 export interface ApplyResult {
-  status: 'submitted' | 'needs_input' | 'unconfirmed' | 'failed' | 'dry_run';
+  // 'needs_login': the site wants a signed-in account and we have no working login for it.
+  status: 'submitted' | 'needs_input' | 'needs_login' | 'unconfirmed' | 'failed' | 'dry_run';
   message?: string;
   questions?: Question[];
   filled?: Record<string, string>;
@@ -64,10 +65,10 @@ export function detectPlatform(url: string): Platform {
 /** Why we cannot apply on this platform, or null when we can. */
 export function unsupportedReason(platform: Platform): string | null {
   // Greenhouse and Lever are dry-run tested against live forms. Any other
-  // site is attempted with the same engine, under the extra checks in
-  // runApplication (no sign-in wall, and the form must take a resume).
-  if (platform === 'greenhouse' || platform === 'lever' || platform === 'other') return null;
-  if (platform === 'workday') return 'Workday needs a new account for every company. We cannot create that for you yet, so please apply from the job link.';
+  // site, Workday included, is attempted with the same engine under the extra
+  // checks in runApplication: the form must take a resume, and a sign-in page
+  // is passed only with a login the user saved for that site.
+  if (platform === 'greenhouse' || platform === 'lever' || platform === 'other' || platform === 'workday') return null;
   const name = platform[0].toUpperCase() + platform.slice(1);
   return `This job needs you to be signed in to ${name}. We do not sign in to ${name} for you, so please apply from the job link.`;
 }
@@ -306,6 +307,40 @@ export function hasPasswordField(): any {
   return [...document.querySelectorAll('input[type=password]')].some((el: any) => el.getClientRects().length > 0);
 }
 
+/**
+ * Types the user's own login into the page's sign-in form and presses its
+ * button. Returns false when the page is not a plain sign-in form: a page with
+ * two password boxes is a sign-up form.
+ */
+export function signIn({ username, password }: any): any {
+  const visible = (el: any) => el.getClientRects().length > 0;
+  const boxes: any[] = [...document.querySelectorAll('input[type=password]')].filter(visible);
+  if (boxes.length !== 1) return false;
+  const scope: any = boxes[0].closest('form') || document;
+  const inputs: any[] = [...scope.querySelectorAll('input')].filter(visible);
+  // The name box is the last text-like box before the password box.
+  const name = inputs.slice(0, inputs.indexOf(boxes[0])).filter((el) => ['email', 'text', 'tel'].includes(el.type)).pop();
+  const button: any = scope.querySelector('button[type=submit], input[type=submit]')
+    || [...scope.querySelectorAll('button, [role="button"]')].find((el: any) => /^(sign in|log in|login|continue|next)$/i.test(String(el.innerText || '').trim()));
+  if (!name || !button) return false;
+  for (const [el, value] of [[name, username], [boxes[0], password]] as any[]) {
+    // React keeps its own copy of the value, so go through the native setter.
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  button.click();
+  return true;
+}
+
+/** Switches a sign-up page to its sign-in view. */
+export function openSignIn(): any {
+  const el: any = [...document.querySelectorAll('a, button, [role="button"]')].find((candidate: any) =>
+    candidate.getClientRects().length > 0 && /^(sign in|log in|login)$/i.test(String(candidate.innerText || '').trim()));
+  el?.click();
+  return Boolean(el);
+}
+
 /** True when the page is a bot check standing in front of the form. */
 export function hasCaptchaWall(): any {
   return [...document.querySelectorAll('iframe')].some((frame: any) =>
@@ -319,7 +354,7 @@ export function hasCaptchaWall(): any {
 export function followApplyLink(): any {
   const el: any = [...document.querySelectorAll('a, button')].find((candidate: any) =>
     candidate.getClientRects().length > 0
-    && /^(apply|apply now|apply here|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
+    && /^(apply|apply now|apply here|apply manually|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
   if (!el) return null;
   if (el.tagName === 'A' && /^https?:/.test(el.href)) return el.href;
   el.click();
@@ -377,6 +412,8 @@ export async function runApplication(page: Page, options: {
   saved: Record<string, string>;
   resume: { name: string; base64: string };
   submit: boolean;
+  /** The user's own saved login for this site, used only if the site asks for a sign-in. */
+  login?: { username: string; password: string } | null;
   /**
    * Optional: answers questions the profile cannot, from the resume. Returns
    * answers by question key; anything it leaves out is asked of the user.
@@ -402,16 +439,37 @@ export async function runApplication(page: Page, options: {
   // An unknown site gets stricter checks, because the largest form on a page
   // could be a search box or a newsletter signup: an application form is the
   // one that takes a resume.
-  if (detectPlatform(options.url) === 'other') {
-    if (!takesResume(fields)) {
-      // Probably the job posting: follow its Apply link once and look again.
-      const next = await page.evaluate(followApplyLink).catch(() => null);
-      if (next && next !== 'clicked') await page.send('Page.navigate', { url: next });
-      if (next) fields = await settle();
+  if (['other', 'workday'].includes(detectPlatform(options.url))) {
+    const wantsLogin = () => page.evaluate(hasPasswordField).catch(() => false);
+    const askForLogin = (rejected: boolean): ApplyResult => ({
+      status: 'needs_login',
+      message: rejected
+        ? 'The site did not accept this login, or asked for a code we cannot enter. Check the details and try again.'
+        : 'This site only takes applications from a signed-in account.',
+    });
+
+    // Between the job link and the form there may be an Apply button, a
+    // sign-in page, or both. Take up to four such steps.
+    let signedIn = false;
+    for (let step = 0; step < 4 && !takesResume(fields); step++) {
+      if (await wantsLogin()) {
+        if (!options.login || signedIn) return askForLogin(signedIn);
+        if (!(await page.evaluate(signIn, options.login))) {
+          await page.evaluate(openSignIn);
+          await sleep(1500);
+          if (!(await page.evaluate(signIn, options.login))) return failed('We could not find the sign-in form on this site.');
+        }
+        signedIn = true;
+        await sleep(4000);
+      } else {
+        // Probably the job posting: follow its Apply link and look again.
+        const next = await page.evaluate(followApplyLink).catch(() => null);
+        if (!next) break;
+        if (next !== 'clicked') await page.send('Page.navigate', { url: next });
+      }
+      fields = await settle();
     }
-    if (await page.evaluate(hasPasswordField).catch(() => false)) {
-      return failed('This site asks you to sign in before applying, so the application was not sent.');
-    }
+    if (!takesResume(fields) && await wantsLogin()) return askForLogin(signedIn);
     if (!takesResume(fields) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
       return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
     }

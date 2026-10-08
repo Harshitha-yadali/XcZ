@@ -26,6 +26,7 @@ import { OptimizedResumePreviewModal } from '../modals/OptimizedResumePreviewMod
 import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationModal';
 import { AutoApplyStatusModal } from '../modals/AutoApplyStatusModal';
 import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
+import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
 import { Pagination } from '../common/Pagination';
 import { JobPreferencesOnboardingModal } from '../modals/JobPreferencesOnboardingModal';
 import { ProjectSuggestionModal } from '../modals/ProjectSuggestionModal';
@@ -100,6 +101,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     result: autoApplyResult,
     questions: autoApplyQuestions,
     submitAnswers: submitAutoApplyAnswers,
+    loginRequest: autoApplyLoginRequest,
+    submitLogin: submitAutoApplyLogin,
     startAutoApply,
     handleProjectSelection,
     closeModals: closeAutoApplyModals,
@@ -661,6 +664,13 @@ const stats = [
         questions={autoApplyQuestions}
         companyName={autoApplyJob?.company_name}
         onSubmit={submitAutoApplyAnswers}
+        onClose={() => closeAutoApplyModals()}
+      />
+
+      <AutoApplyLoginModal
+        site={autoApplyLoginRequest?.site ?? null}
+        message={autoApplyLoginRequest?.message}
+        onSubmit={submitAutoApplyLogin}
         onClose={() => closeAutoApplyModals()}
       />
 

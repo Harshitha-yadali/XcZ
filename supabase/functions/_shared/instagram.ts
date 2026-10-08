@@ -34,6 +34,38 @@ export interface JobCard {
   experience: string;
   location: string;
   eligible: string;
+  responsibilities?: string[];
+  skills?: string[];
+}
+
+const DUTIES_HEADING = /responsibilit|what you(?:'|’)?(?:ll| will) do|key duties|your role|role overview|day[- ]to[- ]day/i;
+const OTHER_HEADING = /^(?:requirements?|qualifications?|eligibility|skills|benefits|perks|about|who you are|preferred|education|experience|what we|why|how to apply|selection|compensation|salary|location)\b/i;
+
+/**
+ * The first few responsibilities from a job description, for the Reel.
+ *
+ * ponytail: plain text matching, no AI. It reads the lines under a
+ * "Responsibilities"-style heading and stops at the next heading; a description
+ * without such a heading yields nothing and the Reel drops that scene. Swap in
+ * an AI summary (ai-proxy) if too many jobs come out empty.
+ */
+export function extractResponsibilities(description: string | null | undefined, max = 3): string[] {
+  const lines = (description || "")
+    .replace(/<[^>]+>/g, "\n")
+    .split(/\r?\n|[•●▪◦]/)
+    .map((line) => line.replace(/^[\s\-*–—·\d.)#]+/, "").replace(/[*_#`]/g, "").trim())
+    .filter(Boolean);
+
+  const start = lines.findIndex((line) => line.length < 60 && DUTIES_HEADING.test(line));
+  if (start === -1) return [];
+
+  const duties: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.length < 60 && (OTHER_HEADING.test(line) || /:$/.test(line))) break;
+    if (line.length >= 20) duties.push(line.replace(/[.;]$/, ""));
+    if (duties.length === max) break;
+  }
+  return duties;
 }
 
 // Caption hook A/B test. Hypothesis: job seekers screen openings by pay, so

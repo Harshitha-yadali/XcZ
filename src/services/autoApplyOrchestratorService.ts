@@ -40,6 +40,9 @@ export interface AutoApplyResult {
   manualFallback?: boolean;
   /** With error 'MANUAL_APPLY': why the form was not sent, in words for the user. */
   manualReason?: string;
+  /** With error 'LOGIN_REQUIRED': the job site that needs the user's sign-in, and why. */
+  loginSite?: string;
+  loginMessage?: string;
 }
 
 class AutoApplyOrchestratorService {
@@ -205,7 +208,7 @@ class AutoApplyOrchestratorService {
 
       // These sites need the user's own sign-in, so there is nothing we can
       // submit: the user gets the tailored resume and the link to finish there.
-      if (['linkedin', 'naukri', 'indeed', 'workday'].includes(platform)) {
+      if (['linkedin', 'naukri', 'indeed'].includes(platform)) {
         return {
           success: false,
           error: 'MANUAL_APPLY',
@@ -228,7 +231,7 @@ class AutoApplyOrchestratorService {
         success: false,
         // An unknown site is only attempted; if its form cannot be sent, the
         // user finishes there with the tailored resume.
-        manualFallback: platform === 'other',
+        manualFallback: platform === 'other' || platform === 'workday',
         applicationId,
         resumeId,
         matchScore,
@@ -269,6 +272,16 @@ class AutoApplyOrchestratorService {
       if (outcome.status === 'needs_input') {
         return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
       }
+      if (outcome.status === 'needs_login') {
+        return {
+          ...pending,
+          success: false,
+          error: 'LOGIN_REQUIRED',
+          loginSite: outcome.site,
+          loginMessage: outcome.message,
+          questions: undefined,
+        };
+      }
       if (!outcome.success && pending.manualFallback) {
         return {
           ...pending,
@@ -298,6 +311,23 @@ class AutoApplyOrchestratorService {
         currentAction: error.message,
       });
       return { ...pending, success: false, error: error.message, questions: undefined };
+    }
+  }
+
+  /** Saves the user's own login for the site a job is on. The password is encrypted on the server. */
+  async saveSiteLogin(jobUrl: string, username: string, password: string): Promise<void> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('save-site-credentials'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ jobUrl, username, password }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'The login could not be saved. Please try again.');
     }
   }
 
@@ -401,7 +431,7 @@ class AutoApplyOrchestratorService {
   private async triggerFormSubmission(
     applicationId: string,
     answers?: Record<string, string>
-  ): Promise<{ success: boolean; status?: string; message?: string; error?: string; questions?: ApplyQuestion[] }> {
+  ): Promise<{ success: boolean; status?: string; message?: string; error?: string; questions?: ApplyQuestion[]; site?: string }> {
     const edgeFunctionUrl = getSupabaseEdgeFunctionUrl('auto-apply-submit');
     const { data: { session } } = await supabase.auth.getSession();
 

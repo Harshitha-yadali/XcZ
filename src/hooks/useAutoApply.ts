@@ -45,7 +45,7 @@ export function useAutoApply() {
     if (!applyResult.success && applyResult.error === 'PROJECT_SUGGESTIONS_REQUIRED') {
       setProjectSuggestions(applyResult as any);
       setShowProjectModal(true);
-    } else if (!applyResult.success && applyResult.error === 'INPUT_REQUIRED') {
+    } else if (!applyResult.success && (applyResult.error === 'INPUT_REQUIRED' || applyResult.error === 'LOGIN_REQUIRED')) {
       setPending(applyResult);
     } else {
       setResult(applyResult);
@@ -158,6 +158,29 @@ export function useAutoApply() {
     [currentJob, pending, settle, fail]
   );
 
+  // Saves the login the user typed for the job's site, then tries the application again.
+  const submitLogin = useCallback(
+    async (username: string, password: string) => {
+      if (!currentJob || !pending) return;
+
+      // Throws when saving fails, so the login window can show why and stay open.
+      await autoApplyOrchestratorService.saveSiteLogin(currentJob.application_link, username, password);
+
+      setPending(null);
+      setShowStatusModal(true);
+      setIsProcessing(true);
+      try {
+        settle(await autoApplyOrchestratorService.submitApplication(currentJob.id, pending));
+      } catch (error: any) {
+        console.error('Error applying after login:', error);
+        fail(error);
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [currentJob, pending, settle, fail]
+  );
+
   const closeModals = useCallback(() => {
     setShowStatusModal(false);
     setShowProjectModal(false);
@@ -178,8 +201,12 @@ export function useAutoApply() {
     projectSuggestions,
     currentJob,
     result,
-    questions: pending?.questions ?? null,
+    questions: pending?.error === 'INPUT_REQUIRED' ? pending.questions ?? null : null,
     submitAnswers,
+    loginRequest: pending?.error === 'LOGIN_REQUIRED'
+      ? { site: pending.loginSite || 'this site', message: pending.loginMessage }
+      : null,
+    submitLogin,
     startAutoApply,
     handleProjectSelection,
     closeModals,

@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import { denied, getCaller } from "../_shared/auth.ts";
+import { decryptSecret, siteOf } from "../_shared/vault.ts";
 import { openPage, type Page } from "../_shared/cdp.ts";
 import { answerKey, detectPlatform, runApplication, unsupportedReason, type ApplyResult, type Question } from "../_shared/applyForm.ts";
 
@@ -128,6 +129,7 @@ Deno.serve(async (req: Request) => {
           message: result.message,
           error: submitted ? undefined : result.message,
           questions: result.questions,
+          site: result.status === 'needs_login' ? siteOf(application.application_url) : undefined,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -178,6 +180,26 @@ Deno.serve(async (req: Request) => {
     const { data: resumeFile, error: resumeError } = await supabase.storage.from(RESUME_BUCKET).download(resumePath);
     if (resumeError || !resumeFile) return fail('The tailored resume for this job could not be read.');
 
+    // The login the user saved for this job site, if any. A value that no
+    // longer decrypts is treated as missing, so the user is asked again.
+    let login: { username: string; password: string } | null = null;
+    const credentialsKey = Deno.env.get('CREDENTIALS_KEY');
+    if (credentialsKey) {
+      const { data: stored } = await supabase
+        .from('user_credentials_vault')
+        .select('username, password_encrypted')
+        .eq('user_id', user.id)
+        .eq('platform', siteOf(application.application_url))
+        .maybeSingle();
+      if (stored?.username && stored.password_encrypted) {
+        try {
+          login = { username: stored.username, password: await decryptSecret(stored.password_encrypted, credentialsKey) };
+        } catch {
+          login = null;
+        }
+      }
+    }
+
     const fullName = profile.full_name || '';
     const content = resume?.resume_content || {};
     const education = Array.isArray(content.education) ? content.education[0] : null;
@@ -211,6 +233,7 @@ Deno.serve(async (req: Request) => {
           base64: encodeBase64(new Uint8Array(await resumeFile.arrayBuffer())),
         },
         submit: true,
+        login,
         infer: (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
       });
     } catch (error: any) {

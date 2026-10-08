@@ -25,7 +25,8 @@ describe('detectPlatform', () => {
     expect(unsupportedReason('greenhouse')).toBeNull();
     expect(unsupportedReason('lever')).toBeNull();
     expect(unsupportedReason('other')).toBeNull();
-    for (const platform of ['linkedin', 'naukri', 'indeed', 'workday'] as const) {
+    expect(unsupportedReason('workday')).toBeNull();
+    for (const platform of ['linkedin', 'naukri', 'indeed'] as const) {
       expect(unsupportedReason(platform)).toBeTruthy();
     }
   });
