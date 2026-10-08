@@ -403,12 +403,14 @@ export function hasCaptchaWall(): any {
 /**
  * On a job posting without a form: returns the address its Apply link goes
  * to, or clicks an Apply button and returns 'clicked'. Null when there is none.
+ * With `peek` it only reports whether such a link is there.
  */
-export function followApplyLink(): any {
+export function followApplyLink(peek?: boolean): any {
   const el: any = [...document.querySelectorAll('a, button')].find((candidate: any) =>
     candidate.getClientRects().length > 0
     && /^(apply|apply now|apply here|apply manually|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
   if (!el) return null;
+  if (peek) return 'present';
   if (el.tagName === 'A' && /^https?:/.test(el.href)) return el.href;
   el.click();
   return 'clicked';
@@ -483,6 +485,13 @@ export async function runApplication(page: Page, options: {
       const next: FormField[] = await page.evaluate(scanForm).catch(() => []);
       stable = next.length > 1 && next.length === found.length ? stable + 1 : 0;
       found = next;
+      // A page with no form but an Apply link or a sign-in box has shown what
+      // it is; waiting the full time for fields that will not come costs 20s.
+      if (found.length < 2 && attempt >= 3 && attempt % 2 === 1) {
+        const landed = (await page.evaluate(followApplyLink, true).catch(() => null))
+          || (await page.evaluate(hasPasswordField).catch(() => false));
+        if (landed) break;
+      }
     }
     return found;
   };
