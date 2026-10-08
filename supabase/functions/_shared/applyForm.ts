@@ -206,7 +206,8 @@ export function scanForm(): any {
   // text is no longer one of the options.
   for (const group of groups.values()) {
     let box = group.first.parentElement;
-    while (box && box !== document.body && group.options.includes(clean(firstLine(box)))) box = box.parentElement;
+    // An empty wrapper around the radio itself is not the question either.
+    while (box && box !== document.body && (!clean(firstLine(box)) || group.options.includes(clean(firstLine(box))))) box = box.parentElement;
     group.label = clean(firstLine(box));
     group.required = group.required || starred(firstLine(box));
     delete group.first;
@@ -303,6 +304,12 @@ export function clickSubmit(): any {
 /** True when the page shows a password box, i.e. it wants a sign-in. */
 export function hasPasswordField(): any {
   return [...document.querySelectorAll('input[type=password]')].some((el: any) => el.getClientRects().length > 0);
+}
+
+/** True when the page is a bot check standing in front of the form. */
+export function hasCaptchaWall(): any {
+  return [...document.querySelectorAll('iframe')].some((frame: any) =>
+    /captcha|challenges\.cloudflare|recaptcha|hcaptcha/i.test(frame.src) && frame.getBoundingClientRect().height > 100);
 }
 
 /**
@@ -404,6 +411,9 @@ export async function runApplication(page: Page, options: {
     }
     if (await page.evaluate(hasPasswordField).catch(() => false)) {
       return failed('This site asks you to sign in before applying, so the application was not sent.');
+    }
+    if (!takesResume(fields) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
+      return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
     }
     if (!takesResume(fields)) return failed('No application form was found at the job link.');
   }
