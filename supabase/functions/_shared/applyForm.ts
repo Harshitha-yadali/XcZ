@@ -75,6 +75,19 @@ export function unsupportedReason(platform: Platform): string | null {
   return `This job needs you to be signed in to ${name}. We do not sign in to ${name} for you, so please apply from the job link.`;
 }
 
+/**
+ * Saved-answer key for the user's standing permission to accept employers'
+ * privacy notices and terms for them. Given once in the app; without it every
+ * consent box is asked about.
+ */
+export const ACCEPT_TERMS_KEY = 'always accept employer terms';
+
+// A box that accepts the employer's own notice or terms. Opt-ins to marketing
+// or alerts are not consent to apply, so they are never ticked this way.
+const isTermsBox = (label: string) =>
+  /privacy|terms|consent|agree|acknowledg|data protection|gdpr|use (this|my) (data|information)/i.test(label)
+  && !/newsletter|marketing|promotion|job alert|talent (community|network)|sms|whatsapp/i.test(label);
+
 /** A label reduced to a stable key, so a saved answer is found again on the next form. */
 export const answerKey = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120);
 
@@ -120,6 +133,7 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
     let value = saved[key] || profileAnswer(field.label, profile) || '';
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
+    if (field.type === 'checkbox' && !value && saved[ACCEPT_TERMS_KEY] === 'yes' && isTermsBox(field.label)) value = 'yes';
     if (field.type === 'checkbox' && !/^(yes|true|on)$/i.test(value)) value = '';
     if (value && field.dialCode) {
       const digits = value.replace(/\D/g, '');

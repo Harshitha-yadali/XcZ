@@ -84,6 +84,15 @@ describe('planFill', () => {
     expect(planFill([consent], profile, { 'i agree to the privacy policy': 'yes' }).fills).toHaveLength(1);
   });
 
+  it('ticks employer terms for a user who gave standing permission, but never marketing opt-ins', () => {
+    const terms = field(0, 'I agree to the Candidate Privacy Notice', { type: 'checkbox' });
+    const marketing = field(1, 'I agree to receive marketing emails and job alerts', { type: 'checkbox' });
+    const permission = { 'always accept employer terms': 'yes' };
+    expect(planFill([terms], profile, permission).fills).toHaveLength(1);
+    expect(planFill([marketing], profile, permission).fills).toHaveLength(0);
+    expect(planFill([terms], profile, {}).fills).toHaveLength(0);
+  });
+
   it('never fills file inputs or unlabelled fields', () => {
     expect(planFill([field(0, 'Resume', { type: 'file' }), field(1, '')], profile, {})).toEqual({ fills: [], missing: [] });
   });

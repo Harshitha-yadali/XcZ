@@ -91,6 +91,11 @@ try {
     });
   });
 
+  await check('ticks the consent box itself for a user who gave standing permission', { url: fixture('single.html'), saved: { gender: 'Male', 'always accept employer terms': 'yes' } }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.equal(sent.consent, true);
+  });
+
   await check('uses an inferred answer only when it is one of the options', {
     url: fixture('single.html'),
     saved: { [consent]: 'yes' },
