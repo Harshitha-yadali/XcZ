@@ -289,12 +289,15 @@ export function clickField(id: number): any {
   return true;
 }
 
+/** Presses the form's submit button. Returns 'disabled' when the form keeps it switched off, '' when there is none. */
 export function clickSubmit(): any {
   const root: any = document.querySelector('[data-pb-field]')?.closest('form') || document;
   const button = root.querySelector('button[type=submit], input[type=submit]')
     || [...root.querySelectorAll('button')].find((candidate: any) => /submit|apply/i.test(candidate.innerText));
-  button?.click();
-  return Boolean(button);
+  if (!button) return '';
+  if (button.disabled || button.getAttribute('aria-disabled') === 'true') return 'disabled';
+  button.click();
+  return 'clicked';
 }
 
 /** True when the page shows a password box, i.e. it wants a sign-in. */
@@ -367,6 +370,11 @@ export async function runApplication(page: Page, options: {
   saved: Record<string, string>;
   resume: { name: string; base64: string };
   submit: boolean;
+  /**
+   * Optional: answers questions the profile cannot, from the resume. Returns
+   * answers by question key; anything it leaves out is asked of the user.
+   */
+  infer?: (questions: Question[]) => Promise<Record<string, string>>;
 }): Promise<ApplyResult> {
   await page.send('Page.navigate', { url: applyUrl(options.url) });
 
@@ -412,7 +420,12 @@ export async function runApplication(page: Page, options: {
       if ((await page.evaluate(openOptions, field.id)).length) await page.evaluate(clickField, field.id);
     }
 
-    const plan = planFill(targets, options.profile, options.saved);
+    let plan = planFill(targets, options.profile, options.saved);
+    if (plan.missing.length && options.infer) {
+      const inferred = await options.infer(plan.missing).catch(() => ({}));
+      // The user's own saved answers always win over inferred ones.
+      plan = planFill(targets, options.profile, { ...inferred, ...options.saved });
+    }
     if (plan.missing.length) return { ...plan, resumeAttached: false };
 
     const { resumeAttached } = await page.evaluate(fillForm, { fills: plan.fills, resume });
@@ -452,7 +465,25 @@ export async function runApplication(page: Page, options: {
   if (!options.submit) return { status: 'dry_run', filled, fields, resumeAttached };
 
   await sleep(2500); // let the site finish uploading the resume
-  if (!(await page.evaluate(clickSubmit))) return failed('No submit button was found on the form.');
+  // Some forms carry "error" styling before anything is sent; only messages
+  // that appear after the click are about this application.
+  const before: string[] = (await page.evaluate(readOutcome).catch(() => null))?.errors || [];
+  const pressed = await page.evaluate(clickSubmit);
+  if (!pressed) return failed('No submit button was found on the form.');
+  if (pressed === 'disabled') {
+    // The form keeps its button off until something else is done, usually a
+    // consent box. Consent is the user's to give, so ask instead of ticking it.
+    const answered = new Set(fills.map((fill) => answerKey(fill.label)));
+    const boxes = rescanned.filter((field) => field.type === 'checkbox' && field.label && !answered.has(answerKey(field.label)));
+    if (boxes.length) {
+      return {
+        status: 'needs_input',
+        questions: boxes.map((field) => ({ key: answerKey(field.label), label: field.label, type: field.type, options: [] })),
+        fields: rescanned,
+      };
+    }
+    return failed('The form would not let the application be sent: its submit button stayed switched off.');
+  }
 
   for (let attempt = 0; attempt < 40; attempt++) {
     await sleep(750);
@@ -462,8 +493,9 @@ export async function runApplication(page: Page, options: {
     if (outcome.formGone && outcome.confirmed) return { status: 'submitted', filled, resumeAttached };
     if (outcome.captcha) return failed('The site asked for a captcha, so the application was not sent. Please apply from the job link.');
     if (!outcome.formGone && outcome.needsCode) return failed('The site emailed you a verification code, so the application was not sent. Please finish it from the job link.');
-    if (!outcome.formGone && outcome.errors.length && attempt > 5) {
-      return failed(`The form did not accept the application: ${outcome.errors.join('; ')}`);
+    const fresh = outcome.errors.filter((message: string) => !before.includes(message));
+    if (!outcome.formGone && fresh.length && attempt > 5) {
+      return failed(`The form did not accept the application: ${fresh.join('; ')}`);
     }
   }
   return {

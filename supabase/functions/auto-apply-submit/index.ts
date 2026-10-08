@@ -3,7 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import { denied, getCaller } from "../_shared/auth.ts";
 import { openPage, type Page } from "../_shared/cdp.ts";
-import { answerKey, detectPlatform, runApplication, unsupportedReason, type ApplyResult } from "../_shared/applyForm.ts";
+import { answerKey, detectPlatform, runApplication, unsupportedReason, type ApplyResult, type Question } from "../_shared/applyForm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +18,58 @@ interface AutoApplyRequest {
 }
 
 const RESUME_BUCKET = 'user-resumes';
+
+// Never inferred, whatever the model says: these are personal facts, legal
+// statements or consent, and only the user can answer them.
+const USER_ONLY = /gender|\bsex\b|birth|\bdob\b|\bage\b|race|ethnic|disab|veteran|religio|caste|marital|salary|\bctc\b|compensation|visa|sponsor|authori[sz]|citizen|consent|agree|criminal|convict|hear about|source/i;
+
+/**
+ * Answers form questions from the tailored resume with one model call.
+ * Returns {} on any failure, so the user is simply asked instead.
+ */
+async function inferAnswers(questions: Question[], resume: unknown, location: string): Promise<Record<string, string>> {
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
+  const askable = questions.filter((question) => !USER_ONLY.test(question.label));
+  if (!apiKey || !askable.length) return {};
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({
+        model: 'google/gemini-3.5-flash-lite',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'You fill job application form fields for a candidate. Answer a question ONLY when the resume states the fact or it follows directly from the resume (a degree abbreviation, graduation year, college, city or country of residence, total years or months of work experience, current company). When a question lists options, answer with exactly one of those options, copied character for character. If you are not sure, leave the question out. Never guess. Reply with one JSON object mapping each answered question key to its answer as a string.',
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              resume,
+              location,
+              questions: askable.map((question) => ({ key: question.key, label: question.label, options: question.options.slice(0, 300) })),
+            }),
+          },
+        ],
+      }),
+    });
+    if (!response.ok) return {};
+    const text: string = (await response.json()).choices?.[0]?.message?.content || '{}';
+    const parsed = JSON.parse(text.replace(/^```(json)?|```$/g, '').trim());
+    const allowed = new Set(askable.map((question) => question.key));
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([key, value]) => allowed.has(key) && typeof value === 'string' && value.trim())
+        .map(([key, value]) => [key, String(value).slice(0, 500)]),
+    );
+  } catch (error) {
+    console.error('Could not infer answers:', error);
+    return {};
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -159,6 +211,7 @@ Deno.serve(async (req: Request) => {
           base64: encodeBase64(new Uint8Array(await resumeFile.arrayBuffer())),
         },
         submit: true,
+        infer: (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
       });
     } catch (error: any) {
       console.error('Browser session failed:', error);
