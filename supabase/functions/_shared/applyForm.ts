@@ -29,6 +29,8 @@ export interface FormField {
   options: string[];
   /** Set when the form shows the country code beside the box, e.g. "+91": the box wants the number without it. */
   dialCode?: string;
+  /** Set when the form arrives with a choice already made (a preselected country, say); it is left as it is. */
+  filled?: boolean;
 }
 
 export interface Fill { id: number; type: FormField['type']; label: string; value: string }
@@ -114,7 +116,7 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
   const missing: Question[] = [];
   for (const field of fields) {
     const key = answerKey(field.label);
-    if (field.type === 'file' || !key) continue;
+    if (field.type === 'file' || !key || field.filled) continue;
     let value = saved[key] || profileAnswer(field.label, profile) || '';
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
@@ -157,6 +159,16 @@ export function scanForm(): any {
     // No label element: the question is usually the text just above the field.
     // A line without two letters is decoration, such as a "+91" country code.
     const own = el.tagName === 'SELECT' ? [...el.options].map((option: any) => clean(option.text)) : [];
+    // First choice is the nearest text that sits before the field, at its own
+    // level or a wrapper's. A neighbour holding another field ends the search
+    // at that level: its text belongs to that field.
+    for (let node = el, depth = 0; !label && node && depth < 4; node = node.parentElement, depth++) {
+      for (let prev = node.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        if (prev.matches('input, select, textarea') || prev.querySelector('input, select, textarea')) break;
+        const line = clean((prev as any).innerText);
+        if (/[a-z].*[a-z]/i.test(line) && line.length < 200 && !own.includes(line)) { label = (prev as any).innerText; break; }
+      }
+    }
     for (let box = el.parentElement, depth = 0; !label && box && depth < 4; box = box.parentElement, depth++) {
       const line = clean(firstLine(box));
       if (/[a-z].*[a-z]/i.test(line) && !own.includes(line)) label = firstLine(box);
@@ -166,9 +178,11 @@ export function scanForm(): any {
 
   const fields: any[] = [];
   const groups = new Map();
-  for (const el of root.querySelectorAll('input, textarea, select')) {
-    // The combobox role sits on the input itself or on a wrapper around it.
-    const kind = el.tagName !== 'INPUT' ? el.tagName.toLowerCase() : el.closest('[role="combobox"]') ? 'combobox' : el.type;
+  for (const el of root.querySelectorAll('input, textarea, select, button[aria-haspopup="listbox"]')) {
+    // The combobox role sits on the input itself or on a wrapper around it; a
+    // button that opens a list is the same kind of field.
+    const kind = el.tagName === 'BUTTON' ? 'combobox'
+      : el.tagName !== 'INPUT' ? el.tagName.toLowerCase() : el.closest('[role="combobox"]') ? 'combobox' : el.type;
     if (['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(kind) || el.disabled) continue;
     // Custom dropdowns keep a hidden mirror input for validation; it is not a field.
     if (el.getAttribute('aria-hidden') === 'true') continue;
@@ -198,6 +212,8 @@ export function scanForm(): any {
       label: clean(label),
       type: ['date', 'textarea', 'select', 'checkbox', 'combobox', 'file'].includes(kind) ? kind : 'text',
       dialCode: (String(el.parentElement?.innerText || '').trim().match(/^\+\d{1,4}$/) || [])[0],
+      // A list button shows its current choice as its text; a placeholder means none yet.
+      filled: el.tagName === 'BUTTON' && !/^(select( one)?|choose( one)?|please select|-+)?$/i.test(clean(el.innerText)),
       required: el.required || el.getAttribute('aria-required') === 'true' || starred(label),
       options: kind === 'select' ? [...el.options].filter((option: any) => option.value).map((option: any) => clean(option.text)) : [],
     });
@@ -268,7 +284,9 @@ export function focusField(id: number): any {
 /** The choices of a custom dropdown that is currently open. */
 export function openOptions(id: number): any {
   const el: any = document.querySelector(`[data-pb-field="${id}"]`);
-  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '');
+  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '')
+    // Not linked to its field: take the list that is open on the page right now.
+    || [...document.querySelectorAll('[role="listbox"]')].filter((box: any) => box.getClientRects().length > 0).pop();
   return list ? [...list.querySelectorAll('[role="option"]')].map((option: any) => String(option.innerText || '').replace(/\s+/g, ' ').trim()) : [];
 }
 
@@ -276,7 +294,9 @@ export function openOptions(id: number): any {
 export function pickOpenOption({ id, value }: any): any {
   const key = (text: any) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const el: any = document.querySelector(`[data-pb-field="${id}"]`);
-  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '');
+  const list = document.getElementById(el?.getAttribute('aria-controls') || el?.closest('[role="combobox"]')?.getAttribute('aria-controls') || '')
+    // Not linked to its field: take the list that is open on the page right now.
+    || [...document.querySelectorAll('[role="listbox"]')].filter((box: any) => box.getClientRects().length > 0).pop();
   const option: any = list && [...list.querySelectorAll('[role="option"]')].find((candidate: any) => key(candidate.innerText) === key(value));
   // Some menus choose on mouse-down and never see a plain click.
   for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
@@ -291,15 +311,34 @@ export function clickField(id: number): any {
   return true;
 }
 
-/** Presses the form's submit button. Returns 'disabled' when the form keeps it switched off, '' when there is none. */
-export function clickSubmit(): any {
-  const root: any = document.querySelector('[data-pb-field]')?.closest('form') || document;
-  const button = root.querySelector('button[type=submit], input[type=submit]')
-    || [...root.querySelectorAll('button')].find((candidate: any) => /submit|apply/i.test(candidate.innerText));
-  if (!button) return '';
-  if (button.disabled || button.getAttribute('aria-disabled') === 'true') return 'disabled';
-  button.click();
-  return 'clicked';
+/**
+ * Finds the button that moves the form on and marks it for pressAction.
+ * kind is 'next' on a middle page of a multi-page form, 'submit' on the last
+ * (or only) page, '' when there is no such button.
+ */
+export function findAction(): any {
+  const text = (el: any) => String(el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
+  const within = (root: any) => {
+    const buttons: any[] = [...root.querySelectorAll('button, input[type=submit], [role="button"]')].filter((el: any) => el.getClientRects().length > 0);
+    const submit = buttons.find((el) => /^(submit|submit application|submit my application|send application|apply|apply now)$/i.test(text(el)));
+    const next = buttons.find((el) => /^(next|next step|continue|save and continue|save & continue)$/i.test(text(el)));
+    // Wording decides first; an unlabelled submit-type button is the fallback.
+    const fallback = buttons.find((el) => el.type === 'submit') || buttons.find((el) => /submit|apply/i.test(text(el)));
+    return submit ? { el: submit, kind: 'submit' } : next ? { el: next, kind: 'next' } : fallback ? { el: fallback, kind: 'submit' } : null;
+  };
+  const form: any = document.querySelector('[data-pb-field]')?.closest('form');
+  const found = (form && within(form)) || within(document);
+  document.querySelectorAll('[data-pb-action]').forEach((el) => el.removeAttribute('data-pb-action'));
+  if (!found) return { kind: '', disabled: false };
+  found.el.setAttribute('data-pb-action', '1');
+  return { kind: found.kind, disabled: Boolean(found.el.disabled) || found.el.getAttribute('aria-disabled') === 'true' };
+}
+
+/** Presses the button findAction marked. */
+export function pressAction(): any {
+  const button: any = document.querySelector('[data-pb-action]');
+  button?.click();
+  return Boolean(button);
 }
 
 /** True when the page shows a password box, i.e. it wants a sign-in. */
@@ -435,11 +474,17 @@ export async function runApplication(page: Page, options: {
   };
   const takesResume = (found: FormField[]) => found.some((field) => field.type === 'file');
   let fields = await settle();
+  // A page is an application form if it takes a resume, or if it is an early
+  // page of a longer form (a few fields and a Next button). In the second
+  // case nothing is submitted unless a later page did take the resume.
+  const isForm = async () => takesResume(fields)
+    || (fields.length >= 3 && (await page.evaluate(findAction).catch(() => ({ kind: '' }))).kind === 'next');
+  const strict = ['other', 'workday'].includes(detectPlatform(options.url));
 
   // An unknown site gets stricter checks, because the largest form on a page
   // could be a search box or a newsletter signup: an application form is the
   // one that takes a resume.
-  if (['other', 'workday'].includes(detectPlatform(options.url))) {
+  if (strict) {
     const wantsLogin = () => page.evaluate(hasPasswordField).catch(() => false);
     const askForLogin = (rejected: boolean): ApplyResult => ({
       status: 'needs_login',
@@ -451,7 +496,7 @@ export async function runApplication(page: Page, options: {
     // Between the job link and the form there may be an Apply button, a
     // sign-in page, or both. Take up to four such steps.
     let signedIn = false;
-    for (let step = 0; step < 4 && !takesResume(fields); step++) {
+    for (let step = 0; step < 4 && !(await isForm()); step++) {
       if (await wantsLogin()) {
         if (!options.login || signedIn) return askForLogin(signedIn);
         if (!(await page.evaluate(signIn, options.login))) {
@@ -469,11 +514,11 @@ export async function runApplication(page: Page, options: {
       }
       fields = await settle();
     }
-    if (!takesResume(fields) && await wantsLogin()) return askForLogin(signedIn);
-    if (!takesResume(fields) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
+    if (!(await isForm()) && await wantsLogin()) return askForLogin(signedIn);
+    if (!(await isForm()) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
       return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
     }
-    if (!takesResume(fields)) return failed('No application form was found at the job link.');
+    if (!(await isForm())) return failed('No application form was found at the job link.');
   }
   if (fields.length < 2) return failed('No application form was found at the job link. The job may be closed.');
 
@@ -511,47 +556,90 @@ export async function runApplication(page: Page, options: {
     return { ...plan, resumeAttached };
   };
 
-  const first = await fillIn(fields, options.resume);
-  if (first.missing.length) return { status: 'needs_input', questions: first.missing, fields };
+  const allFills: Fill[] = [];
+  let resumeAttached = false;
+  let scan = fields;
+  let action = { kind: '', disabled: false };
+  const signature = (found: FormField[]) => found.map((field) => field.type + ' ' + field.label).join('|');
+  const filledSoFar = () => Object.fromEntries(allFills.map((fill) => [fill.label, fill.value]));
+  // A form may keep its button off until a consent box is ticked. Consent is
+  // the user's to give, so the unticked boxes are asked, never ticked for them.
+  const blockedButton = (): ApplyResult => {
+    const answered = new Set(allFills.map((fill) => answerKey(fill.label)));
+    const boxes = scan.filter((field) => field.type === 'checkbox' && field.label && !answered.has(answerKey(field.label)));
+    if (!boxes.length) return failed('The form would not let the application go on: its button stayed switched off.');
+    return {
+      status: 'needs_input',
+      questions: boxes.map((field) => ({ key: answerKey(field.label), label: field.label, type: field.type, options: [] })),
+      fields: scan,
+    };
+  };
 
-  // Some forms add fields once earlier ones are answered (pick a degree, get
-  // a college list): look once more and handle only what is new.
-  await sleep(600);
-  // A text box that turned into a dropdown counts as new, so the kind is part of the key.
-  const seen = new Set(fields.map((field) => field.type + ' ' + answerKey(field.label)));
-  const rescanned: FormField[] = await page.evaluate(scanForm).catch(() => []);
-  const added = rescanned.filter((field) => field.type !== 'file' && !seen.has(field.type + ' ' + answerKey(field.label)));
-  const second = await fillIn(added, null);
-  if (second.missing.length) return { status: 'needs_input', questions: second.missing, fields: rescanned };
+  // A form may run over several pages: fill each, press Next, and stop at the
+  // page that has Submit.
+  for (let pageNumber = 1; ; pageNumber++) {
+    const first = await fillIn(fields, resumeAttached ? null : options.resume);
+    if (first.missing.length) return { status: 'needs_input', questions: first.missing, fields };
 
-  const fills = [...first.fills, ...second.fills];
-  const resumeAttached = first.resumeAttached;
-  const filled = Object.fromEntries(fills.map((fill) => [fill.label, fill.value]));
-  if (!resumeAttached && fields.some((field) => field.type === 'file' && field.required)) {
-    return failed('The resume could not be attached to the form.');
+    // Some forms add fields once earlier ones are answered (pick a degree, get
+    // a college list): look once more and handle only what is new.
+    await sleep(600);
+    // A text box that turned into a dropdown counts as new, so the kind is part of the key.
+    const seen = new Set(fields.map((field) => field.type + ' ' + answerKey(field.label)));
+    scan = await page.evaluate(scanForm).catch(() => fields);
+    const added = scan.filter((field) => field.type !== 'file' && !seen.has(field.type + ' ' + answerKey(field.label)));
+    const second = await fillIn(added, null);
+    if (second.missing.length) return { status: 'needs_input', questions: second.missing, fields: scan };
+    allFills.push(...first.fills, ...second.fills);
+
+    if (!resumeAttached && takesResume(fields)) {
+      if (first.resumeAttached) resumeAttached = true;
+      else if (fields.some((field) => field.type === 'file' && field.required)) return failed('The resume could not be attached to the form.');
+    }
+
+    action = await page.evaluate(findAction).catch(() => ({ kind: '', disabled: false }));
+    if (!options.submit) {
+      return {
+        status: 'dry_run',
+        filled: filledSoFar(),
+        fields: scan,
+        resumeAttached,
+        message: action.kind === 'next' ? 'Stopped at the Next button; later pages were not opened.' : undefined,
+      };
+    }
+    if (action.kind !== 'next') break;
+    if (pageNumber >= 8) return failed('This form has more pages than we can walk through.');
+    if (action.disabled) return blockedButton();
+
+    // Messages already on the page are not about this click.
+    const before: string[] = (await page.evaluate(readOutcome).catch(() => null))?.errors || [];
+    const here = signature(scan);
+    await page.evaluate(pressAction);
+    let moved = false;
+    for (let attempt = 0; attempt < 30 && !moved; attempt++) {
+      await sleep(700);
+      const now: FormField[] | null = await page.evaluate(scanForm).catch(() => null);
+      if (!now) continue; // the page is loading
+      if (signature(now) !== here) { moved = true; break; }
+      const fresh = ((await page.evaluate(readOutcome).catch(() => null))?.errors || []).filter((message: string) => !before.includes(message));
+      if (fresh.length && attempt > 4) return failed(`Page ${pageNumber} of the form was not accepted: ${fresh.join('; ')}`);
+    }
+    if (!moved) return failed(`The form did not move on from page ${pageNumber}.`);
+    fields = await settle();
   }
-  if (!options.submit) return { status: 'dry_run', filled, fields, resumeAttached };
+
+  const filled = filledSoFar();
+  // On a site we do not know, a form that never took a resume is not sent: it
+  // may not be an application form at all.
+  if (strict && !resumeAttached) return failed('This form never asked for a resume, so it was not sent.');
+  if (!action.kind) return failed('No submit button was found on the form.');
+  if (action.disabled) return blockedButton();
 
   await sleep(2500); // let the site finish uploading the resume
   // Some forms carry "error" styling before anything is sent; only messages
   // that appear after the click are about this application.
   const before: string[] = (await page.evaluate(readOutcome).catch(() => null))?.errors || [];
-  const pressed = await page.evaluate(clickSubmit);
-  if (!pressed) return failed('No submit button was found on the form.');
-  if (pressed === 'disabled') {
-    // The form keeps its button off until something else is done, usually a
-    // consent box. Consent is the user's to give, so ask instead of ticking it.
-    const answered = new Set(fills.map((fill) => answerKey(fill.label)));
-    const boxes = rescanned.filter((field) => field.type === 'checkbox' && field.label && !answered.has(answerKey(field.label)));
-    if (boxes.length) {
-      return {
-        status: 'needs_input',
-        questions: boxes.map((field) => ({ key: answerKey(field.label), label: field.label, type: field.type, options: [] })),
-        fields: rescanned,
-      };
-    }
-    return failed('The form would not let the application be sent: its submit button stayed switched off.');
-  }
+  await page.evaluate(pressAction);
 
   for (let attempt = 0; attempt < 40; attempt++) {
     await sleep(750);

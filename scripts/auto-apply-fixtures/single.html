@@ -1,0 +1,66 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: single-page application form</title>
+<!--
+  A stand-in employer form for scripts/auto-apply-selftest.mjs. It copies the
+  traps real forms set: wrappers styled "errorCheck" all the time, a dropdown
+  whose combobox role is on a wrapper and that chooses on mouse-down, a phone
+  box with the country code beside it, and a Submit button that stays off
+  until a consent box is ticked.
+-->
+<style>
+  .sdd-menu { list-style: none; border: 1px solid #999; padding: 0; margin: 0; }
+  .sdd-menu[hidden] { display: none; }
+  .sr { position: absolute; clip: rect(0 0 0 0); }
+</style>
+<form id="application" novalidate>
+  <div class="input-group"><label for="resume">Upload Resume<span>*</span></label><input id="resume" type="file" accept=".pdf" required></div>
+  <div class="errorCheck"><p>Full Name*</p><input id="name" placeholder="Enter Full Name" required></div>
+  <div class="errorCheck"><p>Email ID*</p><input id="email" placeholder="Email ID" required></div>
+  <p>Contact Number*</p>
+  <div class="errorCheck"><div class="telecode">+91</div><input id="phone" type="tel" pattern="[0-9]*" placeholder="Phone number" required></div>
+  <div class="errorCheck">
+    <label class="sr" for="gender-input">Gender</label>
+    <div role="combobox" aria-label="Gender" aria-expanded="false" aria-controls="gender-list">
+      <input id="gender-input" class="sdd-input" placeholder="Search or select..." required readonly>
+      <button type="button" aria-label="Open">▾</button>
+    </div>
+    <ul id="gender-list" class="sdd-menu" role="listbox" hidden>
+      <li role="option">Male</li><li role="option">Female</li><li role="option">Prefer Not To Say</li>
+    </ul>
+  </div>
+  <label><input id="consent" type="checkbox">Allow Example Corp to use this data for managing your application.</label>
+  <div id="problems"></div>
+  <button id="send" type="submit" disabled>Submit</button>
+</form>
+<script>
+  const byId = (id) => document.getElementById(id);
+  const list = byId('gender-list');
+  const box = byId('gender-input');
+  box.addEventListener('click', () => { list.hidden = !list.hidden; });
+  // Chooses on mouse-down, like the real widget: a bare click() does nothing.
+  list.addEventListener('mousedown', (event) => {
+    if (event.target.getAttribute('role') !== 'option') return;
+    box.value = event.target.textContent;
+    list.hidden = true;
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') list.hidden = true; });
+  byId('consent').addEventListener('change', () => { byId('send').disabled = !byId('consent').checked; });
+
+  byId('application').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const sent = {
+      name: byId('name').value, email: byId('email').value, phone: byId('phone').value,
+      gender: box.value, resume: byId('resume').files[0]?.name || '', consent: byId('consent').checked,
+    };
+    const problems = [];
+    if (!/^\d{10}$/.test(sent.phone)) problems.push('Please enter a valid contact number');
+    for (const key of ['name', 'email', 'gender', 'resume']) if (!sent[key]) problems.push(`${key} is required`);
+    if (problems.length) {
+      byId('problems').innerHTML = problems.map((problem) => `<div role="alert">${problem}</div>`).join('');
+      return;
+    }
+    window.__sent = sent;
+    document.body.innerHTML = '<h1>Thank you for applying</h1><p>We have received your application.</p>';
+  });
+</script>

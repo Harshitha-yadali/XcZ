@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: multi-page application form</title>
+<!--
+  A stand-in for a Workday-style form, for scripts/auto-apply-selftest.mjs:
+  no <form> element, dropdowns that are a button opening an unlinked list, a
+  preselected country, a Next button, and the resume on the second page.
+  Open with ?noresume=1 for a variant that never asks for a resume.
+-->
+<style>[hidden] { display: none; }</style>
+<main>
+  <section id="page1">
+    <h2>My Information</h2>
+    <label for="given">Given Name(s)*</label><input id="given">
+    <label for="family">Family Name*</label><input id="family">
+    <label for="email">Email*</label><input id="email">
+    <label for="country">Country*</label><button id="country" type="button" aria-haspopup="listbox">India</button>
+    <label for="state">State*</label><button id="state" type="button" aria-haspopup="listbox">Select One</button>
+  </section>
+  <section id="page2" hidden>
+    <h2>My Experience</h2>
+    <div id="resume-row"><label for="cv">Resume/CV*</label><input id="cv" type="file" required></div>
+    <fieldset>
+      <legend>Are you over 18?*</legend>
+      <label><input type="radio" name="adult" value="Yes">Yes</label>
+      <label><input type="radio" name="adult" value="No">No</label>
+    </fieldset>
+  </section>
+  <div id="problems"></div>
+  <button id="next" type="button">Next</button>
+  <button id="send" type="button" hidden>Submit</button>
+</main>
+<script>
+  const byId = (id) => document.getElementById(id);
+  const noResume = new URLSearchParams(location.search).has('noresume');
+  if (noResume) byId('resume-row').remove();
+
+  // The list is added to the end of the page and not linked to its button.
+  const choices = { country: ['India', 'Mexico'], state: ['Andhra Pradesh', 'Karnataka', 'Telangana'] };
+  for (const id of Object.keys(choices)) {
+    byId(id).addEventListener('click', () => {
+      document.querySelectorAll('[role=listbox]').forEach((open) => open.remove());
+      const list = document.createElement('ul');
+      list.setAttribute('role', 'listbox');
+      list.innerHTML = choices[id].map((choice) => `<li role="option">${choice}</li>`).join('');
+      list.addEventListener('click', (event) => { byId(id).textContent = event.target.textContent; list.remove(); });
+      document.body.append(list);
+    });
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') document.querySelectorAll('[role=listbox]').forEach((open) => open.remove());
+  });
+
+  const complain = (problems) => { byId('problems').innerHTML = problems.map((problem) => `<div role="alert">${problem}</div>`).join(''); };
+  byId('next').addEventListener('click', () => {
+    const problems = ['given', 'family', 'email'].filter((id) => !byId(id).value).map((id) => `${id} is required`);
+    if (byId('state').textContent === 'Select One') problems.push('State is required');
+    if (problems.length) return complain(problems);
+    complain([]);
+    byId('page1').hidden = true;
+    byId('page2').hidden = false;
+    byId('next').hidden = true;
+    byId('send').hidden = false;
+  });
+  byId('send').addEventListener('click', () => {
+    const adult = document.querySelector('input[name=adult]:checked')?.value || '';
+    const resume = noResume ? '' : byId('cv').files[0]?.name || '';
+    const problems = [];
+    if (!adult) problems.push('Please answer the age question');
+    if (!noResume && !resume) problems.push('Resume is required');
+    if (problems.length) return complain(problems);
+    window.__sent = {
+      given: byId('given').value, family: byId('family').value, email: byId('email').value,
+      country: byId('country').textContent, state: byId('state').textContent, adult, resume,
+    };
+    document.body.innerHTML = '<h1>Application submitted</h1>';
+  });
+</script>
