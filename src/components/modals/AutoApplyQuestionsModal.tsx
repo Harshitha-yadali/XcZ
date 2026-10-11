@@ -9,9 +9,6 @@ interface AutoApplyQuestionsModalProps {
   onClose: () => void;
 }
 
-// Must match ACCEPT_TERMS_KEY in supabase/functions/_shared/applyForm.ts.
-const ACCEPT_TERMS_KEY = 'always accept employer terms';
-
 const inputClass =
   'w-full rounded-lg border border-gray-300 dark:border-dark-300 bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm';
 
@@ -33,7 +30,6 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
       const value = form.getAll(question.key).join(' | ');
       if (value) answers[question.key] = value;
     }
-    if (form.get(ACCEPT_TERMS_KEY)) answers[ACCEPT_TERMS_KEY] = 'yes';
     onSubmit(answers);
   };
 
@@ -91,16 +87,6 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
               )}
             </fieldset>
           ))}
-
-          {questions.some((question) => question.type === 'checkbox') && (
-            <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 border-t border-gray-200 dark:border-dark-300 pt-3">
-              <input type="checkbox" name={ACCEPT_TERMS_KEY} value="yes" defaultChecked className="mt-1" />
-              <span>
-                Don't ask me this again. Accept employers' privacy notices and application terms for me on every
-                application.
-              </span>
-            </label>
-          )}
 
           <div className="flex gap-3 pt-2">
             <button

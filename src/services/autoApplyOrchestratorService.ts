@@ -7,6 +7,7 @@ import {
 import { optimizeResume } from './geminiService';
 import { QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
 import { exportToPDFBlob } from '../utils/exportUtils';
+import { findUnsupportedClaims } from '../utils/resumeFactCheck';
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 
 // Private bucket that already holds users' uploaded resumes.
@@ -43,6 +44,19 @@ export interface AutoApplyResult {
   /** With error 'LOGIN_REQUIRED': the job site that needs the user's sign-in, and why. */
   loginSite?: string;
   loginMessage?: string;
+  /** Facts in the tailored resume that the user's original resume does not state. */
+  resumeFlags?: string[];
+  /**
+   * With error 'REVIEW_REQUIRED': the form is filled and nothing is sent. The
+   * user approves `filled` and picks from `consents`; `reviewed` is the same
+   * answers by key, sent back on approval.
+   */
+  review?: { filled: Record<string, string>; reviewed: Record<string, string>; consents: ApplyQuestion[] };
+  /** Set once the user pressed Approve & Submit; from then on calls may send the application. */
+  approved?: boolean;
+  reviewedAnswers?: Record<string, string>;
+  /** With error 'SUBMISSION_UNCERTAIN': why the outcome is not known. */
+  uncertainMessage?: string;
 }
 
 class AutoApplyOrchestratorService {
@@ -91,6 +105,10 @@ class AutoApplyOrchestratorService {
       if (!userResume) {
         throw new Error('Please upload your resume first');
       }
+
+      // One live application per job: pick up the one that exists, never start a second.
+      const live = await this.findLiveApplication(userId, jobId);
+      if (live) return await this.resumeLiveApplication(jobId, live, userResume, applicationUrl);
 
       // ponytail: no match-score gate or project suggestions before applying.
       // That step called a scoring method that never existed; wire it to the
@@ -181,6 +199,9 @@ class AutoApplyOrchestratorService {
         // The default free model often returns nothing for a prompt this size.
         QUICK_OPTIMIZATION_MODEL
       );
+      // Tailoring may reword, never invent: anything the original does not
+      // state is shown to the user on the review screen before it is sent.
+      const resumeFlags = findUnsupportedClaims(resumeText, resumeData);
       const pdfBlob = await exportToPDFBlob(resumeData, 'fresher');
       const pdfPath = await this.uploadResumePDF(userId, jobId, pdfBlob);
       const resumeId = await this.saveOptimizedResume(userId, jobId, resumeData, pdfPath);
@@ -197,13 +218,6 @@ class AutoApplyOrchestratorService {
         );
       }
 
-      this.updateStatus(jobId, {
-        step: 'submitting',
-        progress: 85,
-        message: 'Submitting application...',
-        currentAction: 'Filling out application form',
-      });
-
       const platform = this.detectPlatform(applicationUrl);
 
       // These sites need the user's own sign-in, so there is nothing we can
@@ -216,6 +230,7 @@ class AutoApplyOrchestratorService {
           resumeId,
           matchScore,
           pdfUrl,
+          resumeFlags,
         };
       }
 
@@ -236,6 +251,7 @@ class AutoApplyOrchestratorService {
         resumeId,
         matchScore,
         pdfUrl,
+        resumeFlags,
       });
     } catch (error: any) {
       console.error('Error continuing auto-apply:', error);
@@ -260,17 +276,40 @@ class AutoApplyOrchestratorService {
     answers?: Record<string, string>
   ): Promise<AutoApplyResult> {
     try {
-      this.updateStatus(jobId, {
-        step: 'submitting',
-        progress: 85,
-        message: 'Submitting application...',
-        currentAction: 'Filling out application form',
-      });
+      // Until the user approves on the review screen, the form is only filled
+      // and read back; the Submit button is not touched.
+      this.updateStatus(jobId, pending.approved
+        ? { step: 'submitting', progress: 90, message: 'Applying...', currentAction: 'Sending your approved application' }
+        : { step: 'submitting', progress: 85, message: 'Preparing...', currentAction: "Reading the employer's form" });
 
-      const outcome = await this.triggerFormSubmission(pending.applicationId!, answers);
+      const outcome = await this.triggerFormSubmission(pending.applicationId!, {
+        answers,
+        mode: pending.approved ? 'submit' : 'review',
+        reviewed: pending.approved ? pending.reviewedAnswers : undefined,
+      });
 
       if (outcome.status === 'needs_input') {
         return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
+      }
+      if (outcome.status === 'ready_for_review') {
+        return {
+          ...pending,
+          success: false,
+          error: 'REVIEW_REQUIRED',
+          questions: undefined,
+          review: { filled: outcome.filled || {}, reviewed: outcome.answers || {}, consents: outcome.consents || [] },
+        };
+      }
+      // Checked before any fallback: an uncertain submission must not be
+      // offered as "finish it yourself", which would invite a second one.
+      if (outcome.status === 'uncertain') {
+        return {
+          ...pending,
+          success: false,
+          error: 'SUBMISSION_UNCERTAIN',
+          uncertainMessage: outcome.message,
+          questions: undefined,
+        };
       }
       if (outcome.status === 'needs_login') {
         return {
@@ -312,6 +351,72 @@ class AutoApplyOrchestratorService {
       });
       return { ...pending, success: false, error: error.message, questions: undefined };
     }
+  }
+
+  /**
+   * The user pressed Approve & Submit on the review screen. Sends exactly what
+   * they saw, plus a tick for each consent box they chose.
+   */
+  async approveApplication(jobId: string, pending: AutoApplyResult, consentKeys: string[]): Promise<AutoApplyResult> {
+    return this.submitApplication(jobId, {
+      ...pending,
+      error: undefined,
+      review: undefined,
+      approved: true,
+      reviewedAnswers: {
+        ...pending.review?.reviewed,
+        ...Object.fromEntries(consentKeys.map((key) => [key, 'yes'])),
+      },
+    });
+  }
+
+  /** The user's application for this job that still holds the duplicate lock, if any. */
+  private async findLiveApplication(userId: string, jobId: string) {
+    const { data, error } = await supabase
+      .from('auto_apply_applications')
+      .select('id, status, resume_version_id, platform')
+      .eq('user_id', userId)
+      .eq('job_listing_id', jobId)
+      .neq('status', 'failed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data as { id: string; status: string; resume_version_id: string | null; platform: string } | null;
+  }
+
+  /** Continues an application that already exists for this job, according to how far it got. */
+  private async resumeLiveApplication(
+    jobId: string,
+    live: { id: string; status: string; resume_version_id: string | null; platform: string },
+    originalResume: string,
+    applicationUrl: string
+  ): Promise<AutoApplyResult> {
+    if (live.status === 'submitted') {
+      return { success: true, applicationId: live.id };
+    }
+    if (live.status === 'submitting' || live.status === 'uncertain') {
+      return { success: false, applicationId: live.id, error: 'SUBMISSION_UNCERTAIN' };
+    }
+
+    // Still being prepared: reuse its tailored resume and go back to the form.
+    const { data: resume, error } = await supabase
+      .from('optimized_resumes')
+      .select('resume_content, pdf_url')
+      .eq('id', live.resume_version_id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!resume?.pdf_url) throw new Error('Your earlier application for this job could not be reopened.');
+    const { data: signed } = await supabase.storage.from(RESUME_BUCKET).createSignedUrl(resume.pdf_url, 3600);
+    const platform = this.detectPlatform(applicationUrl);
+    return this.submitApplication(jobId, {
+      success: false,
+      manualFallback: platform === 'other' || platform === 'workday',
+      applicationId: live.id,
+      resumeId: live.resume_version_id || undefined,
+      pdfUrl: signed?.signedUrl,
+      resumeFlags: findUnsupportedClaims(originalResume, resume.resume_content as ResumeData),
+    });
   }
 
   /** Saves the user's own login for the site a job is on. The password is encrypted on the server. */
@@ -424,14 +529,20 @@ class AutoApplyOrchestratorService {
       .select('id')
       .single();
 
+    // The database allows one live application per user and job. Losing that
+    // race (a second tab, a double click) must not start a second one.
+    if (error?.code === '23505') throw new Error('An application for this job is already in progress.');
     if (error) throw error;
     return data.id;
   }
 
   private async triggerFormSubmission(
     applicationId: string,
-    answers?: Record<string, string>
-  ): Promise<{ success: boolean; status?: string; message?: string; error?: string; questions?: ApplyQuestion[]; site?: string }> {
+    request: { answers?: Record<string, string>; mode: 'review' | 'submit'; reviewed?: Record<string, string> }
+  ): Promise<{
+    success: boolean; status?: string; message?: string; error?: string; questions?: ApplyQuestion[]; site?: string;
+    filled?: Record<string, string>; answers?: Record<string, string>; consents?: ApplyQuestion[];
+  }> {
     const edgeFunctionUrl = getSupabaseEdgeFunctionUrl('auto-apply-submit');
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -441,7 +552,7 @@ class AutoApplyOrchestratorService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({ applicationId, answers }),
+      body: JSON.stringify({ applicationId, ...request }),
     });
 
     if (!response.ok) {

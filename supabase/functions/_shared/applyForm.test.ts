@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyUrl, detectPlatform, planFill, unsupportedReason, type FormField } from './applyForm.ts';
+import { applyUrl, detectPlatform, planFill, sameSite, unsupportedReason, type FormField } from './applyForm.ts';
 
 const profile = {
   fullName: 'Asha Verma', email: 'asha@example.com', phone: '+91 98765 43210',
@@ -29,6 +29,17 @@ describe('detectPlatform', () => {
     for (const platform of ['linkedin', 'naukri', 'indeed'] as const) {
       expect(unsupportedReason(platform)).toBeTruthy();
     }
+  });
+});
+
+describe('sameSite', () => {
+  it('accepts the job link host and its subdomains only', () => {
+    const job = 'https://acme.wd5.myworkdayjobs.com/careers/job/1';
+    expect(sameSite('acme.wd5.myworkdayjobs.com', job)).toBe(true);
+    expect(sameSite('login.myworkdayjobs.com', job)).toBe(true);
+    expect(sameSite('myworkdayjobs.com.evil.example', job)).toBe(false);
+    expect(sameSite('evil.example', job)).toBe(false);
+    expect(sameSite('', job)).toBe(false);
   });
 });
 
@@ -82,15 +93,6 @@ describe('planFill', () => {
     const consent = field(0, 'I agree to the privacy policy', { type: 'checkbox' });
     expect(planFill([consent], profile, {}).missing).toHaveLength(1);
     expect(planFill([consent], profile, { 'i agree to the privacy policy': 'yes' }).fills).toHaveLength(1);
-  });
-
-  it('ticks employer terms for a user who gave standing permission, but never marketing opt-ins', () => {
-    const terms = field(0, 'I agree to the Candidate Privacy Notice', { type: 'checkbox' });
-    const marketing = field(1, 'I agree to receive marketing emails and job alerts', { type: 'checkbox' });
-    const permission = { 'always accept employer terms': 'yes' };
-    expect(planFill([terms], profile, permission).fills).toHaveLength(1);
-    expect(planFill([marketing], profile, permission).fills).toHaveLength(0);
-    expect(planFill([terms], profile, {}).fills).toHaveLength(0);
   });
 
   it('never fills file inputs or unlabelled fields', () => {

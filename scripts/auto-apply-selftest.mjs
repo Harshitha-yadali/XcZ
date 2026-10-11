@@ -91,9 +91,49 @@ try {
     });
   });
 
-  await check('ticks the consent box itself for a user who gave standing permission', { url: fixture('single.html'), saved: { gender: 'Male', 'always accept employer terms': 'yes' } }, (result, sent) => {
+  await check('prepares a review without sending: answers, and the consent box left for the user', { url: fixture('single.html'), saved: { gender: 'Male' }, submit: false }, (result, sent) => {
+    assert.equal(result.status, 'dry_run');
+    assert.equal(result.answers.gender, 'Male');
+    assert.equal(result.answers['full name'], 'Asha Verma');
+    assert.deepEqual(result.consents.map((box) => box.key), [consent]);
+    assert.equal(sent, null);
+  });
+
+  await check('never ticks a consent box the user did not choose', { url: fixture('single.html'), saved: { gender: 'Male', 'always accept employer terms': 'yes' } }, (result, sent) => {
+    assert.equal(result.status, 'needs_input');
+    assert.equal(sent, null);
+  });
+
+  let pressedAt = 0;
+  await check('reports the attempt before pressing Submit', {
+    url: fixture('single.html'),
+    saved: { gender: 'Female', [consent]: 'yes' },
+    onSubmitting: async () => { pressedAt += 1; },
+  }, (result) => {
     assert.equal(result.status, 'submitted', result.message);
-    assert.equal(sent.consent, true);
+    assert.equal(pressedAt, 1);
+  });
+
+  let attempted = false;
+  await check('calls a submit with no confirmation uncertain, not failed', {
+    url: `${fixture('single.html')}?silent=1`,
+    saved: { gender: 'Female', [consent]: 'yes' },
+    onSubmitting: async () => { attempted = true; },
+  }, (result, sent) => {
+    assert.equal(result.status, 'unconfirmed');
+    assert.equal(attempted, true);
+    assert.match(result.message, /may already have your application/);
+    // The employer did receive it: this is why it must not be sent again.
+    assert.equal(sent.name, 'Asha Verma');
+  });
+
+  let attemptedWithoutAnswers = false;
+  await check('does not report an attempt when nothing was pressed', {
+    url: fixture('single.html'),
+    onSubmitting: async () => { attemptedWithoutAnswers = true; },
+  }, (result) => {
+    assert.equal(result.status, 'needs_input');
+    assert.equal(attemptedWithoutAnswers, false);
   });
 
   await check('uses an inferred answer only when it is one of the options', {

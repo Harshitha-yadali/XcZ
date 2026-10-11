@@ -27,6 +27,7 @@ import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationM
 import { AutoApplyStatusModal } from '../modals/AutoApplyStatusModal';
 import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
 import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
+import { AutoApplyReviewModal } from '../modals/AutoApplyReviewModal';
 import { Pagination } from '../common/Pagination';
 import { JobPreferencesOnboardingModal } from '../modals/JobPreferencesOnboardingModal';
 import { ProjectSuggestionModal } from '../modals/ProjectSuggestionModal';
@@ -103,6 +104,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     submitAnswers: submitAutoApplyAnswers,
     loginRequest: autoApplyLoginRequest,
     submitLogin: submitAutoApplyLogin,
+    review: autoApplyReview,
+    approveReview: approveAutoApplyReview,
     startAutoApply,
     handleProjectSelection,
     closeModals: closeAutoApplyModals,
@@ -640,17 +643,32 @@ const stats = [
           success: autoApplyResult.success,
           message: autoApplyResult.success
             ? 'Application submitted successfully'
-            : autoApplyResult.error === 'MANUAL_APPLY'
-              ? `${autoApplyResult.manualReason || 'We could not submit this one for you.'} Your tailored resume is ready: download it and finish on the company's page.`
-              : 'This application was not sent.',
+            : autoApplyResult.error === 'SUBMISSION_UNCERTAIN'
+              ? autoApplyResult.uncertainMessage
+                || 'Submit was pressed for this job, but no confirmation was seen. The employer may already have your application.'
+              : autoApplyResult.error === 'MANUAL_APPLY'
+                ? `${autoApplyResult.manualReason || 'We could not submit this one for you.'} Your tailored resume is ready: download it and finish on the company's page.`
+                : 'This application was not sent.',
           applicationId: autoApplyResult.applicationId || '',
           status: autoApplyResult.success ? 'submitted' : 'failed',
           resumeUrl: autoApplyResult.pdfUrl,
           manual: autoApplyResult.error === 'MANUAL_APPLY',
-          error: autoApplyResult.error === 'MANUAL_APPLY' ? undefined : autoApplyResult.error,
-          // Nothing was sent, so offer the employer's own link.
-          fallbackUrl: autoApplyResult.success ? undefined : selectedJob?.application_link,
+          uncertain: autoApplyResult.error === 'SUBMISSION_UNCERTAIN',
+          error: ['MANUAL_APPLY', 'SUBMISSION_UNCERTAIN'].includes(autoApplyResult.error || '') ? undefined : autoApplyResult.error,
+          // Offered only when nothing was sent. After an uncertain submit the
+          // employer's link would invite a second application.
+          fallbackUrl: autoApplyResult.success || autoApplyResult.error === 'SUBMISSION_UNCERTAIN'
+            ? undefined
+            : selectedJob?.application_link,
         } : null}
+      />
+
+      <AutoApplyReviewModal
+        review={autoApplyReview}
+        jobTitle={autoApplyJob?.role_title}
+        companyName={autoApplyJob?.company_name}
+        onApprove={approveAutoApplyReview}
+        onClose={() => closeAutoApplyModals()}
       />
 
       <AutoApplyStatusModal

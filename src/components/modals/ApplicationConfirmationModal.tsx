@@ -39,7 +39,10 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
   const isSuccess = result.success && result.status === 'submitted';
   // Not an error: the resume is tailored, the user submits on the employer's site.
   const isManual = !isSuccess && Boolean(result.manual);
-  const tone = isSuccess ? 'green' : isManual ? 'blue' : 'red';
+  // Submit was pressed and nothing confirmed it. Neither a success nor a
+  // failure: the user must not be nudged into applying a second time.
+  const isUncertain = !isSuccess && Boolean(result.uncertain);
+  const tone = isSuccess ? 'green' : isUncertain ? 'amber' : isManual ? 'blue' : 'red';
   const tones = {
     green: {
       header: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
@@ -50,6 +53,11 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
       header: 'bg-gradient-to-r from-blue-50 to-sky-50 dark:from-blue-900/20 dark:to-sky-900/20',
       icon: 'bg-gradient-to-r from-blue-500 to-sky-500',
       text: 'text-blue-700 dark:text-blue-300',
+    },
+    amber: {
+      header: 'bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20',
+      icon: 'bg-gradient-to-r from-amber-500 to-yellow-500',
+      text: 'text-amber-800 dark:text-amber-300',
     },
     red: {
       header: 'bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20',
@@ -89,7 +97,7 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
               </div>
               
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {isSuccess ? 'Application Submitted!' : isManual ? 'Your tailored resume is ready' : 'Application Failed'}
+                {isSuccess ? 'Submitted' : isUncertain ? 'Submission uncertain' : 'Needs manual completion'}
               </h1>
               
               <p className={`text-lg ${tones.text}`}>
@@ -176,7 +184,21 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
             </div>
 
             {/* Error Details (if failed) */}
-            {!isSuccess && !isManual && result.error && (
+            {isUncertain && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 dark:bg-amber-900/20 dark:border-amber-500/50">
+                <h3 className="font-semibold text-amber-900 dark:text-amber-200 mb-2">What to do now</h3>
+                <ul className="list-disc pl-5 text-sm text-amber-800 dark:text-amber-300 space-y-1">
+                  <li>Check your email, including spam, for a confirmation from {job.company_name}.</li>
+                  <li>If one arrives, your application is in and there is nothing more to do.</li>
+                  <li>Do not apply again unless you are sure none arrived: the employer may receive it twice.</li>
+                </ul>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
+                  We will not send this application again on our own.
+                </p>
+              </div>
+            )}
+
+            {!isSuccess && !isManual && !isUncertain && result.error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 dark:bg-red-900/20 dark:border-red-500/50">
                 <h3 className="font-semibold text-red-900 dark:text-red-300 mb-2">Error Details</h3>
                 <p className="text-red-700 dark:text-red-400 text-sm">{result.error}</p>

@@ -44,6 +44,10 @@ export interface ApplyResult {
   filled?: Record<string, string>;
   fields?: FormField[];
   resumeAttached?: boolean;
+  /** dry_run only: what was put in each field, by answer key, for the user to review and approve. */
+  answers?: Record<string, string>;
+  /** dry_run only: boxes on the form left unticked. Ticking one is the user's choice, made at review. */
+  consents?: Question[];
 }
 
 const DOMAINS: [Platform, string[]][] = [
@@ -74,19 +78,6 @@ export function unsupportedReason(platform: Platform): string | null {
   const name = platform[0].toUpperCase() + platform.slice(1);
   return `This job needs you to be signed in to ${name}. We do not sign in to ${name} for you, so please apply from the job link.`;
 }
-
-/**
- * Saved-answer key for the user's standing permission to accept employers'
- * privacy notices and terms for them. Given once in the app; without it every
- * consent box is asked about.
- */
-export const ACCEPT_TERMS_KEY = 'always accept employer terms';
-
-// A box that accepts the employer's own notice or terms. Opt-ins to marketing
-// or alerts are not consent to apply, so they are never ticked this way.
-const isTermsBox = (label: string) =>
-  /privacy|terms|consent|agree|acknowledg|data protection|gdpr|use (this|my) (data|information)/i.test(label)
-  && !/newsletter|marketing|promotion|job alert|talent (community|network)|sms|whatsapp/i.test(label);
 
 /** A label reduced to a stable key, so a saved answer is found again on the next form. */
 export const answerKey = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120);
@@ -133,7 +124,6 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
     let value = saved[key] || profileAnswer(field.label, profile) || '';
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
-    if (field.type === 'checkbox' && !value && saved[ACCEPT_TERMS_KEY] === 'yes' && isTermsBox(field.label)) value = 'yes';
     if (field.type === 'checkbox' && !/^(yes|true|on)$/i.test(value)) value = '';
     if (value && field.dialCode) {
       const digits = value.replace(/\D/g, '');
@@ -435,6 +425,14 @@ export function readOutcome(): any {
 // ---- End of in-page functions.
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** True when `host` is the job link's host or shares its last two labels (a subdomain of the same site). */
+export function sameSite(host: string, jobUrl: string): boolean {
+  let jobHost = '';
+  try { jobHost = new URL(jobUrl).hostname.toLowerCase(); } catch { return false; }
+  const tail = (name: string) => name.toLowerCase().split('.').slice(-2).join('.');
+  return Boolean(host) && Boolean(jobHost) && (host.toLowerCase() === jobHost || tail(host) === tail(jobHost));
+}
 const failed = (message: string): ApplyResult => ({ status: 'failed', message });
 
 /** Opens a custom dropdown and returns its choices: by arrow key first, by click if that shows nothing. */
@@ -469,6 +467,12 @@ export async function runApplication(page: Page, options: {
   submit: boolean;
   /** The user's own saved login for this site, used only if the site asks for a sign-in. */
   login?: { username: string; password: string } | null;
+  /**
+   * Called just before the Submit button is pressed. From this point the
+   * application may reach the employer even if nothing after it is observed,
+   * so the caller should record that a submission was attempted.
+   */
+  onSubmitting?: () => Promise<void>;
   /**
    * Optional: answers questions the profile cannot, from the resume. Returns
    * answers by question key; anything it leaves out is asked of the user.
@@ -522,6 +526,12 @@ export async function runApplication(page: Page, options: {
     for (let step = 0; step < 4 && !(await isForm()); step++) {
       if (await wantsLogin()) {
         if (!options.login || signedIn) return askForLogin(signedIn);
+        // The page decides where its links go; it does not decide where a
+        // password is typed. Only the job link's own site gets the login.
+        const host: string = await page.evaluate(() => location.hostname).catch(() => '');
+        if (!sameSite(host, options.url)) {
+          return failed('The sign-in page is on a different site from the job link, so your login was not entered there.');
+        }
         if (!(await page.evaluate(signIn, options.login))) {
           await page.evaluate(openSignIn);
           await sleep(1500);
@@ -587,15 +597,16 @@ export async function runApplication(page: Page, options: {
   const filledSoFar = () => Object.fromEntries(allFills.map((fill) => [fill.label, fill.value]));
   // A form may keep its button off until a consent box is ticked. Consent is
   // the user's to give, so the unticked boxes are asked, never ticked for them.
-  const blockedButton = (): ApplyResult => {
+  const unticked = (): Question[] => {
     const answered = new Set(allFills.map((fill) => answerKey(fill.label)));
-    const boxes = scan.filter((field) => field.type === 'checkbox' && field.label && !answered.has(answerKey(field.label)));
+    return scan
+      .filter((field) => field.type === 'checkbox' && field.label && !answered.has(answerKey(field.label)))
+      .map((field) => ({ key: answerKey(field.label), label: field.label, type: field.type, options: [] }));
+  };
+  const blockedButton = (): ApplyResult => {
+    const boxes = unticked();
     if (!boxes.length) return failed('The form would not let the application go on: its button stayed switched off.');
-    return {
-      status: 'needs_input',
-      questions: boxes.map((field) => ({ key: answerKey(field.label), label: field.label, type: field.type, options: [] })),
-      fields: scan,
-    };
+    return { status: 'needs_input', questions: boxes, fields: scan };
   };
 
   // A form may run over several pages: fill each, press Next, and stop at the
@@ -625,6 +636,8 @@ export async function runApplication(page: Page, options: {
       return {
         status: 'dry_run',
         filled: filledSoFar(),
+        answers: Object.fromEntries(allFills.map((fill) => [answerKey(fill.label), fill.value])),
+        consents: unticked(),
         fields: scan,
         resumeAttached,
         message: action.kind === 'next' ? 'Stopped at the Next button; later pages were not opened.' : undefined,
@@ -662,6 +675,7 @@ export async function runApplication(page: Page, options: {
   // Some forms carry "error" styling before anything is sent; only messages
   // that appear after the click are about this application.
   const before: string[] = (await page.evaluate(readOutcome).catch(() => null))?.errors || [];
+  await options.onSubmitting?.();
   await page.evaluate(pressAction);
 
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -680,6 +694,6 @@ export async function runApplication(page: Page, options: {
   return {
     status: 'unconfirmed',
     filled,
-    message: 'The form was sent, but the site did not show a confirmation. Check your email for one before applying again.',
+    message: 'Submit was pressed, but the site did not show a confirmation. The employer may already have your application: check your email for a confirmation before applying again.',
   };
 }

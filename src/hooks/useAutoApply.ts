@@ -45,7 +45,7 @@ export function useAutoApply() {
     if (!applyResult.success && applyResult.error === 'PROJECT_SUGGESTIONS_REQUIRED') {
       setProjectSuggestions(applyResult as any);
       setShowProjectModal(true);
-    } else if (!applyResult.success && (applyResult.error === 'INPUT_REQUIRED' || applyResult.error === 'LOGIN_REQUIRED')) {
+    } else if (!applyResult.success && ['INPUT_REQUIRED', 'LOGIN_REQUIRED', 'REVIEW_REQUIRED'].includes(applyResult.error || '')) {
       setPending(applyResult);
     } else {
       setResult(applyResult);
@@ -158,6 +158,26 @@ export function useAutoApply() {
     [currentJob, pending, settle, fail]
   );
 
+  // The user pressed Approve & Submit: this is the only path that sends an application.
+  const approveReview = useCallback(
+    async (consentKeys: string[]) => {
+      if (!currentJob || !pending) return;
+
+      setPending(null);
+      setShowStatusModal(true);
+      setIsProcessing(true);
+      try {
+        settle(await autoApplyOrchestratorService.approveApplication(currentJob.id, pending, consentKeys));
+      } catch (error: any) {
+        console.error('Error submitting approved application:', error);
+        fail(error);
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [currentJob, pending, settle, fail]
+  );
+
   // Saves the login the user typed for the job's site, then tries the application again.
   const submitLogin = useCallback(
     async (username: string, password: string) => {
@@ -207,6 +227,15 @@ export function useAutoApply() {
       ? { site: pending.loginSite || 'this site', message: pending.loginMessage }
       : null,
     submitLogin,
+    review: pending?.error === 'REVIEW_REQUIRED' && pending.review
+      ? {
+          filled: pending.review.filled,
+          consents: pending.review.consents,
+          flags: pending.resumeFlags || [],
+          pdfUrl: pending.pdfUrl,
+        }
+      : null,
+    approveReview,
     startAutoApply,
     handleProjectSelection,
     closeModals,

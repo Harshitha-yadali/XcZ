@@ -125,6 +125,8 @@ export interface AutoApplyResult {
   error?: string;
   /** Not sent because the site cannot be automated; the tailored resume is ready to use there. */
   manual?: boolean;
+  /** Submit was pressed but no confirmation was seen: the employer may already have the application. */
+  uncertain?: boolean;
 }
 
 export interface ApplicationHistory {

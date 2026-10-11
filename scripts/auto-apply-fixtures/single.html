@@ -61,6 +61,9 @@
       return;
     }
     window.__sent = sent;
+    // ?silent=1: the application is received but the page says nothing, like a
+    // site whose confirmation never loads.
+    if (new URLSearchParams(location.search).has('silent')) return;
     document.body.innerHTML = '<h1>Thank you for applying</h1><p>We have received your application.</p>';
   });
 </script>
