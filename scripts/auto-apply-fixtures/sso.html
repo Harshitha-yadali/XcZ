@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture</title>
+<!--
+  A stand-in for an employer that only takes applications from a signed-in
+  account, for scripts/auto-apply-selftest.mjs. It copies the flow seen on
+  IBM's careers site: a job posting with "Apply now", then a sign-in on a
+  second address that asks for the account name first and the password on the
+  next page, then the application form.
+
+  ?view=job|login|password|code picks the page. idp= and home= are the
+  addresses of the sign-in pages and of the careers site. mfa=1 adds a
+  verification-code page after the password. Everything typed into the
+  sign-in pages is posted to /record, where the self-test reads it back.
+-->
+<main id="root"></main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const view = params.get('view') || 'job';
+  const idp = params.get('idp') || location.host;
+  const home = params.get('home') || location.host;
+  const carry = `idp=${encodeURIComponent(idp)}&home=${encodeURIComponent(home)}${params.has('mfa') ? '&mfa=1' : ''}`;
+  const root = document.getElementById('root');
+  const record = (entry) => fetch('/record', { method: 'POST', body: JSON.stringify({ host: location.hostname, ...entry }) });
+  const complain = (problem) => { document.getElementById('problem').innerHTML = `<div role="alert">${problem}</div>`; };
+
+  if (view === 'job') {
+    document.title = 'Associate Engineer - Example Careers';
+    root.innerHTML = '<h1>Associate Engineer</h1><a id="apply">Apply now</a><p>Introduction. Your role and responsibilities.</p>';
+    document.getElementById('apply').href = `http://${idp}/sso.html?view=login&${carry}`;
+  }
+
+  if (view === 'login') {
+    document.title = 'ExampleID - Sign in or create an ExampleID';
+    root.innerHTML = `
+      <form id="signin">
+        <input type="hidden" name="password">
+        <label for="username">ExampleID</label>
+        <input id="username" name="username" type="text">
+        <button type="submit" id="continue-button">Continue</button>
+        <label><input type="checkbox" name="remember">Remember me</label>
+        <div id="problem"></div>
+      </form>`;
+    document.getElementById('signin').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const value = document.getElementById('username').value;
+      await record({ step: 'identifier', value });
+      if (value !== 'asha@example.com') return complain('We could not find that ExampleID.');
+      location.href = `sso.html?view=password&${carry}`;
+    });
+  }
+
+  if (view === 'password') {
+    document.title = 'ExampleID - Sign in';
+    root.innerHTML = `
+      <form id="signin">
+        <p>asha@example.com</p>
+        <label for="secret">Password</label>
+        <input id="secret" name="password" type="password">
+        <button type="submit">Log in</button>
+        <div id="problem"></div>
+      </form>`;
+    document.getElementById('signin').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const value = document.getElementById('secret').value;
+      await record({ step: 'password', value });
+      if (value !== 'correct horse') return complain('Incorrect password.');
+      location.href = params.has('mfa') ? `sso.html?view=code&${carry}` : `http://${home}/single.html`;
+    });
+  }
+
+  if (view === 'code') {
+    document.title = 'ExampleID - Verify it is you';
+    root.innerHTML = '<p>Enter the verification code we sent to your email.</p><input name="otp" type="text"><button type="button">Verify</button>';
+  }
+</script>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyUrl, detectPlatform, planFill, sameSite, unsupportedReason, type FormField } from './applyForm.ts';
+import { applyUrl, detectPlatform, loginPageAllowed, planFill, sameSite, type FormField } from './applyForm.ts';
 
 const profile = {
   fullName: 'Asha Verma', email: 'asha@example.com', phone: '+91 98765 43210',
@@ -20,16 +20,6 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://greenhouse.io.evil.example/jobs')).toBe('other');
     expect(detectPlatform('not a url')).toBe('other');
   });
-
-  it('only lets through platforms that need no login', () => {
-    expect(unsupportedReason('greenhouse')).toBeNull();
-    expect(unsupportedReason('lever')).toBeNull();
-    expect(unsupportedReason('other')).toBeNull();
-    expect(unsupportedReason('workday')).toBeNull();
-    for (const platform of ['linkedin', 'naukri', 'indeed'] as const) {
-      expect(unsupportedReason(platform)).toBeTruthy();
-    }
-  });
 });
 
 describe('sameSite', () => {
@@ -40,6 +30,40 @@ describe('sameSite', () => {
     expect(sameSite('myworkdayjobs.com.evil.example', job)).toBe(false);
     expect(sameSite('evil.example', job)).toBe(false);
     expect(sameSite('', job)).toBe(false);
+  });
+
+  it('treats a company sign-in on another name of the same site as the same site', () => {
+    expect(sameSite('login.ibm.com', 'https://careers.ibm.com/en_US/careers/JobDetail?jobId=1')).toBe(true);
+    expect(sameSite('www.linkedin.com', 'https://in.linkedin.com/jobs/view/1')).toBe(true);
+  });
+
+  it('does not treat two companies under a shared country suffix as one site', () => {
+    expect(sameSite('login.acme.co.in', 'https://careers.acme.co.in/job/1')).toBe(true);
+    expect(sameSite('evil.co.in', 'https://careers.acme.co.in/job/1')).toBe(false);
+  });
+
+  it('matches numeric addresses exactly', () => {
+    expect(sameSite('127.0.0.1', 'http://127.0.0.1:8080/job')).toBe(true);
+    expect(sameSite('10.0.0.1', 'http://127.0.0.1:8080/job')).toBe(false);
+  });
+});
+
+describe('loginPageAllowed', () => {
+  const job = 'https://careers.ibm.com/en_US/careers/JobDetail?jobId=1';
+
+  it('allows a secure sign-in page on the job link\'s own site', () => {
+    expect(loginPageAllowed('https:', 'login.ibm.com', job)).toBe(true);
+  });
+
+  it('refuses an insecure page and a page on another site', () => {
+    expect(loginPageAllowed('http:', 'login.ibm.com', job)).toBe(false);
+    expect(loginPageAllowed('https:', 'login.ibm.com.evil.example', job)).toBe(false);
+    expect(loginPageAllowed('https:', 'accounts.example.org', job)).toBe(false);
+  });
+
+  it('allows plain HTTP only for pages on this machine, as the self-test uses', () => {
+    expect(loginPageAllowed('http:', 'login.example.localhost', 'http://careers.example.localhost:8080/job')).toBe(true);
+    expect(loginPageAllowed('http:', 'login.example.localhost', job)).toBe(false);
   });
 });
 

@@ -8,7 +8,8 @@
 // Set CHROME to the browser binary if it is not in one of the usual places.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -26,7 +27,8 @@ const CHROME_PATHS = [
 const chrome = CHROME_PATHS.find((candidate) => existsSync(candidate));
 if (!chrome) throw new Error('Chrome not found; set the CHROME environment variable.');
 
-const fixture = (name) => pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'auto-apply-fixtures', name)).href;
+const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'auto-apply-fixtures');
+const fixture = (name) => pathToFileURL(path.join(fixtures, name)).href;
 const profile = {
   fullName: 'Asha Verma', email: 'asha.verma@example.com', phone: '+91 98765 43210',
   linkedin: '', github: '', location: 'Hyderabad',
@@ -41,6 +43,7 @@ const browser = spawn(chrome, [
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
 let failures = 0;
+let server; // the local web server behind the sign-in cases
 try {
   // Chrome prints the DevTools address on stderr once it is listening.
   const endpoint = await new Promise((resolve, reject) => {
@@ -170,7 +173,105 @@ try {
     assert.match(result.message, /never asked for a resume/);
     assert.equal(sent, null);
   });
+
+  // ---- Sign-in. These pages are served over HTTP so that each has a real
+  // address: the careers site, its sign-in on another name of the same site,
+  // and a sign-in on an unrelated site. Chrome resolves every *.localhost
+  // name to this machine.
+  const typed = []; // everything any sign-in page received, in order
+  server = createServer((request, response) => {
+    if (request.method === 'POST' && request.url === '/record') {
+      let body = '';
+      request.on('data', (chunk) => { body += chunk; });
+      request.on('end', () => { typed.push(JSON.parse(body)); response.end('ok'); });
+      return;
+    }
+    try {
+      const name = path.basename(new URL(request.url, 'http://localhost').pathname);
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end(readFileSync(path.join(fixtures, name)));
+    } catch {
+      response.statusCode = 404;
+      response.end('not found');
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const careers = `careers.example.localhost:${port}`;
+  const signInHost = 'login.example.localhost';
+  const gated = (idp = `${signInHost}:${port}`, extra = '') =>
+    `http://${careers}/sso.html?view=job&idp=${encodeURIComponent(idp)}&home=${encodeURIComponent(careers)}${extra}`;
+  const goodLogin = { username: 'asha@example.com', password: 'correct horse' };
+  // Stands in for the vault: logins by sign-in address, and a note of every address asked about.
+  const vault = (saved) => {
+    const asked = [];
+    return { asked, loginFor: async (host) => { asked.push(host); return saved[host] || null; } };
+  };
+  const signInCheck = async (name, run, verify) => {
+    typed.length = 0;
+    await check(name, { submit: false, ...run }, verify);
+  };
+
+  await signInCheck('stops at a sign-in page it has no login for, and types nothing', { url: gated() }, (result) => {
+    assert.equal(result.status, 'needs_login');
+    assert.equal(result.site, signInHost);
+    assert.deepEqual(typed, []);
+  });
+
+  let store = vault({ [signInHost]: goodLogin });
+  await signInCheck('signs in over two pages with the saved login and reaches the form', {
+    url: gated(), saved: { gender: 'Male' }, loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(result.answers['full name'], 'Asha Verma');
+    assert.deepEqual(store.asked, [signInHost]);
+    assert.deepEqual(typed, [
+      { host: signInHost, step: 'identifier', value: 'asha@example.com' },
+      { host: signInHost, step: 'password', value: 'correct horse' },
+    ]);
+  });
+
+  store = vault({ [signInHost]: { ...goodLogin, password: 'wrong' } });
+  await signInCheck('asks the user to update a login the site refuses, after one try', { url: gated(), loginFor: store.loginFor }, (result) => {
+    assert.equal(result.status, 'needs_login');
+    assert.equal(result.site, signInHost);
+    assert.match(result.message, /did not accept/);
+    assert.equal(typed.filter((entry) => entry.step === 'password').length, 1);
+  });
+
+  store = vault({ [signInHost]: { username: 'nobody@example.com', password: 'correct horse' } });
+  await signInCheck('never types the password when the account name is not recognised', { url: gated(), loginFor: store.loginFor }, (result) => {
+    assert.equal(result.status, 'needs_login');
+    assert.match(result.message, /did not accept/);
+    assert.deepEqual(typed.map((entry) => entry.step), ['identifier']);
+  });
+
+  store = vault({ [`careers.example.localhost`]: goodLogin });
+  await signInCheck('does not use a login saved for a different address', { url: gated(), loginFor: store.loginFor }, (result) => {
+    assert.equal(result.status, 'needs_login');
+    assert.deepEqual(store.asked, [signInHost]);
+    assert.deepEqual(typed, []);
+  });
+
+  store = vault({ 'login.other.localhost': goodLogin });
+  await signInCheck('refuses a sign-in page on a site other than the job link\'s', {
+    url: gated(`login.other.localhost:${port}`), loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /not on the job link's own secure site/);
+    assert.deepEqual(store.asked, []);
+    assert.deepEqual(typed, []);
+  });
+
+  store = vault({ [signInHost]: goodLogin });
+  await signInCheck('hands over to the user when the site asks for a verification code', {
+    url: gated(undefined, '&mfa=1'), loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /verification code/);
+  });
 } finally {
+  server?.close();
   browser.kill();
   await new Promise((resolve) => setTimeout(resolve, 500));
   rmSync(userData, { recursive: true, force: true, maxRetries: 5 });

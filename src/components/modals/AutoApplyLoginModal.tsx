@@ -59,7 +59,8 @@ export const AutoApplyLoginModal: React.FC<AutoApplyLoginModalProps> = ({ site, 
 
           <p className="text-xs text-gray-500 dark:text-gray-400">
             No account there yet? Create one on {site} first, then enter the same details here. We store the password
-            encrypted and use it only to sign in on this site and send your applications.
+            encrypted and use it only to sign in on {site} for applications you start. Some sites treat a sign-in from
+            a new place as unusual and may email you to confirm it was you.
           </p>
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

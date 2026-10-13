@@ -184,7 +184,7 @@ export function useAutoApply() {
       if (!currentJob || !pending) return;
 
       // Throws when saving fails, so the login window can show why and stay open.
-      await autoApplyOrchestratorService.saveSiteLogin(currentJob.application_link, username, password);
+      await autoApplyOrchestratorService.saveSiteLogin(pending.loginSite || '', username, password);
 
       setPending(null);
       setShowStatusModal(true);

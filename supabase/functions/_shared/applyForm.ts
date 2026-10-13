@@ -48,6 +48,8 @@ export interface ApplyResult {
   answers?: Record<string, string>;
   /** dry_run only: boxes on the form left unticked. Ticking one is the user's choice, made at review. */
   consents?: Question[];
+  /** needs_login only: the address of the sign-in page. A login is saved for, and typed on, exactly this address. */
+  site?: string;
 }
 
 const DOMAINS: [Platform, string[]][] = [
@@ -66,17 +68,6 @@ export function detectPlatform(url: string): Platform {
   try { host = new URL(url).hostname.toLowerCase(); } catch { return 'other'; }
   const found = DOMAINS.find(([, domains]) => domains.some((domain) => host === domain || host.endsWith(`.${domain}`)));
   return found ? found[0] : 'other';
-}
-
-/** Why we cannot apply on this platform, or null when we can. */
-export function unsupportedReason(platform: Platform): string | null {
-  // Greenhouse and Lever are dry-run tested against live forms. Any other
-  // site, Workday included, is attempted with the same engine under the extra
-  // checks in runApplication: the form must take a resume, and a sign-in page
-  // is passed only with a login the user saved for that site.
-  if (platform === 'greenhouse' || platform === 'lever' || platform === 'other' || platform === 'workday') return null;
-  const name = platform[0].toUpperCase() + platform.slice(1);
-  return `This job needs you to be signed in to ${name}. We do not sign in to ${name} for you, so please apply from the job link.`;
 }
 
 /** A label reduced to a stable key, so a saved answer is found again on the next form. */
@@ -345,15 +336,54 @@ export function pressAction(): any {
   return Boolean(button);
 }
 
-/** True when the page shows a password box, i.e. it wants a sign-in. */
-export function hasPasswordField(): any {
-  return [...document.querySelectorAll('input[type=password]')].some((el: any) => el.getClientRects().length > 0);
+/**
+ * What kind of sign-in page this is, or '' when it is not one.
+ * - 'password': it shows one password box.
+ * - 'signup': it shows several, so it is a registration form.
+ * - 'identifier': it asks only who you are (an IBMid, an email) and shows the
+ *   password box on the next page.
+ */
+export function loginStage(): any {
+  const visible = (el: any) => el.getClientRects().length > 0;
+  const passwords = [...document.querySelectorAll('input[type=password]')].filter(visible);
+  if (passwords.length) return passwords.length === 1 ? 'password' : 'signup';
+
+  const boxes: any[] = [...document.querySelectorAll('input')]
+    .filter((el: any) => visible(el) && ['text', 'email', 'tel'].includes(el.type));
+  if (boxes.length !== 1 || document.querySelector('input[type=file]')) return '';
+  // A search bar or a newsletter signup is also one lone box, so both the box
+  // and the page have to say that this is a sign-in.
+  const box = boxes[0];
+  const label = String(box.labels?.[0]?.innerText || box.getAttribute('aria-label') || '').trim();
+  const namesAccount = /user|login|e-?mail|ident|account/i.test(`${box.name} ${box.id} ${box.autocomplete} ${label}`)
+    || /id$/i.test(label);
+  const aboutSignIn = /log ?in|sign ?in|sso|authenticat/i.test(`${document.title} ${location.hostname}${location.pathname}`);
+  return namesAccount && aboutSignIn ? 'identifier' : '';
+}
+
+/** On an 'identifier' page: types the account name and presses the button that moves on to the password. */
+export function enterIdentifier(username: string): any {
+  const visible = (el: any) => el.getClientRects().length > 0;
+  const box: any = [...document.querySelectorAll('input')]
+    .find((el: any) => visible(el) && ['text', 'email', 'tel'].includes(el.type));
+  const scope: any = box?.closest('form') || document;
+  const button: any = scope.querySelector('button[type=submit], input[type=submit]')
+    || [...scope.querySelectorAll('button, [role="button"]')].find((el: any) =>
+      visible(el) && /^(continue|next|sign in|log in|login)$/i.test(String(el.innerText || '').trim()));
+  if (!box || !button) return false;
+  box.focus();
+  // React keeps its own copy of the value, so go through the native setter.
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(box), 'value')!.set!.call(box, username);
+  // Some pages only enable their button once they have seen typing.
+  for (const type of ['input', 'change', 'keyup']) box.dispatchEvent(new Event(type, { bubbles: true }));
+  button.click();
+  return true;
 }
 
 /**
- * Types the user's own login into the page's sign-in form and presses its
- * button. Returns false when the page is not a plain sign-in form: a page with
- * two password boxes is a sign-up form.
+ * On a 'password' page: types the user's own login and presses the sign-in
+ * button. The account name is typed too when the page has a box for it; the
+ * second page of a two-step sign-in has none, or shows the name read-only.
  */
 export function signIn({ username, password }: any): any {
   const visible = (el: any) => el.getClientRects().length > 0;
@@ -361,19 +391,26 @@ export function signIn({ username, password }: any): any {
   if (boxes.length !== 1) return false;
   const scope: any = boxes[0].closest('form') || document;
   const inputs: any[] = [...scope.querySelectorAll('input')].filter(visible);
-  // The name box is the last text-like box before the password box.
-  const name = inputs.slice(0, inputs.indexOf(boxes[0])).filter((el) => ['email', 'text', 'tel'].includes(el.type)).pop();
+  // The name box is the last editable text-like box before the password box.
+  const name = inputs.slice(0, inputs.indexOf(boxes[0]))
+    .filter((el) => ['email', 'text', 'tel'].includes(el.type) && !el.readOnly && !el.disabled).pop();
   const button: any = scope.querySelector('button[type=submit], input[type=submit]')
     || [...scope.querySelectorAll('button, [role="button"]')].find((el: any) => /^(sign in|log in|login|continue|next)$/i.test(String(el.innerText || '').trim()));
-  if (!name || !button) return false;
+  if (!button) return false;
   for (const [el, value] of [[name, username], [boxes[0], password]] as any[]) {
+    if (!el) continue;
     // React keeps its own copy of the value, so go through the native setter.
     Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, value);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
+    for (const type of ['input', 'change', 'keyup']) el.dispatchEvent(new Event(type, { bubbles: true }));
   }
   button.click();
   return true;
+}
+
+/** True when the page asks for a one-time code or another second step that only the user can do. */
+export function asksForCode(): any {
+  return /(verification|security|one[- ]time|authentication) (code|passcode|password)|two[- ]step|2[- ]step|two[- ]factor|authenticator app/i
+    .test(document.body?.innerText || '');
 }
 
 /** Switches a sign-up page to its sign-in view. */
@@ -398,12 +435,23 @@ export function hasCaptchaWall(): any {
 export function followApplyLink(peek?: boolean): any {
   const el: any = [...document.querySelectorAll('a, button')].find((candidate: any) =>
     candidate.getClientRects().length > 0
-    && /^(apply|apply now|apply here|apply manually|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
+    && /^(apply|apply now|apply here|apply manually|easy apply|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
   if (!el) return null;
   if (peek) return 'present';
   if (el.tagName === 'A' && /^https?:/.test(el.href)) return el.href;
   el.click();
   return 'clicked';
+}
+
+/**
+ * The address of the page's own sign-in link, or null. Used on job boards
+ * where the Apply button does nothing for a visitor who is not signed in.
+ */
+export function signInLink(): any {
+  const el: any = [...document.querySelectorAll('a')].find((candidate: any) =>
+    candidate.getClientRects().length > 0 && /^https?:/.test(candidate.href)
+    && /^(sign in|log in|login|sign in to apply|log in to apply)$/i.test(String(candidate.innerText || '').trim()));
+  return el ? el.href : null;
 }
 
 /** What the page shows after the submit click. */
@@ -426,12 +474,36 @@ export function readOutcome(): any {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** True when `host` is the job link's host or shares its last two labels (a subdomain of the same site). */
+/**
+ * True when `host` is the job link's host or another name on the same site
+ * (careers.ibm.com and login.ibm.com). Numeric addresses only match exactly.
+ */
 export function sameSite(host: string, jobUrl: string): boolean {
   let jobHost = '';
   try { jobHost = new URL(jobUrl).hostname.toLowerCase(); } catch { return false; }
-  const tail = (name: string) => name.toLowerCase().split('.').slice(-2).join('.');
-  return Boolean(host) && Boolean(jobHost) && (host.toLowerCase() === jobHost || tail(host) === tail(jobHost));
+  host = host.toLowerCase();
+  if (!host || !jobHost) return false;
+  if (host === jobHost) return true;
+  if (/^[\d.]+$|:/.test(host) || /^[\d.]+$|:/.test(jobHost)) return false;
+  const site = (name: string) => {
+    const labels = name.split('.');
+    // "example.co.in": under a two-letter country code, a generic second
+    // level is shared by everyone, so the site is one label deeper.
+    const deep = labels.length >= 3 && labels[labels.length - 1].length === 2
+      && /^(co|com|org|net|gov|edu|ac)$/.test(labels[labels.length - 2]);
+    return labels.slice(deep ? -3 : -2).join('.');
+  };
+  return site(host) === site(jobHost);
+}
+
+/**
+ * Whether a saved login may be typed on a sign-in page: only over a secure
+ * connection, and only on the job link's own site. Where a page sends the
+ * browser is its choice; where a password goes is not.
+ */
+export function loginPageAllowed(protocol: string, host: string, jobUrl: string): boolean {
+  const local = host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1';
+  return (protocol === 'https:' || local) && sameSite(host, jobUrl);
 }
 const failed = (message: string): ApplyResult => ({ status: 'failed', message });
 
@@ -465,8 +537,12 @@ export async function runApplication(page: Page, options: {
   saved: Record<string, string>;
   resume: { name: string; base64: string };
   submit: boolean;
-  /** The user's own saved login for this site, used only if the site asks for a sign-in. */
-  login?: { username: string; password: string } | null;
+  /**
+   * Looks up the login the user saved for one sign-in address. Called only
+   * when the browser is on a sign-in page at that address, so a login is never
+   * fetched for, or typed on, any other.
+   */
+  loginFor?: (host: string) => Promise<{ username: string; password: string } | null>;
   /**
    * Called just before the Submit button is pressed. From this point the
    * application may reach the employer even if nothing after it is observed,
@@ -493,7 +569,7 @@ export async function runApplication(page: Page, options: {
       // it is; waiting the full time for fields that will not come costs 20s.
       if (found.length < 2 && attempt >= 3 && attempt % 2 === 1) {
         const landed = (await page.evaluate(followApplyLink, true).catch(() => null))
-          || (await page.evaluate(hasPasswordField).catch(() => false));
+          || (await page.evaluate(loginStage).catch(() => ''));
         if (landed) break;
       }
     }
@@ -506,48 +582,85 @@ export async function runApplication(page: Page, options: {
   // case nothing is submitted unless a later page did take the resume.
   const isForm = async () => takesResume(fields)
     || (fields.length >= 3 && (await page.evaluate(findAction).catch(() => ({ kind: '' }))).kind === 'next');
-  const strict = ['other', 'workday'].includes(detectPlatform(options.url));
+  // Every site goes through the same engine. Greenhouse and Lever open
+  // straight on their form; anywhere else there may be an Apply button or a
+  // sign-in first, and the largest form on a page could be a search box or a
+  // newsletter signup, so an application form is the one that takes a resume.
+  const strict = !['greenhouse', 'lever'].includes(detectPlatform(options.url));
 
-  // An unknown site gets stricter checks, because the largest form on a page
-  // could be a search box or a newsletter signup: an application form is the
-  // one that takes a resume.
   if (strict) {
-    const wantsLogin = () => page.evaluate(hasPasswordField).catch(() => false);
-    const askForLogin = (rejected: boolean): ApplyResult => ({
+    const stageOf = (): Promise<string> => page.evaluate(loginStage).catch(() => '');
+    const whereNow = (): Promise<{ host: string; protocol: string }> =>
+      page.evaluate(() => ({ host: location.hostname, protocol: location.protocol })).catch(() => ({ host: '', protocol: '' }));
+    const noSignInForm = failed('We could not find the sign-in form on this site.');
+    const askForLogin = (site: string, rejected: boolean): ApplyResult => ({
       status: 'needs_login',
+      site,
       message: rejected
-        ? 'The site did not accept this login, or asked for a code we cannot enter. Check the details and try again.'
-        : 'This site only takes applications from a signed-in account.',
+        ? `${site} did not accept the sign-in we have for you, or asked for a step we cannot do. Check the details and try again.`
+        : `${site} only takes applications from a signed-in account.`,
     });
 
     // Between the job link and the form there may be an Apply button, a
-    // sign-in page, or both. Take up to four such steps.
+    // sign-in page, or both. Take up to six such steps.
     let signedIn = false;
-    for (let step = 0; step < 4 && !(await isForm()); step++) {
-      if (await wantsLogin()) {
-        if (!options.login || signedIn) return askForLogin(signedIn);
-        // The page decides where its links go; it does not decide where a
-        // password is typed. Only the job link's own site gets the login.
-        const host: string = await page.evaluate(() => location.hostname).catch(() => '');
-        if (!sameSite(host, options.url)) {
-          return failed('The sign-in page is on a different site from the job link, so your login was not entered there.');
+    let lastApply = ''; // what the previous Apply step did: an address it went to, or 'clicked'
+    let followedSignIn = false;
+    for (let step = 0; step < 6 && !(await isForm()); step++) {
+      let stage = await stageOf();
+      if (stage) {
+        const page1 = await whereNow();
+        if (!loginPageAllowed(page1.protocol, page1.host, options.url)) {
+          return failed("The sign-in page is not on the job link's own secure site, so your login was not entered there.");
         }
-        if (!(await page.evaluate(signIn, options.login))) {
+        // One attempt per run: a sign-in page that comes back means it was refused.
+        const login = signedIn ? null : await options.loginFor?.(page1.host);
+        if (!login) return askForLogin(page1.host, signedIn);
+
+        if (stage === 'signup') {
           await page.evaluate(openSignIn);
           await sleep(1500);
-          if (!(await page.evaluate(signIn, options.login))) return failed('We could not find the sign-in form on this site.');
+          stage = await stageOf();
         }
+        if (stage === 'identifier') {
+          if (!(await page.evaluate(enterIdentifier, login.username))) return noSignInForm;
+          // The password box arrives on the next page, or never if the name is not recognised.
+          for (let attempt = 0; attempt < 24 && stage !== 'password'; attempt++) {
+            await sleep(500);
+            stage = await stageOf();
+          }
+          if (stage !== 'password') return askForLogin(page1.host, true);
+          // The login was saved for one address, so the password goes nowhere else.
+          if ((await whereNow()).host !== page1.host) {
+            return failed('This site moves its sign-in to another address partway through, so your password was not entered.');
+          }
+        }
+        if (stage !== 'password' || !(await page.evaluate(signIn, login))) return noSignInForm;
         signedIn = true;
+        lastApply = '';
         await sleep(4000);
+      } else if (lastApply === 'clicked') {
+        // The Apply button was pressed and brought up neither a form nor a
+        // sign-in page. On a job board that means "sign in first": follow the
+        // page's own sign-in link, once.
+        const signIn = followedSignIn ? null : await page.evaluate(signInLink).catch(() => null);
+        if (!signIn) break;
+        followedSignIn = true;
+        lastApply = '';
+        await page.send('Page.navigate', { url: signIn });
       } else {
         // Probably the job posting: follow its Apply link and look again.
         const next = await page.evaluate(followApplyLink).catch(() => null);
         if (!next) break;
+        lastApply = next;
         if (next !== 'clicked') await page.send('Page.navigate', { url: next });
       }
       fields = await settle();
     }
-    if (!(await isForm()) && await wantsLogin()) return askForLogin(signedIn);
+    if (!(await isForm()) && await stageOf()) return askForLogin((await whereNow()).host, signedIn);
+    if (!(await isForm()) && signedIn && await page.evaluate(asksForCode).catch(() => false)) {
+      return failed('The site asked for a verification code after sign-in. Only you can enter that, so please finish this application on the site.');
+    }
     if (!(await isForm()) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
       return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
     }

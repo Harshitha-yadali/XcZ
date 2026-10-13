@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { decryptSecret, encryptSecret, siteOf } from './vault.ts';
+import { decryptSecret, encryptSecret } from './vault.ts';
 
 const key = 'a-long-random-test-key-0123456789abcdef';
 
@@ -24,10 +24,5 @@ describe('vault', () => {
 
   it('refuses a short key', async () => {
     await expect(encryptSecret('secret', 'short')).rejects.toThrow(/32 characters/);
-  });
-
-  it('files a login under the hostname of the job link', () => {
-    expect(siteOf('https://Genpact.wd1.myworkdayjobs.com/en-US/jobs/1?x=1')).toBe('genpact.wd1.myworkdayjobs.com');
-    expect(siteOf('not a url')).toBe('');
   });
 });

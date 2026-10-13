@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openPage } from '../supabase/functions/_shared/cdp.ts';
-import { detectPlatform, runApplication, unsupportedReason } from '../supabase/functions/_shared/applyForm.ts';
+import { detectPlatform, runApplication } from '../supabase/functions/_shared/applyForm.ts';
 
 const CHROME_PATHS = [
   process.env.CHROME,
@@ -22,7 +22,7 @@ const CHROME_PATHS = [
 
 const url = process.argv[2];
 if (!url) throw new Error('Usage: node --experimental-strip-types scripts/auto-apply-dryrun.mjs <job url>');
-console.log('platform:', detectPlatform(url), '| blocked:', unsupportedReason(detectPlatform(url)) ?? 'no');
+console.log('platform:', detectPlatform(url));
 
 const chrome = CHROME_PATHS.find((candidate) => existsSync(candidate));
 if (!chrome) throw new Error('Chrome not found; set the CHROME environment variable.');

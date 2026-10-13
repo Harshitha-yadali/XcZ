@@ -2,9 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import { denied, getCaller } from "../_shared/auth.ts";
-import { decryptSecret, siteOf } from "../_shared/vault.ts";
+import { decryptSecret } from "../_shared/vault.ts";
 import { openPage, type Page } from "../_shared/cdp.ts";
-import { answerKey, detectPlatform, runApplication, unsupportedReason, type ApplyResult, type Question } from "../_shared/applyForm.ts";
+import { answerKey, detectPlatform, runApplication, type ApplyResult, type Question } from "../_shared/applyForm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,7 +106,7 @@ Deno.serve(async (req: Request) => {
     // whose data is used or which site the browser visits.
     const { data: application } = await supabase
       .from('auto_apply_applications')
-      .select('id, application_url, resume_version_id, status')
+      .select('id, application_url, resume_version_id, status, job_listing_id')
       .eq('id', applicationId)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -114,6 +114,8 @@ Deno.serve(async (req: Request) => {
 
     const platform = detectPlatform(application.application_url);
     const startTime = Date.now();
+    // The sign-in address whose saved login was handed to the browser on this run, if any.
+    let usedLoginFor = '';
 
     const finish = async (result: ApplyResult) => {
       const submitted = result.status === 'submitted';
@@ -137,6 +139,19 @@ Deno.serve(async (req: Request) => {
 
       if (submitting && (submitted || result.status === 'failed')) await updateAnalytics(supabase, user.id, platform, submitted);
 
+      // Remember whether the saved login still works. If one is missing or
+      // was refused, the app asks on screen and the user also gets an email,
+      // in case they have already left the page.
+      const refused = result.status === 'needs_login' && Boolean(usedLoginFor) && usedLoginFor === result.site;
+      if (usedLoginFor) {
+        await supabase.from('user_credentials_vault')
+          .update({ is_verified: !refused, last_used: new Date().toISOString() })
+          .eq('user_id', user.id).eq('platform', usedLoginFor);
+      }
+      if (result.status === 'needs_login' && result.site) {
+        await emailLoginRequest(supabase, user, application.job_listing_id, result.site, refused);
+      }
+
       return new Response(
         JSON.stringify({
           success: submitted,
@@ -148,7 +163,8 @@ Deno.serve(async (req: Request) => {
           filled: result.status === 'dry_run' ? result.filled : undefined,
           answers: result.answers,
           consents: result.consents,
-          site: result.status === 'needs_login' ? siteOf(application.application_url) : undefined,
+          // needs_login: the address of the sign-in page, which the login is saved for.
+          site: result.site,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -170,9 +186,6 @@ Deno.serve(async (req: Request) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
-
-    const blocked = unsupportedReason(platform);
-    if (blocked) return fail(blocked);
 
     const browserWs = Deno.env.get('BROWSER_WS');
     if (!browserWs) return fail('Auto-apply is not switched on yet. Please apply from the job link.');
@@ -207,25 +220,28 @@ Deno.serve(async (req: Request) => {
     const { data: resumeFile, error: resumeError } = await supabase.storage.from(RESUME_BUCKET).download(resumePath);
     if (resumeError || !resumeFile) return fail('The tailored resume for this job could not be read.');
 
-    // The login the user saved for this job site, if any. A value that no
-    // longer decrypts is treated as missing, so the user is asked again.
-    let login: { username: string; password: string } | null = null;
+    // Looks up the login the user saved for one sign-in address. The engine
+    // calls this only while the browser is on a sign-in page at that address,
+    // so a login is never read for a site the application did not reach. A
+    // value that no longer decrypts counts as missing, and the user is asked.
     const credentialsKey = Deno.env.get('CREDENTIALS_KEY');
-    if (credentialsKey) {
+    const loginFor = async (host: string) => {
+      if (!credentialsKey) return null;
       const { data: stored } = await supabase
         .from('user_credentials_vault')
         .select('username, password_encrypted')
         .eq('user_id', user.id)
-        .eq('platform', siteOf(application.application_url))
+        .eq('platform', host)
         .maybeSingle();
-      if (stored?.username && stored.password_encrypted) {
-        try {
-          login = { username: stored.username, password: await decryptSecret(stored.password_encrypted, credentialsKey) };
-        } catch {
-          login = null;
-        }
+      if (!stored?.username || !stored.password_encrypted) return null;
+      try {
+        const password = await decryptSecret(stored.password_encrypted, credentialsKey);
+        usedLoginFor = host;
+        return { username: stored.username, password };
+      } catch {
+        return null;
       }
-    }
+    };
 
     const fullName = profile.full_name || '';
     const content = resume?.resume_content || {};
@@ -269,7 +285,7 @@ Deno.serve(async (req: Request) => {
           base64: encodeBase64(new Uint8Array(await resumeFile.arrayBuffer())),
         },
         submit: submitting,
-        login,
+        loginFor,
         // Answers are inferred only while preparing, so the user sees every
         // one of them on the review screen. Nothing unreviewed is sent.
         infer: submitting
@@ -310,6 +326,74 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
+
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
+
+/**
+ * Emails the user that a job site needs their sign-in, or that the one we
+ * have was refused. At most one such email a day per site: the app already
+ * asks on screen, so this is for the user who has left it. Never throws; a
+ * failed email must not fail the application.
+ */
+async function emailLoginRequest(
+  supabase: any,
+  user: { id: string; email?: string | null },
+  jobListingId: string,
+  site: string,
+  refused: boolean,
+) {
+  try {
+    if (!user.email) return;
+    const subject = `${refused ? 'Update' : 'Add'} your ${site} sign-in to finish your application`;
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('email_logs')
+      .select('id')
+      .eq('user_id', user.id).eq('email_type', 'notification').eq('subject', subject).eq('status', 'sent')
+      .gte('sent_at', since)
+      .limit(1);
+    if (recent?.length) return;
+
+    const { data: job } = await supabase
+      .from('job_listings').select('role_title, company_name').eq('id', jobListingId).maybeSingle();
+    // The job text was collected from the web and the site name comes from a
+    // page address, so both are escaped before they go into the email.
+    const where = escapeHtml(site);
+    const what = job?.role_title && job?.company_name
+      ? `an application for ${escapeHtml(job.role_title)} at ${escapeHtml(job.company_name)}`
+      : 'an application';
+    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <p>Hi,</p>
+  <p>You started ${what} on PrimoBoost. ${refused
+    ? `${where} did not accept the sign-in we have for you. Your password there may have changed, or the site asked for an extra step that only you can do.`
+    : `${where} only takes applications from a signed-in account, and we don't have your sign-in for it yet.`}</p>
+  <p>To continue:</p>
+  <ol>
+    <li>Open the job on PrimoBoost.</li>
+    <li>Click Auto Apply.</li>
+    <li>${refused
+      ? `Enter your current email and password for ${where} when asked.`
+      : `Enter the email and password you use on ${where} when asked.`}</li>
+  </ol>
+  ${refused ? '' : `<p>If you have no account on ${where} yet, create one there first, then come back.</p>`}
+  <p><a href="${siteUrl}/jobs/${encodeURIComponent(jobListingId)}" style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 20px; border-radius: 8px; text-decoration: none;">Open the job</a></p>
+  <p>We never ask for a password by email. Enter it only in the PrimoBoost app. We store it encrypted and use it only to sign in on ${where} for applications you start.</p>
+</body>
+</html>`;
+
+    // Loaded only here: the mail library is not needed on a normal run.
+    const { EmailService, logEmailSend } = await import('../_shared/emailService.ts');
+    const sent = await new EmailService().sendEmail({ to: user.email, subject, html });
+    await logEmailSend(supabase, user.id, 'notification', user.email, subject, sent.success ? 'sent' : 'failed', sent.error);
+  } catch (error) {
+    console.error('Could not email the sign-in request:', error);
+  }
+}
 
 async function updateAnalytics(supabase: any, userId: string, platform: string, success: boolean) {
   const today = new Date().toISOString().split('T')[0];

@@ -28,8 +28,3 @@ export async function decryptSecret(stored: string, secret: string): Promise<str
   const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12) }, await keyFrom(secret), bytes.slice(12));
   return new TextDecoder().decode(plain);
 }
-
-/** The key a saved login is filed under: the hostname of the job's link. */
-export function siteOf(url: string): string {
-  try { return new URL(url).hostname.toLowerCase(); } catch { return ''; }
-}

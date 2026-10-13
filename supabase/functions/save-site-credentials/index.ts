@@ -1,11 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { denied, getCaller } from "../_shared/auth.ts";
-import { encryptSecret, siteOf } from "../_shared/vault.ts";
+import { encryptSecret } from "../_shared/vault.ts";
 
-// Stores the login a user gives us for one job site, so auto-apply can sign
-// in there for them. The password is encrypted before it is written and is
-// never sent back to the browser.
+// Stores the login a user gives us for one sign-in address (login.ibm.com,
+// www.linkedin.com, a company's Workday site), so auto-apply can sign in
+// there for them. The password is encrypted before it is written and is never
+// sent back to the browser.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,9 +27,14 @@ Deno.serve(async (req: Request) => {
     const secret = Deno.env.get('CREDENTIALS_KEY');
     if (!secret) return json({ success: false, error: 'Saving site logins is not set up yet.' }, 503);
 
-    const { jobUrl, username, password } = await req.json();
-    const site = siteOf(String(jobUrl || ''));
-    if (!site) return json({ success: false, error: 'That job link is not valid.' }, 400);
+    // `site` is the address of the sign-in page that asked for the login, as
+    // returned by auto-apply-submit. The login is filed under it and is only
+    // ever typed on a sign-in page at exactly that address.
+    const { site: given, username, password } = await req.json();
+    const site = String(given || '').trim().toLowerCase();
+    if (!/^(?=.{1,253}$)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site)) {
+      return json({ success: false, error: 'That sign-in address is not valid.' }, 400);
+    }
     if (typeof username !== 'string' || !username.trim() || username.length > 320) {
       return json({ success: false, error: 'Enter the email or username you use on that site.' }, 400);
     }

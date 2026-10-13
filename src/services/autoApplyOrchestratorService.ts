@@ -220,20 +220,6 @@ class AutoApplyOrchestratorService {
 
       const platform = this.detectPlatform(applicationUrl);
 
-      // These sites need the user's own sign-in, so there is nothing we can
-      // submit: the user gets the tailored resume and the link to finish there.
-      if (['linkedin', 'naukri', 'indeed'].includes(platform)) {
-        return {
-          success: false,
-          error: 'MANUAL_APPLY',
-          manualReason: 'This site needs your own sign-in, so we cannot submit there for you.',
-          resumeId,
-          matchScore,
-          pdfUrl,
-          resumeFlags,
-        };
-      }
-
       const applicationId = await this.createApplication(
         userId,
         jobId,
@@ -244,9 +230,10 @@ class AutoApplyOrchestratorService {
 
       return await this.submitApplication(jobId, {
         success: false,
-        // An unknown site is only attempted; if its form cannot be sent, the
-        // user finishes there with the tailored resume.
-        manualFallback: platform === 'other' || platform === 'workday',
+        // Every site goes through the same engine. Greenhouse and Lever are
+        // the tested ones; anywhere else, a form that cannot be sent hands
+        // the user the tailored resume to finish there.
+        manualFallback: platform !== 'greenhouse' && platform !== 'lever',
         applicationId,
         resumeId,
         matchScore,
@@ -411,7 +398,7 @@ class AutoApplyOrchestratorService {
     const platform = this.detectPlatform(applicationUrl);
     return this.submitApplication(jobId, {
       success: false,
-      manualFallback: platform === 'other' || platform === 'workday',
+      manualFallback: platform !== 'greenhouse' && platform !== 'lever',
       applicationId: live.id,
       resumeId: live.resume_version_id || undefined,
       pdfUrl: signed?.signedUrl,
@@ -419,8 +406,11 @@ class AutoApplyOrchestratorService {
     });
   }
 
-  /** Saves the user's own login for the site a job is on. The password is encrypted on the server. */
-  async saveSiteLogin(jobUrl: string, username: string, password: string): Promise<void> {
+  /**
+   * Saves the user's own login for one sign-in address, the `loginSite` a
+   * LOGIN_REQUIRED result names. The password is encrypted on the server.
+   */
+  async saveSiteLogin(site: string, username: string, password: string): Promise<void> {
     const { data: { session } } = await supabase.auth.getSession();
     const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('save-site-credentials'), {
       method: 'POST',
@@ -428,7 +418,7 @@ class AutoApplyOrchestratorService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({ jobUrl, username, password }),
+      body: JSON.stringify({ site, username, password }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.success) {
