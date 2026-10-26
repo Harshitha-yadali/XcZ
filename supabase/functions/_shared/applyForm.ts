@@ -106,6 +106,13 @@ function pickOption(options: string[], answer: string): string {
  * Decides what goes into each field. A required field we have no answer for
  * becomes a question for the user; nothing is ever guessed.
  */
+// A box that accepts the employer's own notice or terms. Opting in to
+// marketing, job alerts or a talent community is not part of applying, so a
+// box like that is never ticked for the user: it is asked about instead.
+export const isTermsBox = (label: string): boolean =>
+  /privacy|terms|consent|agree|acknowledg|data protection|gdpr|use (this|my) (data|information)/i.test(label)
+  && !/newsletter|marketing|promotion|job alert|talent (community|network)|sms|whatsapp/i.test(label);
+
 export function planFill(fields: FormField[], profile: ApplicantProfile, saved: Record<string, string>) {
   const fills: Fill[] = [];
   const missing: Question[] = [];
@@ -115,6 +122,9 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
     let value = saved[key] || profileAnswer(field.label, profile) || '';
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
+    // Auto Apply applies as the user, so the employer's own privacy notice and
+    // terms are accepted with the application rather than stopping to ask.
+    if (field.type === 'checkbox' && !value && isTermsBox(field.label)) value = 'yes';
     if (field.type === 'checkbox' && !/^(yes|true|on)$/i.test(value)) value = '';
     if (value && field.dialCode) {
       const digits = value.replace(/\D/g, '');

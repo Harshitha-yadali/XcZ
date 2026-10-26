@@ -113,10 +113,17 @@ describe('planFill', () => {
     expect(fills[0].value).toBe('English (ENG) | Hindi (HIN)');
   });
 
-  it('ticks a consent box only when the user said yes', () => {
+  it('accepts the employer terms with the application, without being asked', () => {
     const consent = field(0, 'I agree to the privacy policy', { type: 'checkbox' });
-    expect(planFill([consent], profile, {}).missing).toHaveLength(1);
-    expect(planFill([consent], profile, { 'i agree to the privacy policy': 'yes' }).fills).toHaveLength(1);
+    expect(planFill([consent], profile, {}).fills).toHaveLength(1);
+    expect(planFill([consent], profile, {}).missing).toHaveLength(0);
+  });
+
+  it('never ticks a marketing or job-alert box for the user', () => {
+    const alerts = field(0, 'I agree to receive job alerts and marketing emails', { type: 'checkbox', required: true });
+    expect(planFill([alerts], profile, {}).fills).toHaveLength(0);
+    expect(planFill([alerts], profile, {}).missing).toHaveLength(1);
+    expect(planFill([alerts], profile, { 'i agree to receive job alerts and marketing emails': 'yes' }).fills).toHaveLength(1);
   });
 
   it('never fills file inputs or unlabelled fields', () => {

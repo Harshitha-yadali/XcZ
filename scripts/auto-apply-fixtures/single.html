@@ -30,6 +30,7 @@
     </ul>
   </div>
   <label><input id="consent" type="checkbox">Allow Example Corp to use this data for managing your application.</label>
+  <label><input id="alerts" type="checkbox">Send me job alerts and marketing emails about other roles.</label>
   <div id="problems"></div>
   <button id="send" type="submit" disabled>Submit</button>
 </form>
@@ -52,6 +53,7 @@
     const sent = {
       name: byId('name').value, email: byId('email').value, phone: byId('phone').value,
       gender: box.value, resume: byId('resume').files[0]?.name || '', consent: byId('consent').checked,
+      alerts: byId('alerts').checked,
     };
     const problems = [];
     if (!/^\d{10}$/.test(sent.phone)) problems.push('Please enter a valid contact number');

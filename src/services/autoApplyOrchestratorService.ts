@@ -263,16 +263,19 @@ class AutoApplyOrchestratorService {
     answers?: Record<string, string>
   ): Promise<AutoApplyResult> {
     try {
-      // Until the user approves on the review screen, the form is only filled
-      // and read back; the Submit button is not touched.
-      this.updateStatus(jobId, pending.approved
-        ? { step: 'submitting', progress: 90, message: 'Applying...', currentAction: 'Sending your approved application' }
-        : { step: 'submitting', progress: 85, message: 'Preparing...', currentAction: "Reading the employer's form" });
+      // Auto Apply applies as the user, so there is no separate approval step:
+      // the form is sent as soon as nothing is missing. The engine still stops
+      // before the Submit button whenever it needs something, so a question the
+      // resume cannot answer comes back as `needs_input`, and a sign-in wall as
+      // `needs_login`. The run holds there until the user supplies it.
+      this.updateStatus(jobId, {
+        step: 'submitting', progress: 90, message: 'Applying...', currentAction: 'Sending your application',
+      });
 
       const outcome = await this.triggerFormSubmission(pending.applicationId!, {
         answers,
-        mode: pending.approved ? 'submit' : 'review',
-        reviewed: pending.approved ? pending.reviewedAnswers : undefined,
+        mode: 'submit',
+        reviewed: pending.reviewedAnswers,
       });
 
       if (outcome.status === 'needs_input') {

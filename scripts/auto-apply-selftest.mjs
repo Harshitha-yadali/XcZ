@@ -79,32 +79,33 @@ try {
     assert.equal(sent, null);
   });
 
-  await check('asks for consent when the submit button is switched off', { url: fixture('single.html'), saved: { gender: 'Female' } }, (result, sent) => {
-    assert.equal(result.status, 'needs_input');
-    assert.equal(result.questions[0].type, 'checkbox');
-    assert.match(result.questions[0].label, /Allow Example Corp/);
-    assert.equal(sent, null);
+  await check('accepts the employer terms itself, rather than stopping to ask', { url: fixture('single.html'), saved: { gender: 'Female' } }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.equal(sent.consent, true);
   });
 
   await check('submits a single-page form and reads its confirmation', { url: fixture('single.html'), saved: { gender: 'Female', [consent]: 'yes' } }, (result, sent) => {
     assert.equal(result.status, 'submitted', result.message);
     assert.deepEqual(sent, {
       name: 'Asha Verma', email: 'asha.verma@example.com', phone: '9876543210',
-      gender: 'Female', resume: 'Asha_Verma_Resume.pdf', consent: true,
+      gender: 'Female', resume: 'Asha_Verma_Resume.pdf', consent: true, alerts: false,
     });
   });
 
-  await check('prepares a review without sending: answers, and the consent box left for the user', { url: fixture('single.html'), saved: { gender: 'Male' }, submit: false }, (result, sent) => {
+  await check('prepares a review without sending: answers, and only the marketing box left open', { url: fixture('single.html'), saved: { gender: 'Male' }, submit: false }, (result, sent) => {
     assert.equal(result.status, 'dry_run');
     assert.equal(result.answers.gender, 'Male');
     assert.equal(result.answers['full name'], 'Asha Verma');
-    assert.deepEqual(result.consents.map((box) => box.key), [consent]);
+    // The employer's terms box is ticked with the application, so the only box
+    // still open is the marketing opt-in, which is never ticked for the user.
+    assert.deepEqual(result.consents.map((box) => box.key), ['send me job alerts and marketing emails about other roles']);
     assert.equal(sent, null);
   });
 
-  await check('never ticks a consent box the user did not choose', { url: fixture('single.html'), saved: { gender: 'Male', 'always accept employer terms': 'yes' } }, (result, sent) => {
-    assert.equal(result.status, 'needs_input');
-    assert.equal(sent, null);
+  await check('never ticks a marketing or job-alert box', { url: fixture('single.html'), saved: { gender: 'Male' } }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.equal(sent.consent, true, 'the employer terms box is accepted');
+    assert.equal(sent.alerts, false, 'marketing and job alerts are never opted into');
   });
 
   let pressedAt = 0;
