@@ -46,14 +46,7 @@ export interface AutoApplyResult {
   loginMessage?: string;
   /** Facts in the tailored resume that the user's original resume does not state. */
   resumeFlags?: string[];
-  /**
-   * With error 'REVIEW_REQUIRED': the form is filled and nothing is sent. The
-   * user approves `filled` and picks from `consents`; `reviewed` is the same
-   * answers by key, sent back on approval.
-   */
-  review?: { filled: Record<string, string>; reviewed: Record<string, string>; consents: ApplyQuestion[] };
-  /** Set once the user pressed Approve & Submit; from then on calls may send the application. */
-  approved?: boolean;
+  /** Answers that authorise this application alone and are never remembered. */
   reviewedAnswers?: Record<string, string>;
   /** With error 'SUBMISSION_UNCERTAIN': why the outcome is not known. */
   uncertainMessage?: string;
@@ -272,23 +265,28 @@ class AutoApplyOrchestratorService {
         step: 'submitting', progress: 90, message: 'Applying...', currentAction: 'Sending your application',
       });
 
+      // A tick against one employer's declaration authorises that application
+      // and nothing else, so it must not be remembered as an answer: the next
+      // employer's similarly worded box would then be ticked unasked. Answers
+      // to checkbox questions travel in `reviewed`, which the server applies to
+      // this run only; everything else is saved and reused as before.
+      const perApplication = new Set(
+        (pending.questions || []).filter((question) => question.type === 'checkbox').map((question) => question.key)
+      );
+      const remembered: Record<string, string> = {};
+      const thisRunOnly: Record<string, string> = { ...(pending.reviewedAnswers || {}) };
+      for (const [key, value] of Object.entries(answers || {})) {
+        (perApplication.has(key) ? thisRunOnly : remembered)[key] = value;
+      }
+
       const outcome = await this.triggerFormSubmission(pending.applicationId!, {
-        answers,
+        answers: Object.keys(remembered).length ? remembered : undefined,
         mode: 'submit',
-        reviewed: pending.reviewedAnswers,
+        reviewed: Object.keys(thisRunOnly).length ? thisRunOnly : undefined,
       });
 
       if (outcome.status === 'needs_input') {
         return { ...pending, success: false, error: 'INPUT_REQUIRED', questions: outcome.questions || [] };
-      }
-      if (outcome.status === 'ready_for_review') {
-        return {
-          ...pending,
-          success: false,
-          error: 'REVIEW_REQUIRED',
-          questions: undefined,
-          review: { filled: outcome.filled || {}, reviewed: outcome.answers || {}, consents: outcome.consents || [] },
-        };
       }
       // Checked before any fallback: an uncertain submission must not be
       // offered as "finish it yourself", which would invite a second one.
@@ -341,23 +339,6 @@ class AutoApplyOrchestratorService {
       });
       return { ...pending, success: false, error: error.message, questions: undefined };
     }
-  }
-
-  /**
-   * The user pressed Approve & Submit on the review screen. Sends exactly what
-   * they saw, plus a tick for each consent box they chose.
-   */
-  async approveApplication(jobId: string, pending: AutoApplyResult, consentKeys: string[]): Promise<AutoApplyResult> {
-    return this.submitApplication(jobId, {
-      ...pending,
-      error: undefined,
-      review: undefined,
-      approved: true,
-      reviewedAnswers: {
-        ...pending.review?.reviewed,
-        ...Object.fromEntries(consentKeys.map((key) => [key, 'yes'])),
-      },
-    });
   }
 
   /** The user's application for this job that still holds the duplicate lock, if any. */

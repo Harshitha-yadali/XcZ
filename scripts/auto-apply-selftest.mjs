@@ -79,9 +79,11 @@ try {
     assert.equal(sent, null);
   });
 
-  await check('accepts the employer terms itself, rather than stopping to ask', { url: fixture('single.html'), saved: { gender: 'Female' } }, (result, sent) => {
-    assert.equal(result.status, 'submitted', result.message);
-    assert.equal(sent.consent, true);
+  await check('pauses for a required acknowledgement the user has not authorised', { url: fixture('single.html'), saved: { gender: 'Female' } }, (result, sent) => {
+    assert.equal(result.status, 'needs_input');
+    assert.equal(result.questions[0].type, 'checkbox');
+    assert.match(result.questions[0].label, /Allow Example Corp/);
+    assert.equal(sent, null);
   });
 
   await check('submits a single-page form and reads its confirmation', { url: fixture('single.html'), saved: { gender: 'Female', [consent]: 'yes' } }, (result, sent) => {
@@ -96,15 +98,13 @@ try {
     assert.equal(result.status, 'dry_run');
     assert.equal(result.answers.gender, 'Male');
     assert.equal(result.answers['full name'], 'Asha Verma');
-    // The employer's terms box is ticked with the application, so the only box
-    // still open is the marketing opt-in, which is never ticked for the user.
-    assert.deepEqual(result.consents.map((box) => box.key), ['send me job alerts and marketing emails about other roles']);
+    assert.deepEqual(result.consents.map((box) => box.key), [consent, 'send me job alerts and marketing emails about other roles']);
     assert.equal(sent, null);
   });
 
-  await check('never ticks a marketing or job-alert box', { url: fixture('single.html'), saved: { gender: 'Male' } }, (result, sent) => {
+  await check('ticks only the box the user authorised, never the marketing one', { url: fixture('single.html'), saved: { gender: 'Male', [consent]: 'yes' } }, (result, sent) => {
     assert.equal(result.status, 'submitted', result.message);
-    assert.equal(sent.consent, true, 'the employer terms box is accepted');
+    assert.equal(sent.consent, true, 'the acknowledgement the user authorised is ticked');
     assert.equal(sent.alerts, false, 'marketing and job alerts are never opted into');
   });
 

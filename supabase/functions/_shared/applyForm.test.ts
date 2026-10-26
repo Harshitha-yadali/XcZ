@@ -113,17 +113,25 @@ describe('planFill', () => {
     expect(fills[0].value).toBe('English (ENG) | Hindi (HIN)');
   });
 
-  it('accepts the employer terms with the application, without being asked', () => {
-    const consent = field(0, 'I agree to the privacy policy', { type: 'checkbox' });
-    expect(planFill([consent], profile, {}).fills).toHaveLength(1);
-    expect(planFill([consent], profile, {}).missing).toHaveLength(0);
+  it('pauses for a required acknowledgement the user has not authorised', () => {
+    const consent = field(0, 'I agree to the privacy policy', { type: 'checkbox', required: true });
+    expect(planFill([consent], profile, {}).fills).toHaveLength(0);
+    expect(planFill([consent], profile, {}).missing).toHaveLength(1);
   });
 
-  it('never ticks a marketing or job-alert box for the user', () => {
-    const alerts = field(0, 'I agree to receive job alerts and marketing emails', { type: 'checkbox', required: true });
+  it('ticks an acknowledgement only once the user authorised that exact box', () => {
+    const consent = field(0, 'I agree to the privacy policy', { type: 'checkbox', required: true });
+    expect(planFill([consent], profile, { 'i agree to the privacy policy': 'yes' }).fills).toHaveLength(1);
+    // Authorising one box says nothing about another.
+    const other = field(0, 'I confirm I hold a valid work permit', { type: 'checkbox', required: true });
+    expect(planFill([other], profile, { 'i agree to the privacy policy': 'yes' }).missing).toHaveLength(1);
+  });
+
+  it('leaves an optional marketing opt-in alone instead of pausing for it', () => {
+    const alerts = field(0, 'Send me job alerts and marketing emails', { type: 'checkbox', required: false });
     expect(planFill([alerts], profile, {}).fills).toHaveLength(0);
-    expect(planFill([alerts], profile, {}).missing).toHaveLength(1);
-    expect(planFill([alerts], profile, { 'i agree to receive job alerts and marketing emails': 'yes' }).fills).toHaveLength(1);
+    expect(planFill([alerts], profile, {}).missing).toHaveLength(0);
+    expect(planFill([alerts], profile, { 'send me job alerts and marketing emails': 'yes' }).fills).toHaveLength(1);
   });
 
   it('never fills file inputs or unlabelled fields', () => {

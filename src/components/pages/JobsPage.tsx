@@ -27,7 +27,6 @@ import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationM
 import { AutoApplyStatusModal } from '../modals/AutoApplyStatusModal';
 import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
 import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
-import { AutoApplyReviewModal } from '../modals/AutoApplyReviewModal';
 import { Pagination } from '../common/Pagination';
 import { JobPreferencesOnboardingModal } from '../modals/JobPreferencesOnboardingModal';
 import { ProjectSuggestionModal } from '../modals/ProjectSuggestionModal';
@@ -104,8 +103,6 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     submitAnswers: submitAutoApplyAnswers,
     loginRequest: autoApplyLoginRequest,
     submitLogin: submitAutoApplyLogin,
-    review: autoApplyReview,
-    approveReview: approveAutoApplyReview,
     startAutoApply,
     handleProjectSelection,
     closeModals: closeAutoApplyModals,
@@ -661,14 +658,6 @@ const stats = [
             ? undefined
             : selectedJob?.application_link,
         } : null}
-      />
-
-      <AutoApplyReviewModal
-        review={autoApplyReview}
-        jobTitle={autoApplyJob?.role_title}
-        companyName={autoApplyJob?.company_name}
-        onApprove={approveAutoApplyReview}
-        onClose={() => closeAutoApplyModals()}
       />
 
       <AutoApplyStatusModal
