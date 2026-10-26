@@ -143,6 +143,27 @@ export function applyUrl(url: string): string {
 // ---- The functions below run inside the page. They are sent as source text,
 // ---- so they cannot use anything from this module.
 
+/**
+ * A cheap stand-in for scanForm, for polling. It counts the fillable fields and
+ * names them from attributes only, skipping the label hunt and the DOM tagging
+ * that make a full scan expensive. Waiting for a page with scanForm costs one
+ * whole-document walk every half second; this is what the waiting uses instead.
+ */
+export function fieldShape(): any {
+  const skip = ['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'];
+  const parts: string[] = [];
+  for (const el of document.querySelectorAll('input, textarea, select')) {
+    const kind = (el as any).type || el.tagName.toLowerCase();
+    if (skip.includes(kind) || (el as any).disabled || el.getAttribute('aria-hidden') === 'true') continue;
+    // The same filter scanForm uses: a form that shows one page at a time keeps
+    // the other pages in the document, and they are not fields until shown.
+    // File inputs are usually hidden behind a styled button, so keep those.
+    if (kind !== 'file' && !el.getClientRects().length) continue;
+    parts.push(`${kind}:${(el as any).id || (el as any).name || (el as any).placeholder || ''}`);
+  }
+  return { count: parts.length, shape: parts.join('|').slice(0, 4000) };
+}
+
 /** Lists the form's fields and tags each element with data-pb-field so fillForm can find it. */
 export function scanForm(): any {
   // Prefer the biggest real <form>, but only when it holds fields worth having.
@@ -567,25 +588,32 @@ export async function runApplication(page: Page, options: {
    */
   infer?: (questions: Question[]) => Promise<Record<string, string>>;
 }): Promise<ApplyResult> {
+  // A hosted worker is cut off without warning when it runs too long, which
+  // leaves an application in no state at all. Stopping ourselves first turns
+  // that into an answer the user can act on.
+  const startedAt = Date.now();
+  const outOfTime = () => Date.now() - startedAt > 110_000;
+
   await page.send('Page.navigate', { url: applyUrl(options.url) });
 
   // The form is drawn by script: wait until its field count stops changing.
   const settle = async () => {
-    let found: FormField[] = [];
+    let seen = { count: 0, shape: '' };
     for (let attempt = 0, stable = 0; attempt < 40 && stable < 3; attempt++) {
       await sleep(500);
-      const next: FormField[] = await page.evaluate(scanForm).catch(() => []);
-      stable = next.length > 1 && next.length === found.length ? stable + 1 : 0;
-      found = next;
+      const next = await page.evaluate(fieldShape).catch(() => ({ count: 0, shape: '' }));
+      stable = next.count > 1 && next.shape === seen.shape ? stable + 1 : 0;
+      seen = next;
       // A page with no form but an Apply link or a sign-in box has shown what
       // it is; waiting the full time for fields that will not come costs 20s.
-      if (found.length < 2 && attempt >= 3 && attempt % 2 === 1) {
+      if (seen.count < 2 && attempt >= 3 && attempt % 2 === 1) {
         const landed = (await page.evaluate(followApplyLink, true).catch(() => null))
           || (await page.evaluate(loginStage).catch(() => ''));
         if (landed) break;
       }
     }
-    return found;
+    // One full scan once the page has stopped changing, rather than one per poll.
+    return await page.evaluate(scanForm).catch(() => []) as FormField[];
   };
   // How many filled-in questions make a page an application rather than a
   // newsletter box, when it offers no resume upload to go by.
@@ -789,20 +817,29 @@ export async function runApplication(page: Page, options: {
     }
     if (action.kind !== 'next') break;
     if (pageNumber >= 8) return failed('This form has more pages than we can walk through.');
+    if (outOfTime()) {
+      return failed(`This form was still on page ${pageNumber} when we ran out of time. Nothing was sent. Your tailored resume is ready: finish it on the employer's page.`);
+    }
     if (action.disabled) return blockedButton();
 
     // Messages already on the page are not about this click.
     const before: string[] = (await page.evaluate(readOutcome).catch(() => null))?.errors || [];
-    const here = signature(scan);
+    const here = (await page.evaluate(fieldShape).catch(() => ({ shape: '' }))).shape;
     await page.evaluate(pressAction);
     let moved = false;
     for (let attempt = 0; attempt < 30 && !moved; attempt++) {
       await sleep(700);
-      const now: FormField[] | null = await page.evaluate(scanForm).catch(() => null);
+      // Polling with the cheap shape, not a full scan: a page that will not move
+      // otherwise costs thirty whole-document walks before we give up on it.
+      const now = await page.evaluate(fieldShape).catch(() => null);
       if (!now) continue; // the page is loading
-      if (signature(now) !== here) { moved = true; break; }
-      const fresh = ((await page.evaluate(readOutcome).catch(() => null))?.errors || []).filter((message: string) => !before.includes(message));
-      if (fresh.length && attempt > 4) return failed(`Page ${pageNumber} of the form was not accepted: ${fresh.join('; ')}`);
+      if (now.shape !== here) { moved = true; break; }
+      // The page is unchanged, so look for a rejection message, but not on every
+      // pass: reading the outcome means reading the whole page text.
+      if (attempt > 4 && attempt % 3 === 0) {
+        const fresh = ((await page.evaluate(readOutcome).catch(() => null))?.errors || []).filter((message: string) => !before.includes(message));
+        if (fresh.length) return failed(`Page ${pageNumber} of the form was not accepted: ${fresh.join('; ')}`);
+      }
     }
     if (!moved) return failed(`The form did not move on from page ${pageNumber}.`);
     fields = await settle();
