@@ -175,6 +175,14 @@ try {
     assert.equal(sent, null);
   });
 
+  await check('finds application fields that sit outside the page\'s only form', { url: fixture('outside-form.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(result.filled['First name'], 'Asha');
+    assert.equal(result.filled['Email address'], 'asha.verma@example.com');
+    assert.match(result.message, /Stopped at the Next button/);
+    assert.equal(sent, null);
+  });
+
   await check('calls a job board no application form, instead of offering an empty one', { url: fixture('board.html'), submit: false }, (result, sent) => {
     assert.equal(result.status, 'failed');
     assert.match(result.message, /No application form was found/);

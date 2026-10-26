@@ -145,7 +145,14 @@ export function applyUrl(url: string): string {
 
 /** Lists the form's fields and tags each element with data-pb-field so fillForm can find it. */
 export function scanForm(): any {
-  const root: any = [...document.forms].sort((a, b) => b.elements.length - a.elements.length)[0] || document.body;
+  // Prefer the biggest real <form>, but only when it holds fields worth having.
+  // Cisco and others lay the application out in plain divs and leave the page's
+  // only <form> around the site search, so scanning that form finds nothing.
+  const worthScanning = (element: any) =>
+    [...element.querySelectorAll('input, select, textarea')]
+      .filter((el: any) => !['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(el.type)).length;
+  const biggest: any = [...document.forms].sort((a, b) => worthScanning(b) - worthScanning(a))[0];
+  const root: any = biggest && worthScanning(biggest) >= 2 ? biggest : document.body;
   const clean = (text: any) => String(text || '').replace(/[*✱]/g, '').replace(/\s+/g, ' ').trim();
   const starred = (text: any) => /[*✱]/.test(String(text || ''));
   const firstLine = (el: any) => String(el?.innerText || '').trim().split('\n')[0];

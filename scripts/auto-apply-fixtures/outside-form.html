@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: application fields outside any form</title>
+<!--
+  Cisco's apply page, in miniature. The page's only <form> wraps the site
+  search; the application itself is plain divs outside it. Scanning the
+  biggest <form> finds nothing here, so the scan has to fall back to the
+  whole page when the form it picked holds no fields worth having.
+-->
+<form id="site-search" action="/search">
+  <input id="q" type="search" placeholder="Search jobs">
+  <input type="hidden" name="locale" value="en">
+</form>
+
+<h1>Contact info</h1>
+<div><label for="fn">First name</label><input id="fn" type="text" placeholder="Enter your first name"></div>
+<div><label for="ln">Last name</label><input id="ln" type="text" placeholder="Enter your last name"></div>
+<div><label for="em">Email address</label><input id="em" type="text" placeholder="Enter your email address"></div>
+<div><label for="ph">Phone number</label><input id="ph" type="text" placeholder="Enter your phone number"></div>
+<button id="next" type="button">Next</button>
