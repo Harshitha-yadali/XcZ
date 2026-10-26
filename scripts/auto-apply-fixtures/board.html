@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: employer job board, no application form</title>
+<!--
+  Where a closed posting lands. Greenhouse and Lever redirect a dead job link
+  to the employer's board, whose own search box and filter dropdowns scan as
+  form fields. Nothing here belongs to an applicant, so the engine must call
+  it "no application form" rather than offer an empty application for review.
+-->
+<h1>Jobs at Example Corp</h1>
+<label for="q">Search jobs</label>
+<input id="q" name="q" placeholder="Search by title">
+<label for="loc">Location</label>
+<select id="loc" name="loc"><option value="">Select...</option><option>Bengaluru</option><option>Hyderabad</option></select>
+<label for="dept">Department</label>
+<select id="dept" name="dept"><option value="">Select...</option><option>Engineering</option><option>Sales</option></select>
+<ul><li><a href="#">Software Engineer</a></li><li><a href="#">Data Analyst</a></li></ul>

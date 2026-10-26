@@ -174,6 +174,27 @@ try {
     assert.equal(sent, null);
   });
 
+  await check('calls a job board no application form, instead of offering an empty one', { url: fixture('board.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /No application form was found/);
+    assert.equal(sent, null);
+  });
+
+  await check('submits a hosted questionnaire that has no resume box', { url: fixture('questionnaire.html') }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.deepEqual(sent, {
+      name: 'Asha Verma', email: 'asha.verma@example.com', phone: '+91 98765 43210',
+      location: 'Hyderabad', linkedin: '', college: '',
+    });
+  });
+
+  await check('reviews a hosted questionnaire without sending it', { url: fixture('questionnaire.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(result.answers['1 full name'], 'Asha Verma');
+    assert.equal(result.resumeAttached, false);
+    assert.equal(sent, null);
+  });
+
   // ---- Sign-in. These pages are served over HTTP so that each has a real
   // address: the careers site, its sign-in on another name of the same site,
   // and a sign-in on an unrelated site. Chrome resolves every *.localhost

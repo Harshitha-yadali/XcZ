@@ -134,12 +134,19 @@ class JobsService {
     return normalized;
   }
 
+  // PostgREST splits an `or=(...)` list on commas, so a value holding one has to
+  // be quoted, with backslashes and quotes escaped inside the quotes.
+  private quoteFilterValue(value: string): string {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+
   private buildSkillsSearchClause(searchTerm: string): string | null {
     const trimmed = searchTerm.trim();
-    if (!trimmed || /[{}]/.test(trimmed)) return null;
+    if (!trimmed) return null;
 
-    const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `skills.cs.{"${escaped}"}`;
+    // job_listings.skills is jsonb, so `contains` takes a JSON array, not the
+    // `{...}` literal a Postgres array column would take.
+    return `skills.cs.${this.quoteFilterValue(JSON.stringify([trimmed]))}`;
   }
 
   private async runJobMutationWithFallbacks<T>(
@@ -579,13 +586,14 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
 
       if (filters.search) {
         const searchTerm = filters.search.trim();
+        const pattern = this.quoteFilterValue(`%${searchTerm}%`);
         const searchClauses = [
-          `role_title.ilike.%${searchTerm}%`,
-          `company_name.ilike.%${searchTerm}%`,
-          `domain.ilike.%${searchTerm}%`,
-          `qualification.ilike.%${searchTerm}%`,
-          `short_description.ilike.%${searchTerm}%`,
-          `description.ilike.%${searchTerm}%`,
+          `role_title.ilike.${pattern}`,
+          `company_name.ilike.${pattern}`,
+          `domain.ilike.${pattern}`,
+          `qualification.ilike.${pattern}`,
+          `short_description.ilike.${pattern}`,
+          `description.ilike.${pattern}`,
         ];
         const skillsSearchClause = JobsService.skillsSupported
           ? this.buildSkillsSearchClause(searchTerm)

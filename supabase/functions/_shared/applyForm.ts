@@ -461,7 +461,9 @@ export function readOutcome(): any {
   const challenge = 'iframe[src*="recaptcha"][src*="bframe"], iframe[src*="hcaptcha"][src*="challenge"], iframe[src*="challenges.cloudflare"]';
   return {
     formGone: !document.querySelector('[data-pb-field]'),
-    confirmed: /thank you for applying|thanks for applying|application (has been |was )?(received|submitted)|received your application|successfully (applied|submitted)/i.test(text)
+    // The last alternative is how Google Forms and Microsoft Forms word it;
+    // employers post whole applications to both.
+    confirmed: /thank you for applying|thanks for applying|application (has been |was )?(received|submitted)|received your application|successfully (applied|submitted)|your response (has been recorded|was (submitted|received))/i.test(text)
       || /thank|confirm|success/i.test(location.pathname),
     captcha: [...document.querySelectorAll(challenge)].some((frame: any) => visible(frame) && frame.getBoundingClientRect().height > 100),
     needsCode: /(security|verification) code/i.test(text),
@@ -575,13 +577,24 @@ export async function runApplication(page: Page, options: {
     }
     return found;
   };
+  // How many filled-in questions make a page an application rather than a
+  // newsletter box, when it offers no resume upload to go by.
+  const QUESTIONNAIRE_FIELDS = 5;
   const takesResume = (found: FormField[]) => found.some((field) => field.type === 'file');
   let fields = await settle();
   // A page is an application form if it takes a resume, or if it is an early
   // page of a longer form (a few fields and a Next button). In the second
   // case nothing is submitted unless a later page did take the resume.
-  const isForm = async () => takesResume(fields)
-    || (fields.length >= 3 && (await page.evaluate(findAction).catch(() => ({ kind: '' }))).kind === 'next');
+  const isForm = async () => {
+    if (takesResume(fields)) return true;
+    if (fields.length < 3) return false;
+    const { kind } = await page.evaluate(findAction).catch(() => ({ kind: '' }));
+    if (kind === 'next') return true;
+    // Google and Microsoft Forms carry a whole application with no resume box
+    // and a button that says Submit; employers post straight to them. A search
+    // bar or a newsletter signup never runs to this many fields.
+    return kind === 'submit' && fields.length >= QUESTIONNAIRE_FIELDS;
+  };
   // Every site goes through the same engine. Greenhouse and Lever open
   // straight on their form; anywhere else there may be an Apply button or a
   // sign-in first, and the largest form on a page could be a search box or a
@@ -744,6 +757,14 @@ export async function runApplication(page: Page, options: {
       else if (fields.some((field) => field.type === 'file' && field.required)) return failed('The resume could not be attached to the form.');
     }
 
+    // A page that took nothing from us is not an application form. A closed
+    // posting often redirects to the employer's job board, whose own search box
+    // and filter dropdowns scan as fields and would otherwise reach review with
+    // an empty application.
+    if (!allFills.length && !resumeAttached) {
+      return failed('No application form was found at the job link. The job may be closed.');
+    }
+
     action = await page.evaluate(findAction).catch(() => ({ kind: '', disabled: false }));
     if (!options.submit) {
       return {
@@ -779,8 +800,13 @@ export async function runApplication(page: Page, options: {
 
   const filled = filledSoFar();
   // On a site we do not know, a form that never took a resume is not sent: it
-  // may not be an application form at all.
-  if (strict && !resumeAttached) return failed('This form never asked for a resume, so it was not sent.');
+  // may not be an application form at all. The exception is a questionnaire
+  // with no file box anywhere, which is the whole application on Google and
+  // Microsoft Forms; the user still approves every answer before it goes.
+  const questionnaire = !takesResume(fields) && fields.length >= QUESTIONNAIRE_FIELDS;
+  if (strict && !resumeAttached && !questionnaire) {
+    return failed('This form never asked for a resume, so it was not sent.');
+  }
   if (!action.kind) return failed('No submit button was found on the form.');
   if (action.disabled) return blockedButton();
 

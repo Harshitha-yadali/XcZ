@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: hosted questionnaire, no resume box</title>
+<!--
+  The shape Google Forms and Microsoft Forms give an employer's application:
+  no <form> element, no file upload, numbered questions, and a button that
+  says Submit rather than Next. 67 of the 1000 live links in job_listings are
+  one of these two hosts, so this page is the whole application for them.
+-->
+<style>.q { margin: 12px 0; }</style>
+<div id="app">
+  <h1>Example Corp - Trainee Associate</h1>
+  <div class="q"><div>1. Full Name</div><input id="q1"></div>
+  <div class="q"><div>2. Email ID</div><input id="q2" type="email"></div>
+  <div class="q"><div>3. Mobile Number</div><input id="q3" type="tel"></div>
+  <div class="q"><div>4. Current Location</div><input id="q4"></div>
+  <div class="q"><div>5. LinkedIn Profile</div><input id="q5"></div>
+  <div class="q"><div>6. Name of College/University</div><input id="q6"></div>
+  <button id="go" type="button">Submit</button>
+</div>
+<script>
+  document.getElementById('go').addEventListener('click', () => {
+    // The engine rewrites data-pb-field with its own index, so read by id.
+    window.__sent = Object.fromEntries(['name', 'email', 'phone', 'location', 'linkedin', 'college']
+      .map((key, i) => [key, document.getElementById('q' + (i + 1)).value]));
+    document.getElementById('app').innerHTML = '<p>Your response has been recorded.</p>';
+  });
+</script>
