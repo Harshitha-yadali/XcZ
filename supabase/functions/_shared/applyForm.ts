@@ -459,6 +459,18 @@ export function hasCaptchaWall(): any {
 }
 
 /**
+ * True when the site refused the visit outright instead of serving the page.
+ * Naukri answers an automated browser with an Akamai "Access Denied" page, and
+ * calling that "no application form" reads as though the job were closed.
+ * A page that still offers fields is a real page, whatever its wording.
+ */
+export function blockedWall(): any {
+  const text = (document.body?.innerText || '').slice(0, 800);
+  return /access denied|you don'?t have permission to access|request (was )?blocked|unusual traffic|automated (access|traffic)|bot detected|forbidden/i.test(text)
+    && !document.querySelector('input:not([type=hidden]), textarea, select');
+}
+
+/**
  * On a job posting without a form: returns the address its Apply link goes
  * to, or clicks an Apply button and returns 'clicked'. Null when there is none.
  * With `peek` it only reports whether such a link is there.
@@ -714,6 +726,9 @@ export async function runApplication(page: Page, options: {
     }
     if (!(await isForm()) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
       return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
+    }
+    if (!(await isForm()) && await page.evaluate(blockedWall).catch(() => false)) {
+      return failed(`${(await whereNow()).host || 'This site'} refuses visits it thinks are automated, so this application has to be made by you. Your tailored resume is ready.`);
     }
     if (!(await isForm())) return failed('No application form was found at the job link.');
   }

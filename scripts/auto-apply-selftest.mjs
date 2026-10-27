@@ -183,6 +183,12 @@ try {
     assert.equal(sent, null);
   });
 
+  await check('names a site that refuses automated visits, rather than calling the job closed', { url: fixture('blocked.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /refuses visits it thinks are automated/);
+    assert.equal(sent, null);
+  });
+
   await check('calls a job board no application form, instead of offering an empty one', { url: fixture('board.html'), submit: false }, (result, sent) => {
     assert.equal(result.status, 'failed');
     assert.match(result.message, /No application form was found/);
