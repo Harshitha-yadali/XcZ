@@ -510,6 +510,30 @@ class AutoApplyOrchestratorService {
     return data.id;
   }
 
+  /**
+   * Hands the application to the background worker and returns at once, so the
+   * user can close the site while it runs. The worker has no time limit of its
+   * own, which is what an application of several pages needs: the same work
+   * inside an edge function is cut off part way through.
+   *
+   * Pressing Auto Apply again on a job already in hand returns that same
+   * application rather than starting a second one.
+   */
+  async queueApplication(jobId: string, resumeVersionId?: string): Promise<{ applicationId: string; status: string; queued: boolean }> {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Authentication required');
+
+    const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('auto-apply-queue'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ jobId, resumeVersionId }),
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'This application could not be queued.');
+    return { applicationId: result.applicationId, status: result.status, queued: Boolean(result.queued) };
+  }
+
   private async triggerFormSubmission(
     applicationId: string,
     request: { answers?: Record<string, string>; mode: 'review' | 'submit'; reviewed?: Record<string, string> }
