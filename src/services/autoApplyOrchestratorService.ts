@@ -213,16 +213,22 @@ class AutoApplyOrchestratorService {
 
       const platform = this.detectPlatform(applicationUrl);
 
-      const applicationId = await this.createApplication(
-        userId,
-        jobId,
-        resumeId,
-        platform,
-        applicationUrl
-      );
+      // The form is filled by a worker, not here. An application of several
+      // pages takes longer than this page is likely to stay open, and longer
+      // than an edge function is allowed to run, so it is queued and the user
+      // is free to leave. My Auto Applications follows it from here.
+      const { applicationId } = await this.queueApplication(jobId, resumeId);
 
-      return await this.submitApplication(jobId, {
+      this.updateStatus(jobId, {
+        step: 'submitting',
+        progress: 100,
+        message: 'Applying in the background',
+        currentAction: 'You can close this page; we will carry on.',
+      });
+
+      return {
         success: false,
+        error: 'QUEUED',
         // Every site goes through the same engine. Greenhouse and Lever are
         // the tested ones; anywhere else, a form that cannot be sent hands
         // the user the tailored resume to finish there.
@@ -232,7 +238,7 @@ class AutoApplyOrchestratorService {
         matchScore,
         pdfUrl,
         resumeFlags,
-      });
+      };
     } catch (error: any) {
       console.error('Error continuing auto-apply:', error);
       this.updateStatus(jobId, {
@@ -483,33 +489,6 @@ class AutoApplyOrchestratorService {
     return 'other';
   }
 
-  private async createApplication(
-    userId: string,
-    jobListingId: string,
-    resumeVersionId: string,
-    platform: string,
-    applicationUrl: string
-  ): Promise<string> {
-    const { data, error } = await supabase
-      .from('auto_apply_applications')
-      .insert({
-        user_id: userId,
-        job_listing_id: jobListingId,
-        resume_version_id: resumeVersionId,
-        platform,
-        application_url: applicationUrl,
-        status: 'filling',
-      })
-      .select('id')
-      .single();
-
-    // The database allows one live application per user and job. Losing that
-    // race (a second tab, a double click) must not start a second one.
-    if (error?.code === '23505') throw new Error('An application for this job is already in progress.');
-    if (error) throw error;
-    return data.id;
-  }
-
   /**
    * Hands the application to the background worker and returns at once, so the
    * user can close the site while it runs. The worker has no time limit of its
@@ -532,6 +511,66 @@ class AutoApplyOrchestratorService {
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || 'This application could not be queued.');
     return { applicationId: result.applicationId, status: result.status, queued: Boolean(result.queued) };
+  }
+
+  /**
+   * The user has answered what a paused application was waiting for, so it goes
+   * back on the queue. Answers to ordinary questions are remembered on the
+   * profile, so the same one is not asked on the next job; an answer to a
+   * checkbox is not, because a tick against one employer's declaration
+   * authorises that application and nothing else.
+   */
+  async resumeWithAnswers(applicationId: string, answers: Record<string, string>, questions: ApplyQuestion[]): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Authentication required');
+
+    const perApplication = new Set(questions.filter((question) => question.type === 'checkbox').map((question) => question.key));
+    const remembered: Record<string, string> = {};
+    const thisOneOnly: Record<string, string> = {};
+    for (const [key, value] of Object.entries(answers)) {
+      (perApplication.has(key) ? thisOneOnly : remembered)[key] = value;
+    }
+
+    if (Object.keys(remembered).length) {
+      const { data: profile } = await supabase
+        .from('user_profiles').select('apply_answers').eq('id', user.id).maybeSingle();
+      await supabase.from('user_profiles')
+        .update({ apply_answers: { ...(profile?.apply_answers || {}), ...remembered } })
+        .eq('id', user.id);
+    }
+
+    await this.requeue(applicationId, { given_answers: { ...remembered, ...thisOneOnly } });
+  }
+
+  /** The user has saved the login a paused application was waiting for. */
+  async resumeAfterLogin(applicationId: string, site: string, username: string, password: string): Promise<void> {
+    await this.saveSiteLogin(site, username, password);
+    await this.requeue(applicationId, {});
+  }
+
+  /** Puts a paused application back in the queue for a worker to pick up. */
+  private async requeue(applicationId: string, extra: Record<string, unknown>): Promise<void> {
+    const { error } = await supabase
+      .from('auto_apply_applications')
+      .update({ status: 'queued', pending_questions: [], login_site: null, error_message: null, ...extra })
+      .eq('id', applicationId);
+    if (error) throw new Error('This application could not be restarted. Please try again.');
+  }
+
+  /**
+   * Calls back whenever one of this user's applications changes, so a page can
+   * follow a run it did not start and did not stay open for.
+   */
+  watchApplications(userId: string, onChange: () => void): () => void {
+    const channel = supabase
+      .channel(`auto-apply-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'auto_apply_applications', filter: `user_id=eq.${userId}` },
+        onChange,
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }
 
   private async triggerFormSubmission(

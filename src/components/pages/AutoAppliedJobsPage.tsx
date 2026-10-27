@@ -15,7 +15,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
+import { ApplyQuestion, autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
+import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
+import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
 import { AnimatedCard, GradientButton, FloatingParticles, ChristmasSnow } from '../ui';
 
 interface Application {
@@ -27,6 +29,10 @@ interface Application {
   application_url: string;
   time_taken_seconds: number;
   error_message?: string;
+  /** With status 'needs_input': what the form asked that the profile could not answer. */
+  pending_questions?: ApplyQuestion[];
+  /** With status 'needs_login': the sign-in address the login would be saved for. */
+  login_site?: string | null;
   job_listings: {
     id: string;
     company_name: string;
@@ -46,11 +52,22 @@ export const AutoAppliedJobsPage: React.FC = () => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'submitted' | 'failed'>('all');
+  // The application whose question or sign-in is being answered right now.
+  const [answering, setAnswering] = useState<Application | null>(null);
+  const [signingIn, setSigningIn] = useState<Application | null>(null);
+
+  // Applications held until the user supplies something. They keep their place
+  // in the queue, so answering one sends it straight back to a worker.
+  const waiting = applications.filter(
+    (application) => application.status === 'needs_input' || application.status === 'needs_login',
+  );
 
   useEffect(() => {
-    if (user) {
-      loadApplications();
-    }
+    if (!user) return;
+    loadApplications();
+    // A run started here carries on without this page open, so follow it rather
+    // than showing whatever was true when the page loaded.
+    return autoApplyOrchestratorService.watchApplications(user.id, () => loadApplications());
   }, [user]);
 
   const loadApplications = async () => {
@@ -86,12 +103,40 @@ export const AutoAppliedJobsPage: React.FC = () => {
             <span>Failed</span>
           </div>
         );
-      case 'filling':
-      case 'optimizing':
+      case 'queued':
+      case 'optimizing_resume':
+      case 'logging_in':
+      case 'filling_form':
+      case 'submitting':
         return (
           <div className="flex items-center space-x-2 px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full text-sm font-medium">
             <Clock className="w-4 h-4 animate-spin" />
-            <span>In Progress</span>
+            <span>{status === 'queued' ? 'Waiting to start' : 'In progress'}</span>
+          </div>
+        );
+      // Waiting on the user. The application is held, not lost.
+      case 'needs_login':
+      case 'needs_input':
+        return (
+          <div className="flex items-center space-x-2 px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded-full text-sm font-medium">
+            <Clock className="w-4 h-4" />
+            <span>Needs you</span>
+          </div>
+        );
+      case 'needs_manual_action':
+        return (
+          <div className="flex items-center space-x-2 px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded-full text-sm font-medium">
+            <ExternalLink className="w-4 h-4" />
+            <span>Finish on the site</span>
+          </div>
+        );
+      // Submit was pressed and no confirmation came back. The employer may
+      // have it, so this is never sent again on its own.
+      case 'submission_uncertain':
+        return (
+          <div className="flex items-center space-x-2 px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded-full text-sm font-medium">
+            <Clock className="w-4 h-4" />
+            <span>Not confirmed</span>
           </div>
         );
       default:
@@ -146,12 +191,55 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </p>
         </div>
 
+        {/* Applications held until the user supplies something. These keep their
+            place: answering one sends it straight back to a worker. */}
+        {waiting.length > 0 && (
+          <div className="mb-8 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-6">
+            <h2 className="text-lg font-bold text-amber-900 dark:text-amber-200 mb-1">
+              {waiting.length === 1 ? 'One application needs you' : `${waiting.length} applications need you`}
+            </h2>
+            <p className="text-sm text-amber-800 dark:text-amber-300 mb-4">
+              Each one carries on by itself as soon as you answer.
+            </p>
+            <div className="space-y-3">
+              {waiting.map((application) => (
+                <div
+                  key={application.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white dark:bg-dark-100 px-4 py-3 border border-amber-200 dark:border-amber-900"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                      {application.job_listings?.role_title}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                      {application.job_listings?.company_name}
+                      {application.status === 'needs_login' && application.login_site
+                        ? ` · sign in at ${application.login_site}`
+                        : application.pending_questions?.length
+                          ? ` · ${application.pending_questions.length} question${application.pending_questions.length === 1 ? '' : 's'}`
+                          : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      application.status === 'needs_login' ? setSigningIn(application) : setAnswering(application)
+                    }
+                    className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    {application.status === 'needs_login' ? 'Add login' : 'Answer questions'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Applications</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total applications</p>
                 <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
                   {stats.total}
                 </p>
@@ -341,6 +429,40 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Answering here sends the application straight back to a worker, so the
+          user never has to start it again from the job page. */}
+      <AutoApplyQuestionsModal
+        questions={answering?.pending_questions ?? null}
+        companyName={answering?.job_listings?.company_name}
+        onSubmit={async (answers) => {
+          const application = answering;
+          setAnswering(null);
+          if (!application) return;
+          try {
+            await autoApplyOrchestratorService.resumeWithAnswers(
+              application.id, answers, application.pending_questions || [],
+            );
+          } catch (error) {
+            console.error('Could not restart this application:', error);
+          }
+        }}
+        onClose={() => setAnswering(null)}
+      />
+
+      <AutoApplyLoginModal
+        site={signingIn?.login_site ?? null}
+        message={signingIn?.error_message}
+        onSubmit={async (username, password) => {
+          const application = signingIn;
+          setSigningIn(null);
+          if (!application?.login_site) return;
+          await autoApplyOrchestratorService.resumeAfterLogin(
+            application.id, application.login_site, username, password,
+          );
+        }}
+        onClose={() => setSigningIn(null)}
+      />
     </div>
   );
 };

@@ -77,7 +77,11 @@ ALTER TABLE auto_apply_applications
   ADD COLUMN IF NOT EXISTS login_site text,
   ADD COLUMN IF NOT EXISTS claimed_by text,
   ADD COLUMN IF NOT EXISTS claimed_at timestamptz,
-  ADD COLUMN IF NOT EXISTS attempts integer DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS attempts integer DEFAULT 0,
+  -- Answers the user gave for this application alone. A tick against one
+  -- employer's declaration authorises that application and nothing else, so it
+  -- is kept here rather than remembered on the profile and reused elsewhere.
+  ADD COLUMN IF NOT EXISTS given_answers jsonb DEFAULT '{}'::jsonb;
 
 -- The lock still covers every status but `failed`, so the wording above holds.
 CREATE UNIQUE INDEX IF NOT EXISTS auto_apply_one_live_application

@@ -47,6 +47,10 @@ export function useAutoApply() {
       setShowProjectModal(true);
     } else if (!applyResult.success && ['INPUT_REQUIRED', 'LOGIN_REQUIRED'].includes(applyResult.error || '')) {
       setPending(applyResult);
+    } else if (applyResult.error === 'QUEUED') {
+      // Handed to a worker. Anything it needs is asked for on My Auto
+      // Applications, which the user reaches whether or not this page is open.
+      setResult(applyResult);
     } else {
       setResult(applyResult);
     }

@@ -38,6 +38,7 @@ const JobDetailsPage = lazy(() => import('./components/pages/JobDetailsPageNew')
 const JobsPage = lazy(() => import('./components/pages/JobsPage').then(m => ({ default: m.JobsPage })));
 const CompanyJobsPage = lazy(() => import('./components/pages/CompanyJobsPage').then(m => ({ default: m.CompanyJobsPage })));
 const MyApplicationsPage = lazy(() => import('./components/pages/MyApplicationsPage').then(m => ({ default: m.MyApplicationsPage })));
+const AutoAppliedJobsPage = lazy(() => import('./components/pages/AutoAppliedJobsPage').then(m => ({ default: m.AutoAppliedJobsPage })));
 const JobApplicationPage = lazy(() => import('./components/pages/JobApplicationPage').then(m => ({ default: m.JobApplicationPage })));
 const JobApplicationFormPage = lazy(() => import('./components/pages/JobApplicationFormPage').then(m => ({ default: m.JobApplicationFormPage })));
 const AdminRoute = lazy(() => import('./components/admin/AdminRoute').then(m => ({ default: m.AdminRoute })));
@@ -583,6 +584,9 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route path="/jobs/:jobId/apply" element={<JobApplicationPage />} />
           <Route path="/jobs/:jobId/apply-form" element={<JobApplicationFormPage />} />
           <Route path="/jobs/applications" element={<MyApplicationsPage {...commonPageProps} />} />
+          {/* Auto Apply runs in the background, so this is where a run started
+              earlier is followed, and where one waiting on an answer is given it. */}
+          <Route path="/jobs/auto-applied" element={<AutoAppliedJobsPage />} />
           <Route path="/webinar-details/:registrationId" element={<WebinarDetailsPage />} />
 
           <Route path="/my-webinars" element={<MyWebinarsPage />} />

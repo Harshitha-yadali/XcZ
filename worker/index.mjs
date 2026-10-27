@@ -153,6 +153,11 @@ async function runOne(application, endpoint) {
   const profile = await one(`user_profiles?select=full_name,email_address,phone,linkedin_profile_url,github_profile_url,current_location,apply_answers&id=eq.${userId}`);
   if (!profile) throw new Error('profile not found');
 
+  // Answers remembered from earlier jobs, with anything the user gave for this
+  // application on top. The second kind is deliberately not remembered: a tick
+  // against one employer's declaration authorises that application alone.
+  const saved = { ...(profile.apply_answers || {}), ...(application.given_answers || {}) };
+
   if (!application.resume_version_id) {
     // Until the worker tailors resumes itself, one has to arrive with the job.
     await patchApplication(application.id, { status: 'failed', error_message: 'No tailored resume was attached to this application.' });
@@ -219,7 +224,7 @@ async function runOne(application, endpoint) {
         graduationYear: (String(education?.year || '').match(/\d{4}/g) || []).pop() || '',
         skills: skills.join(', '),
       },
-      saved: { ...(profile.apply_answers || {}) },
+      saved,
       resume: { name: `${fullName.replace(/[^A-Za-z0-9]+/g, '_') || 'Resume'}_Resume.pdf`, base64: pdf },
       submit: true,
       loginFor,
