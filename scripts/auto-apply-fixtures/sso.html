@@ -27,7 +27,28 @@
   if (view === 'job') {
     document.title = 'Associate Engineer - Example Careers';
     root.innerHTML = '<h1>Associate Engineer</h1><a id="apply">Apply now</a><p>Introduction. Your role and responsibilities.</p>';
-    document.getElementById('apply').href = `http://${idp}/sso.html?view=login&${carry}`;
+    // ?next= picks what the Apply link leads to: the identifier page by
+    // default, or the provider chooser some sign-ins open with.
+    document.getElementById('apply').href = `http://${idp}/sso.html?view=${params.get('next') || 'login'}&${carry}`;
+  }
+
+  // Workday opens its sign-in on a row of providers with nothing to type yet.
+  // Only the site's own email sign-in may be opened; the rest hand the user to
+  // someone else's login, where their password is not ours to type.
+  if (view === 'providers') {
+    document.title = 'Sign In';
+    root.innerHTML = `
+      <h1>Sign In</h1>
+      <button type="button" id="apple">Sign in with Apple</button>
+      <button type="button" id="google">Sign in with Google</button>
+      <button type="button" id="email">Sign in with email</button>
+      <div id="problem"></div>`;
+    for (const other of ['apple', 'google']) {
+      document.getElementById(other).addEventListener('click', () => record({ step: 'provider', value: other }));
+    }
+    document.getElementById('email').addEventListener('click', () => {
+      location.href = `sso.html?view=password&${carry}`;
+    });
   }
 
   if (view === 'login') {

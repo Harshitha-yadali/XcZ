@@ -444,6 +444,21 @@ export function asksForCode(): any {
     .test(document.body?.innerText || '');
 }
 
+/**
+ * A sign-in page that offers a choice of providers before any password box:
+ * Workday opens with "Sign in with Apple / Google / LinkedIn / email". Only
+ * the site's own email sign-in is ours to open, because the others hand the
+ * user to someone else's login, where their password is not ours to type.
+ */
+export function openEmailSignIn(): any {
+  if (document.querySelector('input[type=password]')) return false;
+  const el: any = [...document.querySelectorAll('button, a, [role="button"]')].find((candidate: any) =>
+    candidate.getClientRects().length > 0
+    && /^((sign|log) ?in|continue|use) with e-?mail$/i.test(String(candidate.innerText || '').trim()));
+  el?.click();
+  return Boolean(el);
+}
+
 /** Switches a sign-up page to its sign-in view. */
 export function openSignIn(): any {
   const el: any = [...document.querySelectorAll('a, button, [role="button"]')].find((candidate: any) =>
@@ -476,7 +491,9 @@ export function blockedWall(): any {
  * With `peek` it only reports whether such a link is there.
  */
 export function followApplyLink(peek?: boolean): any {
-  const el: any = [...document.querySelectorAll('a, button')].find((candidate: any) =>
+  // The same elements the sign-in switch looks at: a site that draws its Apply
+  // control as a div with a button role is still offering an Apply.
+  const el: any = [...document.querySelectorAll('a, button, [role="button"]')].find((candidate: any) =>
     candidate.getClientRects().length > 0
     && /^(apply|apply now|apply here|apply manually|easy apply|apply for this (job|role|position)|i.?m interested)$/i.test(String(candidate.innerText || '').trim()));
   if (!el) return null;
@@ -671,6 +688,13 @@ export async function runApplication(page: Page, options: {
     let followedSignIn = false;
     for (let step = 0; step < 6 && !(await isForm()); step++) {
       let stage = await stageOf();
+      // A sign-in page may show only a row of providers to choose from, with
+      // no box to type in yet. Opening its own email sign-in brings up the one
+      // form we can fill; the other providers are left alone.
+      if (!stage && await page.evaluate(openEmailSignIn).catch(() => false)) {
+        await sleep(2000);
+        stage = await stageOf();
+      }
       if (stage) {
         const page1 = await whereNow();
         if (!loginPageAllowed(page1.protocol, page1.host, options.url)) {

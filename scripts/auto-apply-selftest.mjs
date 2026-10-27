@@ -267,6 +267,16 @@ try {
     ]);
   });
 
+  store = vault({ [signInHost]: goodLogin });
+  await signInCheck('opens the site\'s own email sign-in when the page only offers providers', {
+    url: gated(undefined, '&next=providers'), saved: { gender: 'Male' }, loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(result.answers['full name'], 'Asha Verma');
+    // Apple and Google were left alone; only the password page was ever typed into.
+    assert.deepEqual(typed, [{ host: signInHost, step: 'password', value: 'correct horse' }]);
+  });
+
   store = vault({ [signInHost]: { ...goodLogin, password: 'wrong' } });
   await signInCheck('asks the user to update a login the site refuses, after one try', { url: gated(), loginFor: store.loginFor }, (result) => {
     assert.equal(result.status, 'needs_login');
