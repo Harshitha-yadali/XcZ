@@ -698,6 +698,12 @@ export async function runApplication(page: Page, options: {
             return failed('This site moves its sign-in to another address partway through, so your password was not entered.');
           }
         }
+        // Still on a registration page: two password boxes, one of them a
+        // confirmation. Opening an account commits the user to that employer's
+        // terms under their own name, so it is theirs to do, not ours.
+        if (stage === 'signup') {
+          return failed(`${page1.host} asks for an account to be created before you can apply, and only you can do that. Create one there, save that login here, and we will carry on.`);
+        }
         if (stage !== 'password' || !(await page.evaluate(signIn, login))) return noSignInForm;
         signedIn = true;
         lastApply = '';
