@@ -19,7 +19,8 @@
   const view = params.get('view') || 'job';
   const idp = params.get('idp') || location.host;
   const home = params.get('home') || location.host;
-  const carry = `idp=${encodeURIComponent(idp)}&home=${encodeURIComponent(home)}${params.has('mfa') ? '&mfa=1' : ''}`;
+  const carry = `idp=${encodeURIComponent(idp)}&home=${encodeURIComponent(home)}${params.has('mfa') ? '&mfa=1' : ''}`
+    + (params.has('to') ? `&to=${encodeURIComponent(params.get('to'))}` : '');
   const root = document.getElementById('root');
   const record = (entry) => fetch('/record', { method: 'POST', body: JSON.stringify({ host: location.hostname, ...entry }) });
   const complain = (problem) => { document.getElementById('problem').innerHTML = `<div role="alert">${problem}</div>`; };
@@ -49,6 +50,14 @@
     document.getElementById('email').addEventListener('click', () => {
       location.href = `sso.html?view=password&${carry}`;
     });
+  }
+
+  // A page that sends the applicant somewhere nothing linked to. The job page
+  // vouched for this address, not for whatever it forwards to next.
+  if (view === 'bounce') {
+    document.title = 'Redirecting';
+    root.innerHTML = '<p>One moment.</p>';
+    location.href = `http://${params.get('to')}/sso.html?view=password&${carry}`;
   }
 
   if (view === 'login') {

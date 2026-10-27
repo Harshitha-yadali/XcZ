@@ -299,9 +299,24 @@ try {
     assert.deepEqual(typed, []);
   });
 
+  // An employer hands the application to a hiring system on another domain,
+  // the way hitachienergy.com sends applicants to its Workday. The job page
+  // linked there, so the sign-in belongs to this job.
   store = vault({ 'login.other.localhost': goodLogin });
-  await signInCheck('refuses a sign-in page on a site other than the job link\'s', {
-    url: gated(`login.other.localhost:${port}`), loginFor: store.loginFor,
+  await signInCheck('signs in on the hiring system the job page sent it to', {
+    url: gated(`login.other.localhost:${port}`), saved: { gender: 'Male' }, loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.deepEqual(store.asked, ['login.other.localhost']);
+    assert.equal(typed.filter((entry) => entry.step === 'password').length, 1);
+  });
+
+  // Nothing linked to the third address: the one that was linked forwarded to
+  // it on its own, so the password is withheld there.
+  store = vault({ 'login.elsewhere.localhost': goodLogin });
+  await signInCheck('refuses a sign-in the job page never linked to', {
+    url: gated(`login.other.localhost:${port}`, `&next=bounce&to=${encodeURIComponent(`login.elsewhere.localhost:${port}`)}`),
+    loginFor: store.loginFor,
   }, (result) => {
     assert.equal(result.status, 'failed');
     assert.match(result.message, /not on the job link's own secure site/);

@@ -673,6 +673,17 @@ export async function runApplication(page: Page, options: {
     const whereNow = (): Promise<{ host: string; protocol: string }> =>
       page.evaluate(() => ({ host: location.hostname, protocol: location.protocol })).catch(() => ({ host: '', protocol: '' }));
     const noSignInForm = failed('We could not find the sign-in form on this site.');
+    // Employers post the job on their careers site and hand the application to
+    // a hiring system on another domain: hitachienergy.com sends applicants to
+    // hitachi.wd1.myworkdayjobs.com. A sign-in there counts as part of this
+    // job, but only because a page the job link vouches for linked to it, and
+    // only for the address that was linked. Where a sign-in turns up on an
+    // address nothing linked to, reached by a redirect of its own, the password
+    // is still withheld.
+    const sentOnTo: string[] = [];
+    const ownSite = (protocol: string, host: string) =>
+      loginPageAllowed(protocol, host, options.url)
+      || sentOnTo.some((vouched) => loginPageAllowed(protocol, host, `https://${vouched}/`));
     const askForLogin = (site: string, rejected: boolean): ApplyResult => ({
       status: 'needs_login',
       site,
@@ -697,7 +708,7 @@ export async function runApplication(page: Page, options: {
       }
       if (stage) {
         const page1 = await whereNow();
-        if (!loginPageAllowed(page1.protocol, page1.host, options.url)) {
+        if (!ownSite(page1.protocol, page1.host)) {
           return failed("The sign-in page is not on the job link's own secure site, so your login was not entered there.");
         }
         // One attempt per run: a sign-in page that comes back means it was refused.
@@ -746,7 +757,13 @@ export async function runApplication(page: Page, options: {
         const next = await page.evaluate(followApplyLink).catch(() => null);
         if (!next) break;
         lastApply = next;
-        if (next !== 'clicked') await page.send('Page.navigate', { url: next });
+        if (next !== 'clicked') {
+          // The employer's own page sending the applicant on to its hiring
+          // system vouches for that one address, and for nothing it redirects
+          // to afterwards.
+          try { sentOnTo.push(new URL(next).hostname); } catch { /* not an address */ }
+          await page.send('Page.navigate', { url: next });
+        }
       }
       fields = await settle();
     }
