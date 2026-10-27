@@ -461,8 +461,19 @@ export function openEmailSignIn(): any {
 
 /** Switches a sign-up page to its sign-in view. */
 export function openSignIn(): any {
-  const el: any = [...document.querySelectorAll('a, button, [role="button"]')].find((candidate: any) =>
+  const matches: any[] = [...document.querySelectorAll('a, button, [role="button"]')].filter((candidate: any) =>
     candidate.getClientRects().length > 0 && /^(sign in|log in|login)$/i.test(String(candidate.innerText || '').trim()));
+  // Prefer the switch belonging to the sign-up card itself. A page header
+  // carries its own "Sign In", and pressing that one opens a second box over
+  // the first, leaving both their password fields on the page at once, which
+  // reads as a sign-up all over again.
+  const besideAPassword = (el: any) => {
+    for (let box = el.parentElement, depth = 0; box && depth < 6; box = box.parentElement, depth++) {
+      if (box.querySelector('input[type=password]')) return true;
+    }
+    return false;
+  };
+  const el: any = matches.find(besideAPassword) || matches[0];
   el?.click();
   return Boolean(el);
 }

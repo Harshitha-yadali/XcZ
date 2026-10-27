@@ -286,11 +286,13 @@ Deno.serve(async (req: Request) => {
         },
         submit: submitting,
         loginFor,
-        // Answers are inferred only while preparing, so the user sees every
-        // one of them on the review screen. Nothing unreviewed is sent.
-        infer: submitting
-          ? undefined
-          : (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
+        // An answer the form wants is read from the tailored resume before the
+        // user is asked for it: the resume is their own account of themselves,
+        // and asking again for what it already says is what makes applying
+        // tedious. Nothing is invented. A personal fact, a legal statement or
+        // a consent is never inferred whatever the model returns, and an
+        // answer that is not one of the choices on offer is discarded.
+        infer: (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
         // Recorded before the click: if this function dies after it, the row
         // still says a submission was attempted and is not retried.
         onSubmitting: async () => {
