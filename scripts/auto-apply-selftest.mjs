@@ -248,6 +248,29 @@ try {
     await check(name, { submit: false, ...run }, verify);
   };
 
+  // A form that marks nothing required and only says what is missing once
+  // Submit has been pressed. Giving up there throws away everything already
+  // filled in, so the blanks become questions and the run comes back to them.
+  await check('asks about what is blank when a form refuses the submit', {
+    // The query goes on after the path becomes a URL: fixture() turns a file
+    // path into a file:// URL, so a query written inside the name is filename.
+    url: `${fixture('questionnaire.html')}?strict=1`,
+  }, (result, sent) => {
+    assert.equal(result.status, 'needs_input', result.message);
+    // The form named nothing we can match a field to, so every blank is asked
+    // about - including the two the profile had nothing to put in.
+    assert.deepEqual(result.questions.map((question) => question.label), [
+      '5. LinkedIn Profile',
+      '6. Name of College/University',
+      '7. Which shift can you work?',
+    ]);
+    // The choice the page marked required nowhere comes back with its options,
+    // so the user is picking from the form rather than typing blind.
+    assert.deepEqual(result.questions.at(-1).options, ['Day', 'Night']);
+    assert.match(result.message, /would not take the application/);
+    assert.equal(sent, null);
+  });
+
   await signInCheck('stops at a sign-in page it has no login for, and types nothing', { url: gated() }, (result) => {
     assert.equal(result.status, 'needs_login');
     assert.equal(result.site, signInHost);

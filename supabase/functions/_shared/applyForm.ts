@@ -35,6 +35,12 @@ export interface FormField {
   dialCode?: string;
   /** Set when the form arrives with a choice already made (a preselected country, say); it is left as it is. */
   filled?: boolean;
+  /**
+   * Whether the field currently holds anything. Some forms mark nothing as
+   * required and only name what is missing once Submit has been pressed, so
+   * after a refusal the blank fields are the ones worth asking the user about.
+   */
+  answered?: boolean;
 }
 
 export interface Fill { id: number; type: FormField['type']; label: string; value: string }
@@ -225,11 +231,12 @@ export function scanForm(): any {
     if (grouped) {
       let group = groups.get(`${kind} ${el.name}`);
       if (!group) {
-        group = { id: fields.length, label: '', type: kind === 'radio' ? 'radio' : 'checks', required: false, options: [], first: el };
+        group = { id: fields.length, label: '', type: kind === 'radio' ? 'radio' : 'checks', required: false, answered: false, options: [], first: el };
         groups.set(`${kind} ${el.name}`, group);
         fields.push(group);
       }
       group.options.push(clean(el.labels?.[0]?.innerText || el.value));
+      group.answered = group.answered || el.checked === true;
       group.required = group.required || el.required || el.getAttribute('aria-required') === 'true';
       el.setAttribute('data-pb-field', String(group.id));
       continue;
@@ -245,6 +252,10 @@ export function scanForm(): any {
       // A list button shows its current choice as its text; a placeholder means none yet.
       filled: el.tagName === 'BUTTON' && !/^(select( one)?|choose( one)?|please select|-+)?$/i.test(clean(el.innerText)),
       required: el.required || el.getAttribute('aria-required') === 'true' || starred(label),
+      // Whether this field already holds something. Some forms mark nothing
+      // required and only say what is missing once Submit has been pressed, so
+      // after a refusal the blank fields are the ones worth asking about.
+      answered: kind === 'checkbox' ? el.checked === true : Boolean(clean(el.value)),
       options: kind === 'select' ? [...el.options].filter((option: any) => option.value).map((option: any) => clean(option.text)) : [],
     });
   }
@@ -1088,6 +1099,27 @@ export async function runApplication(page: Page, options: {
     if (!outcome.formGone && outcome.needsCode) return failed('The site emailed you a verification code, so the application was not sent. Please finish it from the job link.');
     const fresh = outcome.errors.filter((message: string) => !before.includes(message));
     if (!outcome.formGone && fresh.length && attempt > 5) {
+      // Microsoft Forms marks nothing required in its markup - no asterisk, no
+      // aria-required, on the question or on the choice group - and only names
+      // what is missing once Submit has been pressed. Handing the whole
+      // application back at that point wastes everything already filled in, so
+      // ask about what is still blank and come back to it.
+      const scan: FormField[] = await page.evaluate(scanForm).catch(() => []);
+      const blanks = scan.filter((field) =>
+        field.type !== 'file' && field.label && !field.answered && !field.filled);
+      if (blanks.length) {
+        return {
+          status: 'needs_input',
+          fields: scan,
+          questions: blanks.map((field) => ({
+            key: answerKey(field.label),
+            label: field.label,
+            type: field.type,
+            options: field.options,
+          })),
+          message: `The form would not take the application until more was filled in: ${fresh.join('; ')}`,
+        };
+      }
       return failed(`The form did not accept the application: ${fresh.join('; ')}`);
     }
   }

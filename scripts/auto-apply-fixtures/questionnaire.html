@@ -16,10 +16,29 @@
   <div class="q"><div>4. Current Location</div><input id="q4"></div>
   <div class="q"><div>5. LinkedIn Profile</div><input id="q5"></div>
   <div class="q"><div>6. Name of College/University</div><input id="q6"></div>
+  <!--
+    ?strict=1 adds the case Microsoft Forms actually presents: a question the
+    page marks as required nowhere - no asterisk, no aria-required, neither on
+    the question nor on the group - which the form only complains about once
+    Submit has been pressed.
+  -->
+  <div class="q" id="shift" hidden>
+    <div>7. Which shift can you work?</div>
+    <label><input type="radio" name="shift" value="Day"> Day</label>
+    <label><input type="radio" name="shift" value="Night"> Night</label>
+  </div>
   <button id="go" type="button">Submit</button>
+  <div id="problem" role="alert"></div>
 </div>
 <script>
+  const strict = new URLSearchParams(location.search).has('strict');
+  if (strict) document.getElementById('shift').hidden = false;
   document.getElementById('go').addEventListener('click', () => {
+    if (strict && !document.querySelector('input[name=shift]:checked')) {
+      document.getElementById('problem').textContent =
+        '1 question(s) need to be completed before submitting: Question 7.';
+      return;
+    }
     // The engine rewrites data-pb-field with its own index, so read by id.
     window.__sent = Object.fromEntries(['name', 'email', 'phone', 'location', 'linkedin', 'college']
       .map((key, i) => [key, document.getElementById('q' + (i + 1)).value]));
