@@ -229,6 +229,7 @@ class AutoApplyOrchestratorService {
       return {
         success: false,
         error: 'QUEUED',
+        message: 'We are applying for you. You can close this page.',
         // Every site goes through the same engine. Greenhouse and Lever are
         // the tested ones; anywhere else, a form that cannot be sent hands
         // the user the tailored resume to finish there.

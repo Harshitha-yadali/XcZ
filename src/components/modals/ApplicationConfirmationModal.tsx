@@ -9,6 +9,7 @@ import {
   Eye,
   ExternalLink,
   RefreshCw,
+  Clock,
   Zap,
   Calendar,
   Building2
@@ -42,7 +43,10 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
   // Submit was pressed and nothing confirmed it. Neither a success nor a
   // failure: the user must not be nudged into applying a second time.
   const isUncertain = !isSuccess && Boolean(result.uncertain);
-  const tone = isSuccess ? 'green' : isUncertain ? 'amber' : isManual ? 'blue' : 'red';
+  // Handed to the worker, which carries on whether or not this tab stays open.
+  // Nothing has gone wrong, so it must not be dressed as a failure.
+  const isQueued = !isSuccess && result.error === 'QUEUED';
+  const tone = isSuccess ? 'green' : isUncertain ? 'amber' : isManual || isQueued ? 'blue' : 'red';
   const tones = {
     green: {
       header: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
@@ -89,15 +93,23 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
               <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg ${tones.icon}`}>
                 {isSuccess ? (
                   <CheckCircle className="w-8 h-8 text-white" />
+                ) : isQueued ? (
+                  <Clock className="w-8 h-8 text-white" />
                 ) : isManual ? (
                   <Download className="w-8 h-8 text-white" />
                 ) : (
                   <AlertTriangle className="w-8 h-8 text-white" />
                 )}
               </div>
-              
+
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {isSuccess ? 'Submitted' : isUncertain ? 'Submission uncertain' : 'Needs manual completion'}
+                {isSuccess
+                  ? 'Submitted'
+                  : isQueued
+                    ? 'Applying now'
+                    : isUncertain
+                      ? 'Submission uncertain'
+                      : 'Needs manual completion'}
               </h1>
               
               <p className={`text-lg ${tones.text}`}>
@@ -131,7 +143,7 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Applied on:</span>
+                  <span className="text-gray-600 dark:text-gray-400">{isQueued ? 'Started:' : 'Applied on:'}</span>
                   <span className="font-medium text-gray-900 dark:text-gray-100">
                     {new Date().toLocaleDateString()}
                   </span>
@@ -198,7 +210,18 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
               </div>
             )}
 
-            {!isSuccess && !isManual && !isUncertain && result.error && (
+            {isQueued && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 dark:bg-blue-900/20 dark:border-blue-500/50">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">What happens now</h3>
+                <ul className="list-disc pl-5 text-sm text-blue-800 dark:text-blue-300 space-y-1">
+                  <li>The application runs on our side. You can close this page.</li>
+                  <li>If the form asks something we cannot answer from your resume, we will ask you on My Auto Applications.</li>
+                  <li>The result appears there too, so you never have to guess whether it was sent.</li>
+                </ul>
+              </div>
+            )}
+
+            {!isSuccess && !isManual && !isUncertain && !isQueued && result.error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 dark:bg-red-900/20 dark:border-red-500/50">
                 <h3 className="font-semibold text-red-900 dark:text-red-300 mb-2">Error Details</h3>
                 <p className="text-red-700 dark:text-red-400 text-sm">{result.error}</p>
