@@ -184,7 +184,15 @@ export function scanForm(): any {
       .filter((el: any) => !['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(el.type)).length;
   const biggest: any = [...document.forms].sort((a, b) => worthScanning(b) - worthScanning(a))[0];
   const root: any = biggest && worthScanning(biggest) >= 2 ? biggest : document.body;
-  const clean = (text: any) => String(text || '').replace(/[*✱]/g, '').replace(/\s+/g, ' ').trim();
+  const clean = (text: any) => String(text || '')
+    .replace(/[*✱]/g, '').replace(/\s+/g, ' ')
+    // Microsoft Forms ends every question's accessible name with the kind of
+    // answer it takes, which belongs to a screen reader and not to a question
+    // put to the user: "15. Name of the Engineering College Single line text."
+    // Only the whole phrase, and only with its full stop: "Number" and "Date"
+    // on their own end plenty of real questions, such as "Mobile Number".
+    .replace(/\s*(single line text|long answer text|multiple choice|file upload|net promoter score|date input)\.\s*$/i, '')
+    .trim();
   const starred = (text: any) => /[*✱]/.test(String(text || ''));
   const firstLine = (el: any) => String(el?.innerText || '').trim().split('\n')[0];
   const labelOf = (el: any) => {
