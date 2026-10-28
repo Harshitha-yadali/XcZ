@@ -2,6 +2,10 @@
 // user's profile, and reports what actually happened. Shared by the
 // auto-apply-submit edge function and scripts/auto-apply-dryrun.mjs.
 import type { Page } from './cdp.ts';
+// Re-exported so the engine's own callers and tests keep one import, while the
+// website can take the list on its own without the whole apply engine.
+export { isProviderLoginHost, providerName } from './providerHosts.ts';
+import { isProviderLoginHost, providerName } from './providerHosts.ts';
 
 export type Platform = 'greenhouse' | 'lever' | 'linkedin' | 'naukri' | 'indeed' | 'workday' | 'other';
 
@@ -512,33 +516,6 @@ export function openSignIn(): any {
   const el: any = matches.find(besideAPassword) || matches[0];
   el?.click();
   return Boolean(el);
-}
-
-/**
- * True when a sign-in page belongs to an identity provider rather than to an
- * employer.
- *
- * This is not the same refusal as the one in openEmailSignIn, which declines
- * to press "Continue with Google". A job hosted on a Google Form sends the
- * applicant to accounts.google.com, and because the job link is itself a
- * google.com address the chain of trust counts that as the job's own site. So
- * the password would be asked for and typed, on Google's real login page.
- *
- * One password here opens the user's mail, their files, and every other site
- * they sign into with it. No single job is worth that, so these hosts are
- * refused whatever linked to them.
- */
-export function isProviderLoginHost(host: string): boolean {
-  return /^(accounts\.google\.com|accounts\.youtube\.com|appleid\.apple\.com|login\.microsoftonline\.com|login\.live\.com|login\.yahoo\.com|github\.com|www\.facebook\.com|m\.facebook\.com|(www\.)?linkedin\.com)$/i
-    .test(host.trim());
-}
-
-/** The provider a login host belongs to, in words, for telling the user why we stopped. */
-export function providerName(host: string): string {
-  const named = host.match(/google|youtube|apple|microsoft|live|yahoo|github|facebook|linkedin/i);
-  const word = named ? named[0].toLowerCase() : 'that provider';
-  return { live: 'Microsoft', microsoftonline: 'Microsoft', youtube: 'Google' }[word]
-    || word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 /**

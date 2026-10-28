@@ -18,6 +18,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { ApplyQuestion, autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
 import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
 import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
+// The same list the worker refuses on, so the two can never disagree.
+import { isProviderLoginHost, providerName } from '../../../supabase/functions/_shared/providerHosts';
 import { AnimatedCard, GradientButton, FloatingParticles, ChristmasSnow } from '../ui';
 
 interface Application {
@@ -220,14 +222,25 @@ export const AutoAppliedJobsPage: React.FC = () => {
                           : ''}
                     </p>
                   </div>
-                  <button
-                    onClick={() =>
-                      application.status === 'needs_login' ? setSigningIn(application) : setAnswering(application)
-                    }
-                    className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
-                  >
-                    {application.status === 'needs_login' ? 'Add login' : 'Answer questions'}
-                  </button>
+                  {application.status === 'needs_login' && isProviderLoginHost(application.login_site || '') ? (
+                    // An application saved before the engine learned to refuse
+                    // these still asks for a login here. Offering the button
+                    // would invite the user to hand over the account holding
+                    // their mail and everything else, to reach one job.
+                    <p className="text-sm text-amber-800 dark:text-amber-300 max-w-xs text-right">
+                      This job sits behind a {providerName(application.login_site || '')} sign-in.
+                      We never use that account for you, so please apply from the job link yourself.
+                    </p>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        application.status === 'needs_login' ? setSigningIn(application) : setAnswering(application)
+                      }
+                      className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
+                    >
+                      {application.status === 'needs_login' ? 'Add login' : 'Answer questions'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
