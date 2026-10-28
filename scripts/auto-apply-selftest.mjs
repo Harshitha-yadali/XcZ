@@ -199,7 +199,8 @@ try {
     assert.equal(result.status, 'submitted', result.message);
     assert.deepEqual(sent, {
       name: 'Asha Verma', email: 'asha.verma@example.com', phone: '+91 98765 43210',
-      location: 'Hyderabad', linkedin: '', college: '',
+      // Without ?strict the form asks no choice question, so nothing is picked.
+      location: 'Hyderabad', linkedin: '', college: '', shift: '',
     });
   });
 
@@ -268,6 +269,32 @@ try {
     // so the user is picking from the form rather than typing blind.
     assert.deepEqual(result.questions.at(-1).options, ['Day', 'Night']);
     assert.match(result.message, /would not take the application/);
+    assert.equal(sent, null);
+  });
+
+  // Asking the user for what the resume already says is the difference between
+  // an agent and a form the user ends up filling in twice.
+  await check('works a refusal out from the resume before asking the user', {
+    url: `${fixture('questionnaire.html')}?strict=1`,
+    infer: async (questions) => Object.fromEntries(questions.map((question) => [
+      question.key,
+      /shift/i.test(question.label) ? 'Night'
+        : /linkedin/i.test(question.label) ? 'linkedin.com/in/asha'
+          : 'Example University',
+    ])),
+  }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.equal(sent.shift, 'Night');
+    assert.equal(sent.college, 'Example University');
+  });
+
+  // A guess that is not among the choices on the form is not an answer.
+  await check('still asks when the resume cannot answer what the form wants', {
+    url: `${fixture('questionnaire.html')}?strict=1`,
+    infer: async (questions) => Object.fromEntries(questions.map((question) => [question.key, 'Weekends'])),
+  }, (result, sent) => {
+    assert.equal(result.status, 'needs_input');
+    assert.ok(result.questions.some((question) => /shift/i.test(question.label)));
     assert.equal(sent, null);
   });
 

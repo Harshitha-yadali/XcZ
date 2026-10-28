@@ -1110,6 +1110,8 @@ export async function runApplication(page: Page, options: {
   await options.onSubmitting?.();
   await page.evaluate(pressAction);
 
+  // A refusal is answered from the resume once before the user is troubled.
+  let workedItOut = false;
   for (let attempt = 0; attempt < 40; attempt++) {
     await sleep(750);
     // Evaluation fails while the page is navigating to its confirmation.
@@ -1129,15 +1131,40 @@ export async function runApplication(page: Page, options: {
       const blanks = scan.filter((field) =>
         field.type !== 'file' && field.label && !field.answered && !field.filled);
       if (blanks.length) {
+        const questions = blanks.map((field) => ({
+          key: answerKey(field.label),
+          label: field.label,
+          type: field.type,
+          options: field.options,
+        }));
+        // Work them out from the resume first. Most of what these forms hold
+        // out for - the degree, the branch, the year of passing - the resume
+        // already says, and asking the user for what we have been told is the
+        // difference between an agent and a form the user fills in twice.
+        if (!workedItOut && options.infer) {
+          workedItOut = true;
+          const inferred = await options.infer(questions).catch(() => ({}));
+          const fills: Fill[] = blanks
+            .map((field) => ({
+              id: field.id,
+              type: field.type,
+              label: field.label,
+              value: String(inferred[answerKey(field.label)] ?? '').trim(),
+            }))
+            // A guess that is not one of the choices on offer is not an answer.
+            .filter((fill, index) => fill.value
+              && (!blanks[index].options.length || blanks[index].options.includes(fill.value)));
+          if (fills.length) {
+            await page.evaluate(fillForm, { fills, resume: null });
+            await sleep(1000);
+            await page.evaluate(pressAction);
+            continue;
+          }
+        }
         return {
           status: 'needs_input',
           fields: scan,
-          questions: blanks.map((field) => ({
-            key: answerKey(field.label),
-            label: field.label,
-            type: field.type,
-            options: field.options,
-          })),
+          questions,
           message: `The form would not take the application until more was filled in: ${fresh.join('; ')}`,
         };
       }

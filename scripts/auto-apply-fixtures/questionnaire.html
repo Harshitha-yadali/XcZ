@@ -42,6 +42,7 @@
     // The engine rewrites data-pb-field with its own index, so read by id.
     window.__sent = Object.fromEntries(['name', 'email', 'phone', 'location', 'linkedin', 'college']
       .map((key, i) => [key, document.getElementById('q' + (i + 1)).value]));
+    window.__sent.shift = (document.querySelector('input[name=shift]:checked') || {}).value || '';
     document.getElementById('app').innerHTML = '<p>Your response has been recorded.</p>';
   });
 </script>
