@@ -142,7 +142,7 @@ function statusFor(result) {
   if (result.status === 'needs_login') return 'needs_login';
   if (result.status === 'needs_input') return 'needs_input';
   const message = result.message || '';
-  const forTheUser = /captcha|verification code|account to be created|refuses visits|more pages than we can/i.test(message);
+  const forTheUser = /captcha|verification code|account to be created|refuses visits|more pages than we can|only lets you sign in with/i.test(message);
   return forTheUser ? 'needs_manual_action' : 'failed';
 }
 

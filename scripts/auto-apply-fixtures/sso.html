@@ -52,6 +52,21 @@
     });
   }
 
+  // The same chooser with its email sign-in taken away: every way in belongs
+  // to someone else. There is nothing here we may press, so the run has to say
+  // which provider the site insists on rather than report a missing form.
+  if (view === 'providers-only') {
+    document.title = 'Sign In';
+    root.innerHTML = `
+      <h1>Sign In</h1>
+      <button type="button" id="google">Continue with Google</button>
+      <button type="button" id="apple">Sign in with Apple</button>
+      <div id="problem"></div>`;
+    for (const other of ['google', 'apple']) {
+      document.getElementById(other).addEventListener('click', () => record({ step: 'provider', value: other }));
+    }
+  }
+
   // A page that sends the applicant somewhere nothing linked to. The job page
   // vouched for this address, not for whatever it forwards to next.
   if (view === 'bounce') {

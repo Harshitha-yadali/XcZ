@@ -277,6 +277,20 @@ try {
     assert.deepEqual(typed, [{ host: signInHost, step: 'password', value: 'correct horse' }]);
   });
 
+  // A security boundary, not a nicety: signing in with Google would hand over
+  // the account holding the user's mail, their files and everything else they
+  // have ever signed into with it, to reach one job application.
+  store = vault({ [signInHost]: goodLogin });
+  await signInCheck('names the provider a site insists on, and presses none of them', {
+    url: gated(undefined, '&next=providers-only'), saved: { gender: 'Male' }, loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /only lets you sign in with Google/i);
+    assert.deepEqual(typed, []);
+    // No login was even looked up: there was nowhere ours to put it.
+    assert.deepEqual(store.asked, []);
+  });
+
   store = vault({ [signInHost]: { ...goodLogin, password: 'wrong' } });
   await signInCheck('asks the user to update a login the site refuses, after one try', { url: gated(), loginFor: store.loginFor }, (result) => {
     assert.equal(result.status, 'needs_login');

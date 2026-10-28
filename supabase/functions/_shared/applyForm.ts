@@ -452,11 +452,47 @@ export function asksForCode(): any {
  */
 export function openEmailSignIn(): any {
   if (document.querySelector('input[type=password]')) return false;
-  const el: any = [...document.querySelectorAll('button, a, [role="button"]')].find((candidate: any) =>
-    candidate.getClientRects().length > 0
-    && /^((sign|log) ?in|continue|use) with e-?mail$/i.test(String(candidate.innerText || '').trim()));
+  // Never ours to press. These hand the user to someone else's login, where
+  // the password opens their whole life rather than one job application.
+  const provider = /google|apple|linked ?in|facebook|microsoft|outlook|github|okta|azure|saml|single sign|\bsso\b/i;
+  // The site's own way in names what it wants typed.
+  const ownWay = /e-?mail|user ?name|password/i;
+  const el: any = [...document.querySelectorAll('button, a, [role="button"]')].find((candidate: any) => {
+    const text = String(candidate.innerText || '').trim();
+    return candidate.getClientRects().length > 0
+      // Long text is a paragraph that happens to say "email", not a control.
+      && text.length > 0 && text.length <= 40
+      && ownWay.test(text) && !provider.test(text)
+      // Anchored so "Forgot your password?" and "No account? Sign up" are left alone.
+      && /^(sign|log|continue|proceed|use|e-?mail|user ?name)/i.test(text);
+  });
   el?.click();
   return Boolean(el);
+}
+
+/**
+ * The name of the provider a sign-in page insists on, or '' when it does not.
+ *
+ * Some employers put their careers site behind "Continue with Google" and
+ * offer nothing else. We do not sign in as the user anywhere but the
+ * employer's own site, so there is no way through: say which provider it wants
+ * instead of reporting that the job has no application form.
+ */
+export function providerOnlyWall(): any {
+  if (document.querySelector('input[type=password]')) return '';
+  const visible = (el: any) => el.getClientRects().length > 0;
+  const provider = /google|apple|linked ?in|facebook|microsoft|github/i;
+  const offers: string[] = [...document.querySelectorAll('button, a, [role="button"]')]
+    .filter(visible)
+    .map((el: any) => String(el.innerText || '').trim())
+    .filter((text) => text.length <= 40 && /^(sign|log|continue|use)/i.test(text) && provider.test(text));
+  if (!offers.length) return '';
+  // A box to type an account name into means a way in that is ours still exists.
+  const boxes = [...document.querySelectorAll('input')]
+    .filter((el: any) => visible(el) && ['text', 'email', 'tel'].includes(el.type));
+  if (boxes.length) return '';
+  const named = offers[0].match(provider);
+  return named ? named[0] : '';
 }
 
 /** Switches a sign-up page to its sign-in view. */
@@ -788,7 +824,15 @@ export async function runApplication(page: Page, options: {
     if (!(await isForm()) && await page.evaluate(blockedWall).catch(() => false)) {
       return failed(`${(await whereNow()).host || 'This site'} refuses visits it thinks are automated, so this application has to be made by you. Your tailored resume is ready.`);
     }
-    if (!(await isForm())) return failed('No application form was found at the job link.');
+    if (!(await isForm())) {
+      // Said last, because a page that offers a provider usually offers its own
+      // email sign-in too, and that one has already been tried by here.
+      const provider = await page.evaluate(providerOnlyWall).catch(() => '');
+      if (provider) {
+        return failed(`${(await whereNow()).host || 'This site'} only lets you sign in with ${provider}, and we never use your ${provider} account on your behalf. Please apply from the job link yourself. Your tailored resume is ready.`);
+      }
+      return failed('No application form was found at the job link.');
+    }
   }
   if (fields.length < 2) return failed('No application form was found at the job link. The job may be closed.');
 
