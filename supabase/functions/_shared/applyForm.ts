@@ -515,6 +515,33 @@ export function openSignIn(): any {
 }
 
 /**
+ * True when a sign-in page belongs to an identity provider rather than to an
+ * employer.
+ *
+ * This is not the same refusal as the one in openEmailSignIn, which declines
+ * to press "Continue with Google". A job hosted on a Google Form sends the
+ * applicant to accounts.google.com, and because the job link is itself a
+ * google.com address the chain of trust counts that as the job's own site. So
+ * the password would be asked for and typed, on Google's real login page.
+ *
+ * One password here opens the user's mail, their files, and every other site
+ * they sign into with it. No single job is worth that, so these hosts are
+ * refused whatever linked to them.
+ */
+export function isProviderLoginHost(host: string): boolean {
+  return /^(accounts\.google\.com|accounts\.youtube\.com|appleid\.apple\.com|login\.microsoftonline\.com|login\.live\.com|login\.yahoo\.com|github\.com|www\.facebook\.com|m\.facebook\.com|(www\.)?linkedin\.com)$/i
+    .test(host.trim());
+}
+
+/** The provider a login host belongs to, in words, for telling the user why we stopped. */
+export function providerName(host: string): string {
+  const named = host.match(/google|youtube|apple|microsoft|live|yahoo|github|facebook|linkedin/i);
+  const word = named ? named[0].toLowerCase() : 'that provider';
+  return { live: 'Microsoft', microsoftonline: 'Microsoft', youtube: 'Google' }[word]
+    || word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+/**
  * On a registration page: fills the account name, every password box and any
  * name the page asks for, ticks only what it marks required, and submits.
  *
@@ -830,6 +857,13 @@ export async function runApplication(page: Page, options: {
         const page1 = await whereNow();
         if (!ownSite(page1.protocol, page1.host)) {
           return failed("The sign-in page is not on the job link's own secure site, so your login was not entered there.");
+        }
+        // Checked after the chain of trust, not before it, because this is the
+        // case the chain of trust gets wrong: a job on a Google Form makes
+        // accounts.google.com the job's own site.
+        if (isProviderLoginHost(page1.host)) {
+          const named = providerName(page1.host);
+          return failed(`This job is behind a ${named} sign-in. We never use your ${named} account on your behalf, so please apply from the job link yourself. Your tailored resume is ready.`);
         }
         // One attempt per run: a sign-in page that comes back means it was refused.
         const login = signedIn ? null : await options.loginFor?.(page1.host);

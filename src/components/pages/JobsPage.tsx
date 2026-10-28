@@ -640,6 +640,10 @@ const stats = [
           success: autoApplyResult.success,
           message: autoApplyResult.success
             ? 'Application submitted successfully'
+            // Handed to the worker. Nothing has been sent yet and nothing has
+            // gone wrong, so it must read as neither.
+            : autoApplyResult.error === 'QUEUED'
+              ? 'We are applying for you. You can close this page.'
             : autoApplyResult.error === 'SUBMISSION_UNCERTAIN'
               ? autoApplyResult.uncertainMessage
                 || 'Submit was pressed for this job, but no confirmation was seen. The employer may already have your application.'
