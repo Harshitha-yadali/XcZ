@@ -6,3 +6,6 @@ node_modules/
 .codex-tmp-*/
 supabase/.temp/
 .gstack/
+
+# Built from src/utils/exportUtils.ts by `npm run worker:build`.
+worker/resume-pdf.mjs

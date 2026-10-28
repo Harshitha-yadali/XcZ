@@ -1,5 +1,8 @@
 // src/utils/exportUtils.ts
-import jsPDF from 'jspdf';
+// The named export, not the default: jsPDF ships CommonJS, and Node hands a
+// default import the whole namespace object rather than the constructor. The
+// worker renders the same PDF as the browser, so this file has to load in both.
+import { jsPDF } from 'jspdf';
 import { ResumeData, Certification } from '../types/resume'; // Import Certification type
 import { saveAs } from 'file-saver';
 import { ExportOptions, defaultExportOptions } from '../types/export';

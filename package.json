@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:gpt5": "node scripts/test-gpt5.mjs gpt-5",
-    "worker": "node --env-file=worker/.env --experimental-strip-types worker/index.mjs"
+    "worker:build": "esbuild src/utils/exportUtils.ts --bundle --platform=node --format=esm --external:jspdf --outfile=worker/resume-pdf.mjs --log-level=warning",
+    "worker": "npm run worker:build && node --env-file=worker/.env --experimental-strip-types worker/index.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
