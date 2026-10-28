@@ -114,6 +114,39 @@
     });
   }
 
+  // A site with no account for this applicant yet. Two password boxes make it
+  // a registration form; a term that must be accepted stands beside a mailing
+  // list that must be left alone.
+  if (view === 'signup') {
+    document.title = 'Create your account';
+    root.innerHTML = `
+      <h1>Create your account</h1>
+      <form id="register">
+        <label for="email">Email</label><input id="email" name="email" type="text">
+        <label for="first">First name</label><input id="first" name="first_name" type="text">
+        <label for="last">Last name</label><input id="last" name="last_name" type="text">
+        <label for="secret">Password</label><input id="secret" name="password" type="password">
+        <label for="again">Confirm password</label><input id="again" name="confirm" type="password">
+        <label><input name="terms" type="checkbox" required> I accept the terms</label>
+        <label><input name="news" type="checkbox"> Email me similar jobs</label>
+        <button type="submit">Create account</button>
+        <div id="problem"></div>
+      </form>`;
+    document.getElementById('register').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      await record({
+        step: 'signup',
+        value: form.get('email'),
+        matched: form.get('confirm') === form.get('password') && String(form.get('password') || '').length >= 12,
+        name: `${form.get('first_name')} ${form.get('last_name')}`.trim(),
+        terms: form.get('terms') === 'on',
+        news: form.get('news') === 'on',
+      });
+      location.href = `http://${home}/single.html`;
+    });
+  }
+
   if (view === 'code') {
     document.title = 'ExampleID - Verify it is you';
     root.innerHTML = '<p>Enter the verification code we sent to your email.</p><input name="otp" type="text"><button type="button">Verify</button>';

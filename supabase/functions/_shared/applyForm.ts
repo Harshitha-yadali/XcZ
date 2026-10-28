@@ -514,6 +514,63 @@ export function openSignIn(): any {
   return Boolean(el);
 }
 
+/**
+ * On a registration page: fills the account name, every password box and any
+ * name the page asks for, ticks only what it marks required, and submits.
+ *
+ * Deliberately apart from the form-filling path. That one remembers answers on
+ * the profile so the next employer need not ask again, and a password must
+ * never travel that way.
+ */
+export function signUp({ username, password, fullName }: any): any {
+  const visible = (el: any) => el.getClientRects().length > 0;
+  const boxes: any[] = [...document.querySelectorAll('input[type=password]')].filter(visible);
+  if (!boxes.length) return false;
+  const scope: any = boxes[0].closest('form') || document;
+  const inputs: any[] = [...scope.querySelectorAll('input')].filter(visible);
+  const setValue = (el: any, value: string) => {
+    // React keeps its own copy of the value, so go through the native setter.
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, value);
+    for (const type of ['input', 'change', 'keyup']) el.dispatchEvent(new Event(type, { bubbles: true }));
+  };
+  const describe = (el: any) =>
+    `${el.name} ${el.id} ${el.autocomplete} ${el.placeholder} ${el.labels?.[0]?.innerText || ''}`;
+
+  // Every password box takes the same value: the later ones are confirmations.
+  for (const box of boxes) setValue(box, password);
+
+  const first = String(fullName || '').split(' ')[0] || '';
+  const rest = String(fullName || '').split(' ').slice(1).join(' ') || first;
+  let wholeNameDone = false;
+  for (const el of inputs) {
+    if (!['text', 'email', 'tel'].includes(el.type) || el.readOnly || el.disabled) continue;
+    const about = describe(el);
+    if (/e-?mail|user ?name|login/i.test(about)) setValue(el, username);
+    else if (!fullName) continue;
+    else if (/first ?name|given ?name/i.test(about)) setValue(el, first);
+    else if (/last ?name|surname|family ?name/i.test(about)) setValue(el, rest);
+    else if (/full ?name|^\s*name\s*$/i.test(about) && !wholeNameDone) {
+      setValue(el, fullName);
+      wholeNameDone = true;
+    }
+  }
+
+  // Tick what the page marks required and nothing else. An optional box here
+  // is a mailing list the user never asked to join.
+  for (const el of inputs) {
+    if (el.type !== 'checkbox') continue;
+    if (!(el.required || el.getAttribute('aria-required') === 'true')) continue;
+    if (!el.checked) el.click();
+  }
+
+  const button: any = scope.querySelector('button[type=submit], input[type=submit]')
+    || [...scope.querySelectorAll('button, [role="button"]')].find((el: any) =>
+      visible(el) && /^(create( an| my)? account|sign ?up|register|continue|submit)$/i.test(String(el.innerText || '').trim()));
+  if (!button) return false;
+  button.click();
+  return true;
+}
+
 /** True when the page is a bot check standing in front of the form. */
 export function hasCaptchaWall(): any {
   return [...document.querySelectorAll('iframe')].some((frame: any) =>
@@ -653,6 +710,16 @@ export async function runApplication(page: Page, options: {
    */
   loginFor?: (host: string) => Promise<{ username: string; password: string } | null>;
   /**
+   * Opens an account on a sign-in address the user has none for, when the page
+   * in front of us is a registration form. Returns the login to register with,
+   * or null to stop and ask the user instead.
+   *
+   * The caller must store the password before returning it. The account exists
+   * from the moment the form is submitted, so a password kept only in memory
+   * is one a crash turns into an account nobody can get back into.
+   */
+  registerAs?: (host: string) => Promise<{ username: string; password: string } | null>;
+  /**
    * Called just before the Submit button is pressed. From this point the
    * application may reach the employer even if nothing after it is observed,
    * so the caller should record that a submission was attempted.
@@ -701,6 +768,12 @@ export async function runApplication(page: Page, options: {
   // case nothing is submitted unless a later page did take the resume.
   const isForm = async () => {
     if (takesResume(fields)) return true;
+    // A registration page asks for an email, a name and a couple of consents,
+    // which counts up like a questionnaire. No employer asks for a password on
+    // an application form, so a password box settles it: this is a way in, not
+    // the application, and it must not be filled in as one.
+    if (await page.evaluate(() => Boolean([...document.querySelectorAll('input[type=password]')]
+      .find((el: any) => el.getClientRects().length > 0))).catch(() => false)) return false;
     if (fields.length < 3) return false;
     const { kind } = await page.evaluate(findAction).catch(() => ({ kind: '' }));
     if (kind === 'next') return true;
@@ -760,7 +833,20 @@ export async function runApplication(page: Page, options: {
         }
         // One attempt per run: a sign-in page that comes back means it was refused.
         const login = signedIn ? null : await options.loginFor?.(page1.host);
-        if (!login) return askForLogin(page1.host, signedIn);
+        if (!login) {
+          // Nothing saved for this address. Where what stands in front of us is
+          // itself a registration form, and the user has allowed it, open an
+          // account instead of stopping. A sign-in page that merely offers a
+          // "Create account" link is not this case, and still goes to the user.
+          const made = !signedIn && stage === 'signup' ? await options.registerAs?.(page1.host) : null;
+          if (!made) return askForLogin(page1.host, signedIn);
+          if (!(await page.evaluate(signUp, { ...made, fullName: options.profile.fullName }))) return noSignInForm;
+          signedIn = true;
+          lastApply = '';
+          await sleep(4000);
+          fields = await settle();
+          continue;
+        }
 
         if (stage === 'signup') {
           await page.evaluate(openSignIn);

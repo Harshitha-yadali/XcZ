@@ -21,6 +21,7 @@
  *   POLL_MS                                   how often to look for work (default 5000)
  */
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -30,12 +31,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const shared = (name) => pathToFileURL(path.join(here, '..', 'supabase', 'functions', '_shared', name)).href;
 const { openPage } = await import(shared('cdp.ts'));
 const { runApplication } = await import(shared('applyForm.ts'));
-const { decryptSecret } = await import(shared('vault.ts'));
+const { decryptSecret, encryptSecret } = await import(shared('vault.ts'));
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CREDENTIALS_KEY = process.env.CREDENTIALS_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+// Opening an account commits the user's real name to an employer's terms, so
+// it stays off until it is switched on deliberately. Until the per-user
+// setting of Phase 6 exists, this flag is the whole of the kill switch.
+const AUTO_REGISTER = process.env.AUTO_REGISTER === '1';
 const WORKER_ID = process.env.WORKER_ID || `${hostname()}:${process.pid}`;
 const POLL_MS = Number(process.env.POLL_MS || 5000);
 const RESUME_BUCKET = 'user-resumes';
@@ -54,6 +59,14 @@ const CHROME_PATHS = [
 ].filter(Boolean);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A password for one employer's site and no other. The fixed prefix is there
+ * to satisfy the "upper, lower, digit, symbol" rule most sites impose; the
+ * strength is in the 18 random bytes after it, not in the prefix.
+ * ponytail: if a site rejects the shape, read its rule rather than widening this.
+ */
+const newPassword = () => `Aa1!${randomBytes(18).toString('base64url')}`;
 
 // ------------------------------------------------------------------ supabase
 
@@ -204,6 +217,36 @@ async function runOne(application, endpoint) {
     }
   };
 
+  /**
+   * Opens an account on an employer's site, when the engine is standing in
+   * front of a registration form and nothing is saved for that address.
+   *
+   * The password reaches the vault before it is returned, never after. From
+   * the moment the form is submitted the account exists, so a password held
+   * only in memory is one a crash turns into an account the user is locked
+   * out of. Saving first can instead leave a login for an account that was
+   * never created, which the next run simply reports as not accepted.
+   */
+  const registerAs = async (host) => {
+    if (!AUTO_REGISTER || !CREDENTIALS_KEY) return null;
+    const username = profile.email_address;
+    if (!username) return null;
+    const password = newPassword();
+    await rest('user_credentials_vault?on_conflict=user_id,platform', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        user_id: userId,
+        platform: host,
+        username,
+        password_encrypted: await encryptSecret(password, CREDENTIALS_KEY),
+        is_verified: false,
+      }),
+    });
+    console.log(`[${application.id}] opening an account on ${host}`);
+    return { username, password };
+  };
+
   let page = null;
   let submitPressed = false;
   let result;
@@ -228,6 +271,7 @@ async function runOne(application, endpoint) {
       resume: { name: `${fullName.replace(/[^A-Za-z0-9]+/g, '_') || 'Resume'}_Resume.pdf`, base64: pdf },
       submit: true,
       loginFor,
+      registerAs,
       infer: (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
       // Written before the click: if this process dies after it, the row still
       // says a submission was attempted, and it is never retried.

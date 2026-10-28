@@ -291,6 +291,42 @@ try {
     assert.deepEqual(store.asked, []);
   });
 
+  // Some sites take applications only from an account, and offer no way in
+  // but to open one. The password is the worker's to make and to keep; the
+  // user's own password is never part of it.
+  store = vault({});
+  let opened = null;
+  await signInCheck('opens an account where the site has none, and leaves the mailing list alone', {
+    url: gated(undefined, '&next=signup'), saved: { gender: 'Male' }, loginFor: store.loginFor,
+    registerAs: async (host) => {
+      opened = host;
+      return { username: 'asha@example.com', password: 'Aa1!a-long-generated-secret' };
+    },
+  }, (result) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(opened, signInHost);
+    assert.equal(typed.length, 1);
+    const [entry] = typed;
+    assert.equal(entry.step, 'signup');
+    assert.equal(entry.value, 'asha@example.com');
+    // Both password boxes got the same value, and it was not a short one.
+    assert.equal(entry.matched, true);
+    assert.equal(entry.name, 'Asha Verma');
+    // The term the form requires is accepted; the mailing list beside it is not.
+    assert.equal(entry.terms, true);
+    assert.equal(entry.news, false);
+  });
+
+  // With registration switched off the run stops and asks, rather than
+  // signing the user up to anything on their behalf.
+  store = vault({});
+  await signInCheck('stops at a registration form when opening accounts is off', {
+    url: gated(undefined, '&next=signup'), loginFor: store.loginFor,
+  }, (result) => {
+    assert.equal(result.status, 'needs_login');
+    assert.deepEqual(typed, []);
+  });
+
   store = vault({ [signInHost]: { ...goodLogin, password: 'wrong' } });
   await signInCheck('asks the user to update a login the site refuses, after one try', { url: gated(), loginFor: store.loginFor }, (result) => {
     assert.equal(result.status, 'needs_login');
