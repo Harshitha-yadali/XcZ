@@ -819,13 +819,23 @@ export async function runApplication(page: Page, options: {
     const ownSite = (protocol: string, host: string) =>
       loginPageAllowed(protocol, host, options.url)
       || sentOnTo.some((vouched) => loginPageAllowed(protocol, host, `https://${vouched}/`));
-    const askForLogin = (site: string, rejected: boolean): ApplyResult => ({
-      status: 'needs_login',
-      site,
-      message: rejected
-        ? `${site} did not accept the sign-in we have for you, or asked for a step we cannot do. Check the details and try again.`
-        : `${site} only takes applications from a signed-in account.`,
-    });
+    const askForLogin = (site: string, rejected: boolean): ApplyResult => {
+      // Every path that would ask the user for a login comes through here, so
+      // the refusal belongs here rather than beside one of them. Guarding only
+      // the sign-in inside the walk left the one after it open, and that is
+      // the one a job on a Google Form reached.
+      if (isProviderLoginHost(site)) {
+        const named = providerName(site);
+        return failed(`This job is behind a ${named} sign-in. We never use your ${named} account on your behalf, so please apply from the job link yourself. Your tailored resume is ready.`);
+      }
+      return {
+        status: 'needs_login',
+        site,
+        message: rejected
+          ? `${site} did not accept the sign-in we have for you, or asked for a step we cannot do. Check the details and try again.`
+          : `${site} only takes applications from a signed-in account.`,
+      };
+    };
 
     // Between the job link and the form there may be an Apply button, a
     // sign-in page, or both. Take up to six such steps.
@@ -846,8 +856,11 @@ export async function runApplication(page: Page, options: {
         if (!ownSite(page1.protocol, page1.host)) {
           return failed("The sign-in page is not on the job link's own secure site, so your login was not entered there.");
         }
-        // Checked after the chain of trust, not before it, because this is the
-        // case the chain of trust gets wrong: a job on a Google Form makes
+        // askForLogin refuses these too, but this has to stand here as well:
+        // without it a login already saved for one of these hosts would be
+        // fetched from the vault and typed before anyone was asked anything.
+        // Checked after the chain of trust, because this is the case the chain
+        // of trust gets wrong - a job on a Google Form makes
         // accounts.google.com the job's own site.
         if (isProviderLoginHost(page1.host)) {
           const named = providerName(page1.host);
