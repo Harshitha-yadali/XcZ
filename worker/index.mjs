@@ -43,6 +43,8 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const AUTO_REGISTER = process.env.AUTO_REGISTER === '1';
 const WORKER_ID = process.env.WORKER_ID || `${hostname()}:${process.pid}`;
 const POLL_MS = Number(process.env.POLL_MS || 5000);
+// How often to look for work a stopped worker left behind. Rare and cheap.
+const SWEEP_MS = 5 * 60 * 1000;
 const RESUME_BUCKET = 'user-resumes';
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
@@ -351,8 +353,21 @@ process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 
 console.log(`Auto Apply worker ${WORKER_ID} started; polling every ${POLL_MS}ms.`);
+let sweptAt = 0;
 try {
   while (running) {
+    // A worker that stops mid-run leaves its application claimed, and nothing
+    // else was calling this, so those rows sat untouched for good. Runs take
+    // about two minutes, so an hour old means abandoned.
+    if (Date.now() - sweptAt > SWEEP_MS) {
+      sweptAt = Date.now();
+      try {
+        const settled = await rest('rpc/requeue_stalled_auto_apply', { method: 'POST', body: JSON.stringify({ older_than: '1 hour' }) });
+        if (settled) console.log(`Recovered ${settled} abandoned application(s).`);
+      } catch (error) {
+        console.error('Could not sweep abandoned work:', error.message);
+      }
+    }
     let claimed = [];
     try {
       claimed = (await claim(1)) || [];
