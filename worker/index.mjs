@@ -231,6 +231,13 @@ async function runOne(application, endpoint) {
     if (!AUTO_REGISTER || !CREDENTIALS_KEY) return null;
     const username = profile.email_address;
     if (!username) return null;
+    // A login already saved for this site that we could not read - the key it
+    // was encrypted under has changed - is still an account the user holds
+    // there. Opening a second one would only be refused as a duplicate, so
+    // leave it alone and let the run ask the user to put the login right.
+    if (await one(`user_credentials_vault?select=id&user_id=eq.${userId}&platform=eq.${encodeURIComponent(host)}`)) {
+      return null;
+    }
     const password = newPassword();
     await rest('user_credentials_vault?on_conflict=user_id,platform', {
       method: 'POST',
