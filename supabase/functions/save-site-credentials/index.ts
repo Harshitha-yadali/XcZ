@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { denied, getCaller } from "../_shared/auth.ts";
 import { encryptSecret } from "../_shared/vault.ts";
+import { isProviderLoginHost, providerName } from "../_shared/providerHosts.ts";
 
 // Stores the login a user gives us for one sign-in address (login.ibm.com,
 // www.linkedin.com, a company's Workday site), so auto-apply can sign in
@@ -34,6 +35,12 @@ Deno.serve(async (req: Request) => {
     const site = String(given || '').trim().toLowerCase();
     if (!/^(?=.{1,253}$)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site)) {
       return json({ success: false, error: 'That sign-in address is not valid.' }, 400);
+    }
+    // The engine refuses these sites, so a password saved for one could never
+    // be used. It would only sit here, and it is the key to the user's mail and
+    // everything else they sign into with it.
+    if (isProviderLoginHost(site)) {
+      return json({ success: false, error: `We never use your ${providerName(site)} account, so that login was not saved.` }, 400);
     }
     if (typeof username !== 'string' || !username.trim() || username.length > 320) {
       return json({ success: false, error: 'Enter the email or username you use on that site.' }, 400);
