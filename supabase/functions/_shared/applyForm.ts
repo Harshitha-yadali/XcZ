@@ -854,6 +854,7 @@ export async function runApplication(page: Page, options: {
     let signedIn = false;
     let lastApply = ''; // what the previous Apply step did: an address it went to, or 'clicked'
     let followedSignIn = false;
+    let lookedAgain = false;
     for (let step = 0; step < 6 && !(await isForm()); step++) {
       let stage = await stageOf();
       // A sign-in page may show only a row of providers to choose from, with
@@ -935,7 +936,16 @@ export async function runApplication(page: Page, options: {
       } else {
         // Probably the job posting: follow its Apply link and look again.
         const next = await page.evaluate(followApplyLink).catch(() => null);
-        if (!next) break;
+        if (!next) {
+          // A page still drawing itself has no Apply link either, and a pause
+          // part way down a long form looks like the end of it. Microsoft Forms
+          // does this on a busy machine, so look once more before giving up.
+          if (lookedAgain) break;
+          lookedAgain = true;
+          await sleep(3000);
+          fields = await settle();
+          continue;
+        }
         lastApply = next;
         if (next !== 'clicked') {
           // The employer's own page sending the applicant on to its hiring
