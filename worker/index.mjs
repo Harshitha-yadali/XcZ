@@ -80,7 +80,10 @@ const headers = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, '
 async function rest(pathAndQuery, init = {}) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, { ...init, headers: { ...headers, ...init.headers } });
   if (!response.ok) throw new Error(`${init.method || 'GET'} ${pathAndQuery} -> ${response.status} ${(await response.text()).slice(0, 200)}`);
-  return response.status === 204 ? null : response.json();
+  // An insert with return=minimal answers 201 with no body at all, so the
+  // status says nothing about whether there is JSON to read.
+  const body = await response.text();
+  return body ? JSON.parse(body) : null;
 }
 
 const one = async (pathAndQuery) => (await rest(pathAndQuery))?.[0] ?? null;
