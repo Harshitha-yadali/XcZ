@@ -266,11 +266,21 @@ export const AutoAppliedJobsPage: React.FC = () => {
                   ) : (
                     <button
                       onClick={() =>
-                        application.status === 'needs_login' ? setSigningIn(application) : setAnswering(application)
+                        application.status === 'needs_login'
+                          ? setSigningIn(application)
+                          : application.pending_questions?.length
+                            ? setAnswering(application)
+                            // Paused before questions were saved with the row, so
+                            // the only way to learn what it wants is to run it again.
+                            : sendBack(application, {})
                       }
                       className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
                     >
-                      {application.status === 'needs_login' ? 'Add login' : 'Answer questions'}
+                      {application.status === 'needs_login'
+                        ? 'Add login'
+                        : application.pending_questions?.length
+                          ? 'Answer questions'
+                          : 'Try again'}
                     </button>
                   )}
                 </div>
