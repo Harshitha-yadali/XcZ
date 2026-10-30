@@ -191,13 +191,14 @@ export function scanForm(): any {
     // put to the user: "15. Name of the Engineering College Single line text."
     // Only the whole phrase, and only with its full stop: "Number" and "Date"
     // on their own end plenty of real questions, such as "Mobile Number".
-    .replace(/\s*(single line text|long answer text|multiple choice|file upload|net promoter score|date input)\.\s*$/i, '')
+    .replace(/\s*(single line text|long answer text|single choice|multiple choice|multi.?choice|file upload|net promoter score|date input)\.\s*$/i, '')
     .trim();
   const starred = (text: any) => /[*✱]/.test(String(text || ''));
   const firstLine = (el: any) => String(el?.innerText || '').trim().split('\n')[0];
+  const namedBy = (el: any) => String(el?.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
+    .map((id) => (document.getElementById(id) as any)?.innerText).filter(Boolean).join(' ');
   const labelOf = (el: any) => {
-    const named = String(el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
-      .map((id) => (document.getElementById(id) as any)?.innerText).filter(Boolean).join(' ');
+    const named = namedBy(el);
     const wrapper = el.closest('[role="combobox"]');
     let label = named || el.labels?.[0]?.innerText || el.getAttribute('aria-label') || wrapper?.getAttribute('aria-label') || '';
     // No label element: the question is usually the text just above the field.
@@ -274,8 +275,11 @@ export function scanForm(): any {
     let box = group.first.parentElement;
     // An empty wrapper around the radio itself is not the question either.
     while (box && box !== document.body && (!clean(firstLine(box)) || group.options.includes(clean(firstLine(box))))) box = box.parentElement;
-    group.label = clean(firstLine(box));
-    group.required = group.required || starred(firstLine(box));
+    // A group that names its question is believed first. Microsoft Forms puts
+    // the number and the words on separate lines, so a first line reads "10.".
+    const heading = namedBy(group.first.closest('[role="radiogroup"], [role="group"]')) || firstLine(box);
+    group.label = clean(heading);
+    group.required = group.required || starred(heading);
     delete group.first;
   }
   return fields;

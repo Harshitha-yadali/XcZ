@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: a Microsoft Forms questionnaire</title>
+<!--
+  A stand-in for scripts/auto-apply-flow-test.mjs, copied from the markup of a
+  live Microsoft Form. The question number and its words are on separate lines,
+  so a group's first line of text is only "10.", and its accessible name ends
+  with the kind of answer it takes.
+
+  ?late=1 draws the first two fields, stops long enough to look finished, then
+  draws the rest. That is what a slow machine sees of a long form.
+-->
+<style>.sr { position: absolute; clip: rect(0 0 0 0); }</style>
+<form id="application" novalidate></form>
+<script>
+  const form = document.getElementById('application');
+  const text = (label) => `<div><label>${label}<input type="text"></label></div>`;
+  const first = text('1. Name') + text('2. EMail ID');
+  const rest = text('3. Phone Number') + text('4. Current Location') + text('5. Hometown') + `
+    <div role="radiogroup" aria-labelledby="question-10 question-10-info">
+      <div id="question-10"><div>10.</div><div>Passing Degree</div></div>
+      <span id="question-10-info" class="sr">Single choice. </span>
+      <label><input type="radio" name="r5e1" value="BTech" required>BTech</label>
+      <label><input type="radio" name="r5e1" value="BE" required>BE</label>
+    </div>
+    <div role="radiogroup" aria-labelledby="question-11 question-11-info">
+      <div id="question-11"><div>11.</div><div>Willing To Relocate</div></div>
+      <span id="question-11-info" class="sr">Single choice. </span>
+      <label><input type="radio" name="r6f2" value="Yes" required>Yes</label>
+      <label><input type="radio" name="r6f2" value="No" required>No</label>
+    </div>
+    <button type="submit">Submit</button>`;
+  if (new URLSearchParams(location.search).has('late')) {
+    form.innerHTML = first;
+    setTimeout(() => form.insertAdjacentHTML('beforeend', rest), 3500);
+  } else {
+    form.innerHTML = first + rest;
+  }
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__sent = true;
+    document.body.innerHTML = '<h1>Thanks!</h1><p>Your response was submitted.</p>';
+  });
+</script>

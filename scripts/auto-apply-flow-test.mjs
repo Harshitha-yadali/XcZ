@@ -523,6 +523,28 @@ try {
     assert.equal(received.length, before);
   });
 
+  await check('worker: reads a Microsoft Forms choice, answers what the resume says, asks the rest in words', async () => {
+    Object.assign(db.user_profiles[0], { apply_answers: {} });
+    const row = queue(form('ms-forms.html'));
+    await settled(row);
+    assert.equal(row.status, 'needs_input', row.error_message);
+    // "10. Passing Degree" is on the resume, so only the other one is asked.
+    assert.deepEqual(row.pending_questions.map((question) => question.label), ['11. Willing To Relocate']);
+    assert.deepEqual(row.pending_questions[0].options, ['Yes', 'No']);
+    answer(row, { [row.pending_questions[0].key]: 'Yes' });
+    await settled(row);
+    assert.equal(row.status, 'submitted', row.error_message);
+    assert.equal(receivedFor(row), 1);
+  });
+
+  await check('worker: waits out a form that pauses part way through drawing itself', async () => {
+    Object.assign(db.user_profiles[0], { apply_answers: {} });
+    const row = queue(`${form('ms-forms.html')}?late=1`);
+    await settled(row);
+    assert.equal(row.status, 'needs_input', row.error_message);
+    assert.deepEqual(row.pending_questions.map((question) => question.label), ['11. Willing To Relocate']);
+  });
+
   await check('worker: stops for a login, carries on with the saved one, and notes that it worked', async () => {
     Object.assign(db.user_profiles[0], { apply_answers: { gender: 'Female' } });
     const row = queue(gated(), { given_answers: { [consent]: 'yes' } });
