@@ -312,11 +312,18 @@ export const JobsPage: React.FC<JobsPageProps> = ({
 
   // Handle auto-apply completion
   useEffect(() => {
+    // Already running, or waiting on the user: that page says which and asks
+    // for whatever is needed.
+    if (autoApplyResult?.error === 'ALREADY_IN_HAND') {
+      closeAutoApplyModals();
+      navigate('/jobs/auto-applied');
+      return;
+    }
     if (autoApplyResult && !showStatusModal && !showProjectModal) {
       setSelectedJob(autoApplyJob);
       setShowApplicationConfirmation(true);
     }
-  }, [autoApplyResult, showStatusModal, showProjectModal, autoApplyJob]);
+  }, [autoApplyResult, showStatusModal, showProjectModal, autoApplyJob, closeAutoApplyModals, navigate]);
 
 const stats = [
   { label: 'Total Jobs', value: total, icon: <Briefcase className="w-5 h-5" /> },

@@ -27,6 +27,18 @@ interface AutoApplyRequest {
 
 const UNCERTAIN = 'Submit was pressed, but the site did not show a confirmation. The employer may already have your application: check your email for a confirmation before applying again.';
 
+/** Held by a worker. A second browser on the same form is a second application. */
+const WITH_A_WORKER = ['queued', 'optimizing_resume', 'logging_in', 'filling_form'];
+
+/** The row status each outcome is stored as. A review run sends nothing, so it changes none. */
+const STATUS_FOR: Partial<Record<ApplyResult['status'], string>> = {
+  submitted: 'submitted',
+  unconfirmed: 'submission_uncertain',
+  needs_input: 'needs_input',
+  needs_login: 'needs_login',
+  failed: 'failed',
+};
+
 const RESUME_BUCKET = 'user-resumes';
 
 // Never inferred, whatever the model says: these are personal facts, legal
@@ -122,14 +134,17 @@ Deno.serve(async (req: Request) => {
       // 'unconfirmed' means Submit was pressed with no confirmation seen. It
       // keeps the duplicate lock: only 'failed' lets the job be tried again.
       const uncertain = result.status === 'unconfirmed';
+      const status = STATUS_FOR[result.status];
       const { error: updateError } = await supabase
         .from('auto_apply_applications')
         .update({
           platform,
-          status: submitted ? 'submitted' : uncertain ? 'uncertain' : result.status === 'failed' ? 'failed' : 'paused',
+          ...(status ? { status } : {}),
           submission_time: submitted ? new Date().toISOString() : null,
           error_message: submitted ? null : result.message || null,
           paused_at_field: result.questions?.[0]?.label ?? null,
+          pending_questions: result.questions || [],
+          login_site: result.site || null,
           form_data_captured: result.filled || {},
           time_taken_seconds: Math.floor((Date.now() - startTime) / 1000),
         })
@@ -180,9 +195,16 @@ Deno.serve(async (req: Request) => {
     }
     // Submit was pressed on an earlier run and its outcome is unknown, or that
     // run is still going. Pressing it again could send a second application.
-    if (application.status === 'submitting' || application.status === 'uncertain') {
+    if (application.status === 'submitting' || application.status === 'submission_uncertain') {
       return new Response(
         JSON.stringify({ success: false, status: 'uncertain', message: UNCERTAIN, error: UNCERTAIN }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+    if (WITH_A_WORKER.includes(application.status)) {
+      const running = 'This application is already running. Follow it on My Auto Applications.';
+      return new Response(
+        JSON.stringify({ success: false, status: 'queued', message: running, error: running }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }

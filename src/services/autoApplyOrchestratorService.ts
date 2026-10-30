@@ -99,9 +99,9 @@ class AutoApplyOrchestratorService {
         throw new Error('Please upload your resume first');
       }
 
-      // One live application per job: pick up the one that exists, never start a second.
+      // One live application per job: report the one that exists, never start a second.
       const live = await this.findLiveApplication(userId, jobId);
-      if (live) return await this.resumeLiveApplication(jobId, live, userResume, applicationUrl);
+      if (live) return this.resumeLiveApplication(live);
 
       // ponytail: no match-score gate or project suggestions before applying.
       // That step called a scoring method that never existed; wire it to the
@@ -352,7 +352,7 @@ class AutoApplyOrchestratorService {
   private async findLiveApplication(userId: string, jobId: string) {
     const { data, error } = await supabase
       .from('auto_apply_applications')
-      .select('id, status, resume_version_id, platform')
+      .select('id, status')
       .eq('user_id', userId)
       .eq('job_listing_id', jobId)
       .neq('status', 'failed')
@@ -360,41 +360,22 @@ class AutoApplyOrchestratorService {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data as { id: string; status: string; resume_version_id: string | null; platform: string } | null;
+    return data as { id: string; status: string } | null;
   }
 
-  /** Continues an application that already exists for this job, according to how far it got. */
-  private async resumeLiveApplication(
-    jobId: string,
-    live: { id: string; status: string; resume_version_id: string | null; platform: string },
-    originalResume: string,
-    applicationUrl: string
-  ): Promise<AutoApplyResult> {
+  /**
+   * Says how far the application already held for this job has got. Nothing is
+   * started from here: it belongs to a worker or is waiting on the user, and
+   * running it from this page as well is how one job reached an employer twice.
+   */
+  private resumeLiveApplication(live: { id: string; status: string }): AutoApplyResult {
     if (live.status === 'submitted') {
       return { success: true, applicationId: live.id };
     }
-    if (live.status === 'submitting' || live.status === 'uncertain') {
+    if (live.status === 'submitting' || live.status === 'submission_uncertain') {
       return { success: false, applicationId: live.id, error: 'SUBMISSION_UNCERTAIN' };
     }
-
-    // Still being prepared: reuse its tailored resume and go back to the form.
-    const { data: resume, error } = await supabase
-      .from('optimized_resumes')
-      .select('resume_content, pdf_url')
-      .eq('id', live.resume_version_id)
-      .maybeSingle();
-    if (error) throw error;
-    if (!resume?.pdf_url) throw new Error('Your earlier application for this job could not be reopened.');
-    const { data: signed } = await supabase.storage.from(RESUME_BUCKET).createSignedUrl(resume.pdf_url, 3600);
-    const platform = this.detectPlatform(applicationUrl);
-    return this.submitApplication(jobId, {
-      success: false,
-      manualFallback: platform !== 'greenhouse' && platform !== 'lever',
-      applicationId: live.id,
-      resumeId: live.resume_version_id || undefined,
-      pdfUrl: signed?.signedUrl,
-      resumeFlags: findUnsupportedClaims(originalResume, resume.resume_content as ResumeData),
-    });
+    return { success: false, applicationId: live.id, error: 'ALREADY_IN_HAND' };
   }
 
   /**
