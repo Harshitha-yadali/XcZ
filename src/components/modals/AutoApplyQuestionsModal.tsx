@@ -64,7 +64,10 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
                 </div>
               ) : question.type === 'checkbox' ? (
                 <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input type="checkbox" name={question.key} value="yes" required />
+                  {/* Only what the form itself insists on. A form's Submit that stays
+                      off lists every unticked box, the mailing list among them,
+                      and agreeing to that must never be the price of applying. */}
+                  <input type="checkbox" name={question.key} value="yes" required={Boolean(question.required)} />
                   Yes, I agree
                 </label>
               ) : question.options.length ? (

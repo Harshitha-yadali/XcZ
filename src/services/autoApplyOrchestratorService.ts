@@ -26,6 +26,7 @@ export interface ApplyQuestion {
   label: string;
   type: 'text' | 'date' | 'textarea' | 'select' | 'radio' | 'checks' | 'checkbox' | 'combobox' | 'file';
   options: string[];
+  required?: boolean;
 }
 
 export interface AutoApplyResult {
