@@ -611,7 +611,20 @@ class AutoApplyOrchestratorService {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    const applications = data || [];
+
+    // pdf_url is a path in the private bucket, not an address a link can open.
+    const paths = applications
+      .map((application: any) => application.optimized_resumes?.pdf_url)
+      .filter((path: string | undefined) => path && !/^https?:/.test(path));
+    if (!paths.length) return applications;
+    const { data: signed } = await supabase.storage.from(RESUME_BUCKET).createSignedUrls([...new Set(paths)], 3600);
+    const links = new Map((signed || []).map((link) => [link.path, link.signedUrl]));
+    return applications.map((application: any) => (
+      application.optimized_resumes && links.get(application.optimized_resumes.pdf_url)
+        ? { ...application, optimized_resumes: { ...application.optimized_resumes, pdf_url: links.get(application.optimized_resumes.pdf_url) } }
+        : application
+    ));
   }
 }
 
