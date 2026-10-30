@@ -467,6 +467,15 @@ const stats = [
                 ⚙️
                 <span className="hidden sm:inline">Preferences</span>
               </GradientButton>
+
+              <GradientButton
+                onClick={() => navigate('/jobs/auto-applied')}
+                variant="secondary"
+                size="md"
+                icon={Briefcase}
+              >
+                <span>My Auto Applications</span>
+              </GradientButton>
             </div>
           )}
         </motion.div>

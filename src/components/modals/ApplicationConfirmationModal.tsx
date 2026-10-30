@@ -1,6 +1,7 @@
 // src/components/modals/ApplicationConfirmationModal.tsx
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   X,
   CheckCircle,
@@ -218,6 +219,14 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
                   <li>If the form asks something we cannot answer from your resume, we will ask you on My Auto Applications.</li>
                   <li>The result appears there too, so you never have to guess whether it was sent.</li>
                 </ul>
+                <Link
+                  to="/jobs/auto-applied"
+                  onClick={onClose}
+                  className="inline-flex items-center space-x-2 mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Open My Auto Applications</span>
+                </Link>
               </div>
             )}
 
