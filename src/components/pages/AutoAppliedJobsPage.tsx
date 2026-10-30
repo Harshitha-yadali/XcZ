@@ -22,6 +22,10 @@ import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
 import { isProviderLoginHost, providerName } from '../../../supabase/functions/_shared/providerHosts';
 import { AnimatedCard, GradientButton, FloatingParticles, ChristmasSnow } from '../ui';
 
+/** Statuses a worker is moving through, so the row will change without the user. */
+const IN_FLIGHT = ['queued', 'optimizing_resume', 'logging_in', 'filling_form', 'submitting'];
+const POLL_MS = 4000;
+
 interface Application {
   id: string;
   status: string;
@@ -57,24 +61,34 @@ export const AutoAppliedJobsPage: React.FC = () => {
   // The application whose question or sign-in is being answered right now.
   const [answering, setAnswering] = useState<Application | null>(null);
   const [signingIn, setSigningIn] = useState<Application | null>(null);
+  // Why the last answer could not be taken.
+  const [problem, setProblem] = useState('');
 
   // Applications held until the user supplies something. They keep their place
   // in the queue, so answering one sends it straight back to a worker.
   const waiting = applications.filter(
     (application) => application.status === 'needs_input' || application.status === 'needs_login',
   );
+  const running = applications.some((application) => IN_FLIGHT.includes(application.status));
 
   useEffect(() => {
-    if (!user) return;
-    loadApplications();
-    // A run started here carries on without this page open, so follow it rather
-    // than showing whatever was true when the page loaded.
-    return autoApplyOrchestratorService.watchApplications(user.id, () => loadApplications());
+    if (user) loadApplications();
   }, [user]);
+
+  // A run carries on without this page, so follow it rather than showing
+  // whatever was true when the page loaded. What the page shows is also what it
+  // offers: a stale list asks for answers to applications that have moved on.
+  // ponytail: polls only while a run is live, so a run started on another
+  // device shows on refresh. Realtime is the upgrade, once the table is added
+  // to the supabase_realtime publication.
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(loadApplications, POLL_MS);
+    return () => clearInterval(timer);
+  }, [running]);
 
   const loadApplications = async () => {
     try {
-      setLoading(true);
       const data = await autoApplyOrchestratorService.getUserApplications(user!.id);
       setApplications(data);
     } catch (error) {
@@ -82,6 +96,18 @@ export const AutoAppliedJobsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const sendBack = async (application: Application, answers: Record<string, string>) => {
+    setProblem('');
+    try {
+      await autoApplyOrchestratorService.resumeWithAnswers(
+        application.id, answers, application.pending_questions || [],
+      );
+    } catch (error: any) {
+      setProblem(error.message);
+    }
+    await loadApplications();
   };
 
   const filteredApplications = applications.filter((app) => {
@@ -186,12 +212,18 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </button>
 
           <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Auto-Applied Jobs
+            My Auto Applications
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
             Track all your AI-powered job applications
           </p>
         </div>
+
+        {problem && (
+          <div role="alert" className="mb-6 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            {problem}
+          </div>
+        )}
 
         {/* Applications held until the user supplies something. These keep their
             place: answering one sends it straight back to a worker. */}
@@ -451,14 +483,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
         onSubmit={async (answers) => {
           const application = answering;
           setAnswering(null);
-          if (!application) return;
-          try {
-            await autoApplyOrchestratorService.resumeWithAnswers(
-              application.id, answers, application.pending_questions || [],
-            );
-          } catch (error) {
-            console.error('Could not restart this application:', error);
-          }
+          if (application) await sendBack(application, answers);
         }}
         onClose={() => setAnswering(null)}
       />

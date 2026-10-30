@@ -540,7 +540,13 @@ class AutoApplyOrchestratorService {
         .eq('id', user.id);
     }
 
-    await this.requeue(applicationId, { given_answers: { ...remembered, ...thisOneOnly } });
+    // On top of what was given earlier: a form with a declaration on each of two
+    // pages would otherwise forget the first tick when the second is answered.
+    const { data: application } = await supabase
+      .from('auto_apply_applications').select('given_answers').eq('id', applicationId).maybeSingle();
+    await this.requeue(applicationId, {
+      given_answers: { ...(application?.given_answers || {}), ...remembered, ...thisOneOnly },
+    });
   }
 
   /** The user has saved the login a paused application was waiting for. */
@@ -549,29 +555,20 @@ class AutoApplyOrchestratorService {
     await this.requeue(applicationId, {});
   }
 
-  /** Puts a paused application back in the queue for a worker to pick up. */
+  /**
+   * Puts a paused application back in the queue for a worker to pick up. Only
+   * one still paused: a page left open can offer an answer to an application
+   * that has since moved on, and sending that one back would send it twice.
+   */
   private async requeue(applicationId: string, extra: Record<string, unknown>): Promise<void> {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('auto_apply_applications')
       .update({ status: 'queued', pending_questions: [], login_site: null, error_message: null, ...extra })
-      .eq('id', applicationId);
+      .eq('id', applicationId)
+      .in('status', ['needs_input', 'needs_login'])
+      .select('id');
     if (error) throw new Error('This application could not be restarted. Please try again.');
-  }
-
-  /**
-   * Calls back whenever one of this user's applications changes, so a page can
-   * follow a run it did not start and did not stay open for.
-   */
-  watchApplications(userId: string, onChange: () => void): () => void {
-    const channel = supabase
-      .channel(`auto-apply-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'auto_apply_applications', filter: `user_id=eq.${userId}` },
-        onChange,
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    if (!data?.length) throw new Error('This application has already moved on, so nothing was changed.');
   }
 
   private async triggerFormSubmission(
