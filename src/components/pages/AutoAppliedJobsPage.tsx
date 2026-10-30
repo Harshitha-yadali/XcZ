@@ -503,11 +503,13 @@ export const AutoAppliedJobsPage: React.FC = () => {
         message={signingIn?.error_message}
         onSubmit={async (username, password) => {
           const application = signingIn;
-          setSigningIn(null);
           if (!application?.login_site) return;
+          // Throws when saving fails, so the window can show why and stay open.
           await autoApplyOrchestratorService.resumeAfterLogin(
             application.id, application.login_site, username, password,
           );
+          setSigningIn(null);
+          await loadApplications();
         }}
         onClose={() => setSigningIn(null)}
       />
