@@ -8,6 +8,9 @@ import { AnimatedCard, GradientButton, FloatingParticles, ChristmasSnow } from '
 import { ResumePreview } from './ResumePreview';
 import { Parameter16ScoreDisplay } from './Parameter16ScoreDisplay';
 import { ProjectAnalysisModal } from './ProjectAnalysisModal';
+import { EvidenceReport } from './EvidenceReport';
+import { InterviewPack } from './InterviewPack';
+import { createInterviewPack, type InterviewPack as InterviewPackData } from '../services/interviewPackService';
 import { MobileOptimizedInterface } from './MobileOptimizedInterface';
 import { ProjectEnhancement } from './ProjectEnhancement';
 import { SubscriptionPlans } from './payment/SubscriptionPlans';
@@ -51,7 +54,7 @@ import {
   type JdOptimizationTierId,
 } from '../config/jdOptimizationTiers';
 import { findRequiredMissingSections } from '../utils/resumeMissingSections';
-import { FIRST_PASS_OPTIMIZATION_MODEL } from '../services/openrouterModelConfig';
+import { GEMINI_3_5_FLASH_LITE_MODEL } from '../services/openrouterModelConfig';
 
 // src/components/ResumeOptimizer.tsx
 const cleanResumeText = (text: string): string => {
@@ -136,6 +139,8 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
 
   const [optimizedResume, setOptimizedResume] = useState<ResumeData | null>(null);
   const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
+  const [submittedResume, setSubmittedResume] = useState<ResumeData | null>(null);
+  const [interviewPack, setInterviewPack] = useState<InterviewPackData | null>(null);
   const [pendingResumeData, setPendingResumeData] = useState<ResumeData | null>(null);
 
   const [beforeScore, setBeforeScore] = useState<MatchScore | null>(null);
@@ -257,6 +262,8 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     setInitialResumeScore(null);
     setFinalResumeScore(null);
     setParsedResumeData(null);
+    setSubmittedResume(null);
+    setInterviewPack(null);
     setManualProject({ title: '', startDate: '', endDate: '', techStack: [], oneLiner: '' });
     setNewTechStack('');
     setLowScoringProjects([]);
@@ -378,6 +385,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     try {
       setIsOptimizing(true);
       setJdOptimizationResult(null);
+      setInterviewPack(null);
       setParameter16Scores(null);
       setOptimizationScoreSummary(null);
       setUserActionsRequired([]);
@@ -409,17 +417,18 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           optimizationRunId,
           userType,
         );
-        // Luna drafts pass 1 cheaply; its single provider is flaky, so the tier model covers failures.
-        let firstPassModel = FIRST_PASS_OPTIMIZATION_MODEL;
+        // One retry. Quick may fall back to its previous model; Smart and Deep are
+        // never downgraded, they fail and are refunded.
+        let firstPassModel = qualityTier.modelId;
         let optimizationResult;
         try {
           optimizationResult = await runFirstPass(firstPassModel);
-        } catch (lunaError) {
-          console.warn(`First pass on ${firstPassModel} failed, using ${qualityTier.modelId}:`, lunaError);
-          firstPassModel = qualityTier.modelId;
+        } catch (firstError) {
+          console.warn(`First pass on ${firstPassModel} failed, retrying:`, firstError);
+          if (qualityTier.id === 'quick') firstPassModel = GEMINI_3_5_FLASH_LITE_MODEL;
           optimizationResult = await runFirstPass(firstPassModel);
         }
-        
+
         finalOptimizedResume = {
           ...optimizationResult.optimizedResume,
           name: resumeData.name || userName || '',
@@ -538,6 +547,17 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           console.error(`${qualityTier.name} refinement pass failed:`, loopErr);
           throw new Error(`${qualityTier.name} could not complete every promised AI pass. No credits were charged.`);
         }
+
+        // Part of the paid order, so it is made before the credit is spent: a
+        // failure here stops the order and refunds it.
+        if (qualityTier.interviewPack) {
+          try {
+            setInterviewPack(await createInterviewPack(resumeData, currentJobDescription, targetRole, qualityTier.modelId));
+          } catch (packError) {
+            console.error('Interview pack failed:', packError);
+            throw new Error(`${qualityTier.name} could not prepare your interview pack. No credits were charged.`);
+          }
+        }
       } else {
         // Fallback: Use parsed resume directly if no JD provided
         finalOptimizedResume = {
@@ -624,6 +644,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       }
       setActiveTab('resume');
       
+      setSubmittedResume(resumeData);
       setOptimizedResume(finalOptimizedResume);
     } catch (error) {
       console.error('Error in final optimization pass:', error);
@@ -1181,6 +1202,12 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           editorMode={editorMode}
           onEditorModeChange={setEditorMode}
           optimizationTier={selectedOptimizationTierRef.current}
+          evidenceReport={submittedResume && (
+            <>
+              {interviewPack && <InterviewPack pack={interviewPack} name={optimizedResume.name} />}
+              <EvidenceReport submitted={submittedResume} resume={optimizedResume} onUpdate={setOptimizedResume} />
+            </>
+          )}
           resumeEditor={
             <ResumeEditor
               resumeData={optimizedResume}
@@ -1537,6 +1564,12 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                     </div>
                   )}
 
+                  {interviewPack && <InterviewPack pack={interviewPack} name={optimizedResume.name} />}
+
+                  {submittedResume && (
+                    <EvidenceReport submitted={submittedResume} resume={optimizedResume} onUpdate={setOptimizedResume} />
+                  )}
+
                   {optimizedResume && showMissingProfile && (
                     <MissingProfilePrompt
                       resumeData={optimizedResume}
@@ -1798,6 +1831,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       <OptimizationQualityModal
         isOpen={showOptimizationQuality}
         processingTier={processingQualityTier}
+        creditsFor={(tierId) => getOptimizationTierRemaining(userSubscription, tierId)}
         error={qualitySelectionError}
         onClose={() => {
           if (!processingQualityTier) {

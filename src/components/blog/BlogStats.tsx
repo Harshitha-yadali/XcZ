@@ -1,19 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, FolderOpen, Star, Clock } from 'lucide-react';
+import { BookOpen, FolderOpen } from 'lucide-react';
 
 interface BlogStatsProps {
   totalPosts: number;
   totalCategories: number;
-  featuredPosts: number;
-  averageReadingTime: number;
 }
 
 export const BlogStats: React.FC<BlogStatsProps> = ({
   totalPosts,
-  totalCategories,
-  featuredPosts,
-  averageReadingTime
+  totalCategories
 }) => {
   const stats = [
     {
@@ -27,18 +23,6 @@ export const BlogStats: React.FC<BlogStatsProps> = ({
       value: totalCategories,
       icon: <FolderOpen className="w-5 h-5" />,
       color: 'green'
-    },
-    {
-      label: 'Featured Posts',
-      value: featuredPosts,
-      icon: <Star className="w-5 h-5" />,
-      color: 'yellow'
-    },
-    {
-      label: 'Avg. Read Time',
-      value: `${averageReadingTime} min`,
-      icon: <Clock className="w-5 h-5" />,
-      color: 'purple'
     }
   ];
 
@@ -54,16 +38,6 @@ export const BlogStats: React.FC<BlogStatsProps> = ({
           bg: 'bg-green-500/20 border border-green-500/30',
           text: 'text-green-400'
         };
-      case 'yellow':
-        return {
-          bg: 'bg-yellow-500/20 border border-yellow-500/30',
-          text: 'text-yellow-400'
-        };
-      case 'purple':
-        return {
-          bg: 'bg-purple-500/20 border border-purple-500/30',
-          text: 'text-purple-400'
-        };
       default:
         return {
           bg: 'bg-slate-500/20 border border-slate-500/30',
@@ -73,7 +47,7 @@ export const BlogStats: React.FC<BlogStatsProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div className="grid grid-cols-2 gap-4 mb-8">
       {stats.map((stat, index) => {
         const colors = getColorClasses(stat.color);
         return (

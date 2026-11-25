@@ -26,7 +26,7 @@ export function RoleHubPage() {
             <h1 className="text-3xl sm:text-4xl font-bold">Resume Guidance by Job Role</h1>
             <p className="text-lg text-ink-muted max-w-2xl">
               Pick your role to see the exact skills, ATS keywords and resume structure recruiters look for — then
-              check your resume's score for free.
+              check your resume's score for ₹9.
             </p>
           </header>
 

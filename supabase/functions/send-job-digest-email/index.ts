@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const emailData: JobDigestRequest = await req.json();
-    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboostai.in';
     const logoUrl = 'https://res.cloudinary.com/dlkovvlud/image/upload/w_1000,c_fill,ar_1:1,g_auto,r_max,bo_5px_solid_red,b_rgb:262c35/v1751536902/a-modern-logo-design-featuring-primoboos_XhhkS8E_Q5iOwxbAXB4CqQ_HnpCsJn4S1yrhb826jmMDw_nmycqj.jpg';
     const jobCount = emailData.jobs.length;
     const firstName = getFirstName(emailData.recipientName);

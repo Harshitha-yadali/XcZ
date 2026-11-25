@@ -64,7 +64,7 @@ export const SEO_LANDING_PAGES: SeoLandingPageData[] = [
     ],
     faqs: [
       { question: 'How many keywords should a resume include?', answer: 'There\'s no magic number — match the 8-12 most important terms from the specific job description, worked naturally into real bullet points, rather than hitting an arbitrary keyword count.' },
-      { question: 'Can I check my keyword match score for free?', answer: 'Yes — paste your resume and a job description into the free Resume Score Checker to see your current match and what\'s missing.' },
+      { question: 'Can I check my keyword match score?', answer: 'Yes — paste your resume and a job description into the Resume Score Checker (₹9) to see your current match and what\'s missing.' },
     ],
     primaryCta: CORE_LINKS.scoreChecker,
     secondaryCta: CORE_LINKS.optimizer,

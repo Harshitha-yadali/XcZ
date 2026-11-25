@@ -10,4 +10,4 @@ Disallow: /reset-password
 Disallow: /test-email-digest
 Disallow: /*?*session=active
 
-Sitemap: https://primoboost.ai/sitemap.xml
+Sitemap: https://primoboostai.in/sitemap.xml

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { getCaller } from "../_shared/auth.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { type Caller, getCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,9 @@ const jsonResponse = (data: any, status = 200) =>
   });
 
 const ALLOWED_OPENROUTER_MODELS = new Set([
+  "openai/gpt-6.1-terra",
+  "anthropic/claude-sonnet-5.5",
+  // Still requested by pages opened before this release.
   "openai/gpt-5.6-terra",
   "google/gemini-3.5-flash-lite",
   "anthropic/claude-opus-4.8",
@@ -28,6 +32,8 @@ const DEFAULT_OPENROUTER_MODEL = ALLOWED_OPENROUTER_MODELS.has(configuredDefault
   ? configuredDefaultModel
   : "google/gemma-4-31b-it:free";
 const MODELS_WITH_FIXED_SAMPLING = new Set([
+  "openai/gpt-6.1-terra",
+  "anthropic/claude-sonnet-5.5",
   "openai/gpt-5.6-terra",
   "openai/gpt-6-luna",
 ]);
@@ -49,6 +55,19 @@ const resolveAllowedModel = (requestedModel: unknown): string | null => {
   return ALLOWED_OPENROUTER_MODELS.has(model) ? model : null;
 };
 
+// Hidden reasoning counts against max_tokens; keep it short so the JSON is not
+// cut off and the cost of an order stays predictable.
+const LOW_REASONING_MODELS = new Set(["openai/gpt-6.1-terra", "anthropic/claude-sonnet-5.5"]);
+const withReasoning = (model: string) =>
+  LOW_REASONING_MODELS.has(model) ? { reasoning: { effort: "low" } } : {};
+
+const logUsage = (model: string, caller: Caller, body: any) => {
+  if (!model.endsWith(":free")) {
+    console.info("ai_usage", JSON.stringify({ model, user: caller.user?.id ?? null, ...body?.usage }));
+  }
+  return body;
+};
+
 const MAX_OUTPUT_TOKENS = 8000;
 const GUEST_MAX_OUTPUT_TOKENS = 500;
 
@@ -65,15 +84,15 @@ Deno.serve(async (req: Request) => {
   }
 
   // Logged-out visitors (homepage chatbot) may use free models only.
-  const { user } = await getCaller(req);
-  const isGuest = !user;
+  const caller = await getCaller(req);
+  const isGuest = !caller.user;
 
   try {
     const { service, action, ...params } = await req.json();
 
     switch (service) {
       case "openrouter":
-        return await handleOpenRouter(action, params, isGuest);
+        return await handleOpenRouter(action, params, caller);
       case "github":
         if (isGuest) return jsonResponse({ error: "Sign in required." }, 401);
         return await handleGitHub(action, params);
@@ -86,7 +105,26 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
+// Free models are open. A paid model must be covered by the caller's credits;
+// the browser cannot be trusted to have reserved them.
+async function denyUnpaidModel(model: string, caller: Caller): Promise<Response | null> {
+  if (model.endsWith(":free") || caller.isAdmin) return null;
+  if (!caller.user) return jsonResponse({ error: "Sign in required for this model." }, 401);
+
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const { data, error } = await admin.rpc("claim_paid_ai_call", { p_user_id: caller.user.id, p_model: model });
+  if (error) {
+    console.error("claim_paid_ai_call failed:", error);
+    return jsonResponse({ error: "Usage could not be checked. Please try again." }, 503);
+  }
+  if (data === "ok") return null;
+  // The client retries a 429 on the free models.
+  if (data === "daily_limit") return jsonResponse({ error: "Daily AI limit reached." }, 429);
+  return jsonResponse({ error: "This model needs an optimization credit." }, 402);
+}
+
+async function handleOpenRouter(action: string, params: any, caller: Caller) {
+  const isGuest = !caller.user;
   const outputCap = isGuest ? GUEST_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS;
 
   switch (action) {
@@ -94,9 +132,10 @@ async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
       const { prompt, temperature = 0.3, maxTokens = 4000 } = params;
       const model = resolveAllowedModel(params.model);
       if (!model) return jsonResponse({ error: "Requested model is not in the approved model allowlist" }, 400);
-      if (isGuest && !model.endsWith(":free")) return jsonResponse({ error: "Sign in required for this model." }, 401);
       const [url, apiKey] = chatEndpointFor(model);
       if (!apiKey) return jsonResponse({ error: `API key not configured for ${model}` }, 500);
+      const unpaid = await denyUnpaidModel(model, caller);
+      if (unpaid) return unpaid;
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -107,19 +146,21 @@ async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
           model,
           messages: [{ role: "user", content: prompt }],
           ...withSupportedSampling(model, temperature),
+          ...withReasoning(model),
           max_tokens: Math.min(Math.max(1, Number(maxTokens) || 4000), outputCap),
         }),
       });
-      return jsonResponse(await res.json(), res.status);
+      return jsonResponse(logUsage(model, caller, await res.json()), res.status);
     }
 
     case "chat_with_system": {
       const { systemPrompt, userPrompt, temperature = 0.3 } = params;
       const model = resolveAllowedModel(params.model);
       if (!model) return jsonResponse({ error: "Requested model is not in the approved model allowlist" }, 400);
-      if (isGuest && !model.endsWith(":free")) return jsonResponse({ error: "Sign in required for this model." }, 401);
       const [url, apiKey] = chatEndpointFor(model);
       if (!apiKey) return jsonResponse({ error: `API key not configured for ${model}` }, 500);
+      const unpaid = await denyUnpaidModel(model, caller);
+      if (unpaid) return unpaid;
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -133,10 +174,11 @@ async function handleOpenRouter(action: string, params: any, isGuest: boolean) {
             { role: "user", content: userPrompt },
           ],
           ...withSupportedSampling(model, temperature),
+          ...withReasoning(model),
           max_tokens: outputCap,
         }),
       });
-      return jsonResponse(await res.json(), res.status);
+      return jsonResponse(logUsage(model, caller, await res.json()), res.status);
     }
 
     default:

@@ -225,28 +225,8 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
   };
 
   // Helper to get short display text from URLs
-  const getShortLinkText = (url: string, type: 'linkedin' | 'github'): string => {
-    if (!url) return '';
-    const cleanUrl = url.trim().toLowerCase();
-
-    if (type === 'linkedin') {
-      const linkedinMatch = cleanUrl.match(/linkedin\.com\/in\/([^\/\?]+)/i);
-      if (linkedinMatch) {
-        return `linkedin/${linkedinMatch[1]}`;
-      }
-      return 'LinkedIn';
-    }
-
-    if (type === 'github') {
-      const githubMatch = cleanUrl.match(/github\.com\/([^\/\?]+)/i);
-      if (githubMatch) {
-        return `github/${githubMatch[1]}`;
-      }
-      return 'GitHub';
-    }
-
-    return url;
-  };
+  const getLinkText = (url: string): string =>
+    url.trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
 
   // Build contact information - two lines for better structure
   const buildContactInfo = () => {
@@ -295,6 +275,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     const line1Parts: React.ReactNode[] = [];
     const line2Parts: React.ReactNode[] = [];
 
+    if (isValidField(resumeData.location)) {
+      line1Parts.push(<span key="location" style={contactStyle}>{resumeData.location}</span>);
+    }
     if (isValidField(resumeData.phone, 'phone')) {
       line1Parts.push(
         <a key="phone" href={`tel:${resumeData.phone}`} style={linkStyle} target="_blank" rel="noopener noreferrer">
@@ -304,7 +287,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     }
     if (isValidField(resumeData.email, 'email')) {
       line1Parts.push(
-        <a key="email" href={`mailto:${resumeData.email}`} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+        <a key="email" href={`mailto:${resumeData.email}`} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {resumeData.email}
         </a>
       );
@@ -314,9 +297,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
       if (!linkedinUrl.startsWith('http')) {
         linkedinUrl = `https://${linkedinUrl}`;
       }
-      const shortText = getShortLinkText(resumeData.linkedin!, 'linkedin');
-      line1Parts.push(
-        <a key="linkedin" href={linkedinUrl} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+      const shortText = getLinkText(resumeData.linkedin!);
+      line2Parts.push(
+        <a key="linkedin" href={linkedinUrl} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {shortText}
         </a>
       );
@@ -326,9 +309,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
       if (!githubUrl.startsWith('http')) {
         githubUrl = `https://${githubUrl}`;
       }
-      const shortText = getShortLinkText(resumeData.github!, 'github');
-      line1Parts.push(
-        <a key="github" href={githubUrl} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+      const shortText = getLinkText(resumeData.github!);
+      line2Parts.push(
+        <a key="github" href={githubUrl} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {shortText}
         </a>
       );

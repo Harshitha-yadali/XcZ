@@ -25,7 +25,7 @@ export const RESUME_COMPARISONS: ComparisonPageData[] = [
     optionA: {
       name: 'ATS Resume Checker',
       points: [
-        'Instant, free results — no waiting for a reviewer',
+        'Instant, low-cost results — no waiting for a reviewer',
         'Consistently checks keyword match, formatting parseability, and structure against a specific JD',
         'Repeatable — re-check after every edit at no extra cost',
         'Cannot judge writing quality, tone, or whether an achievement actually sounds impressive to a human',
@@ -40,7 +40,7 @@ export const RESUME_COMPARISONS: ComparisonPageData[] = [
         'Quality varies a lot by reviewer; not consistent or repeatable',
       ],
     },
-    verdict: 'Use an ATS checker first to fix mechanical, pass/fail issues for free, then get human eyes on tone and story once the resume already clears ATS screening — doing it in the other order wastes a reviewer\'s time on formatting problems a tool would have caught instantly.',
+    verdict: 'Use an ATS checker first to fix mechanical, pass/fail issues, then get human eyes on tone and story once the resume already clears ATS screening — doing it in the other order wastes a reviewer\'s time on formatting problems a tool would have caught instantly.',
     faqs: [
       { question: 'Can an ATS checker replace human feedback entirely?', answer: 'No — it solves a different problem. An ATS checker tells you whether you\'ll get past the algorithm; a human tells you whether the content is actually persuasive once a recruiter opens it.' },
     ],
@@ -120,7 +120,7 @@ export const RESUME_COMPARISONS: ComparisonPageData[] = [
         'Doesn\'t guarantee ATS compatibility unless the writer explicitly checks for it',
       ],
     },
-    verdict: 'Run the free check first — it\'s often enough on its own, and if you still decide to pay for writing help, you\'ll get more value from that spend because the mechanical issues are already fixed.',
+    verdict: 'Run a resume check first — it\'s often enough on its own, and if you still decide to pay for writing help, you\'ll get more value from that spend because the mechanical issues are already fixed.',
     faqs: [],
   },
   {

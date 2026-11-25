@@ -28,32 +28,10 @@ export const BlogFilters: React.FC<BlogFiltersComponentProps> = ({
     });
   };
 
-  const handleDifficultyChange = (difficulty: string) => {
-    onFiltersChange({
-      ...filters,
-      reading_difficulty: difficulty === 'all' ? undefined : (difficulty as any)
-    });
-  };
-
   const handleSortChange = (sortBy: string) => {
     onFiltersChange({
       ...filters,
       sort_by: sortBy as any
-    });
-  };
-
-  const handleReadingTimeChange = (min?: number, max?: number) => {
-    onFiltersChange({
-      ...filters,
-      reading_time_min: min,
-      reading_time_max: max
-    });
-  };
-
-  const handleFeaturedToggle = () => {
-    onFiltersChange({
-      ...filters,
-      is_featured: filters.is_featured ? undefined : true
     });
   };
 
@@ -65,10 +43,6 @@ export const BlogFilters: React.FC<BlogFiltersComponentProps> = ({
   const hasActiveFilters = !!(
     filters.search ||
     filters.category_id ||
-    filters.reading_difficulty ||
-    filters.reading_time_min ||
-    filters.reading_time_max ||
-    filters.is_featured ||
     (filters.sort_by && filters.sort_by !== 'newest')
   );
 
@@ -120,7 +94,7 @@ export const BlogFilters: React.FC<BlogFiltersComponentProps> = ({
       </div>
 
       {isExpanded && (
-        <div className="mt-4 pt-4 border-t border-slate-700/50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-4 pt-4 border-t border-slate-700/50 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
               Category
@@ -142,53 +116,6 @@ export const BlogFilters: React.FC<BlogFiltersComponentProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
-              Difficulty
-            </label>
-            <select
-              value={filters.reading_difficulty || 'all'}
-              onChange={(e) => handleDifficultyChange(e.target.value)}
-              disabled={isLoading}
-              className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-100 disabled:opacity-50"
-            >
-              <option value="all">All Levels</option>
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Reading Time
-            </label>
-            <select
-              value={
-                filters.reading_time_min && filters.reading_time_max
-                  ? `${filters.reading_time_min}-${filters.reading_time_max}`
-                  : 'all'
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === 'all') {
-                  handleReadingTimeChange(undefined, undefined);
-                } else {
-                  const [min, max] = value.split('-').map(Number);
-                  handleReadingTimeChange(min, max);
-                }
-              }}
-              disabled={isLoading}
-              className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-100 disabled:opacity-50"
-            >
-              <option value="all">Any Length</option>
-              <option value="1-5">1-5 minutes</option>
-              <option value="5-10">5-10 minutes</option>
-              <option value="10-15">10-15 minutes</option>
-              <option value="15-999">15+ minutes</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
               Sort By
             </label>
             <select
@@ -200,25 +127,10 @@ export const BlogFilters: React.FC<BlogFiltersComponentProps> = ({
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
               <option value="most_viewed">Most Viewed</option>
-              <option value="trending">Trending</option>
             </select>
           </div>
         </div>
       )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          onClick={handleFeaturedToggle}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            filters.is_featured
-              ? 'bg-amber-500 text-white'
-              : 'bg-slate-800/50 text-slate-300 border border-slate-700 hover:bg-slate-700/50'
-          }`}
-          disabled={isLoading}
-        >
-          Featured Only
-        </button>
-      </div>
     </div>
   );
 };

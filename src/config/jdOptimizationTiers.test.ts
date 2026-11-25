@@ -24,22 +24,22 @@ describe('JD optimization quality tiers', () => {
         id: 'quick',
         regularRate: 49,
         creditCost: 1,
-        modelLabel: 'Gemini 3.5 Flash Lite',
-        modelId: 'google/gemini-3.5-flash-lite',
+        modelLabel: 'GPT-6 Luna',
+        modelId: 'openai/gpt-6-luna',
       },
       {
         id: 'smart',
         regularRate: 99,
         creditCost: 1,
-        modelLabel: 'GPT-5.6 Terra',
-        modelId: 'openai/gpt-5.6-terra',
+        modelLabel: 'GPT-6.1 Terra',
+        modelId: 'openai/gpt-6.1-terra',
       },
       {
         id: 'deep',
         regularRate: 199,
         creditCost: 1,
-        modelLabel: 'Claude Opus 4.8',
-        modelId: 'anthropic/claude-opus-4.8',
+        modelLabel: 'Claude Sonnet 5.5',
+        modelId: 'anthropic/claude-sonnet-5.5',
       },
     ]);
   });
@@ -107,9 +107,9 @@ describe('JD optimization quality tiers', () => {
     expect(getJdOptimizationTier('deep').projectAnalysis).toBe(true);
   });
 
-  it('keeps every tier on its assigned internal model for all passes', () => {
+  it('keeps side jobs on the cheapest model in every tier', () => {
     for (const tier of JD_OPTIMIZATION_TIERS) {
-      expect(tier.refinementModels.every((model) => model === tier.modelId)).toBe(true);
+      expect(tier.refinementModels.every((model) => model === 'openai/gpt-6-luna')).toBe(true);
     }
   });
 

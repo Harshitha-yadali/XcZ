@@ -664,14 +664,14 @@ Object.keys(dbUpdates).forEach((key) => {
       
       if (error) {
         console.error('AuthService: Error fetching global resumes count:', error);
-        return 50000; // Return default if fetch fails
+        return 0; // Unknown: the page hides the figure
       }
       
       console.log('AuthService: Global resumes count fetched successfully:', data.metric_value);
       return data.metric_value;
     } catch (error) {
       console.error('AuthService: Error in getGlobalResumesCreatedCount catch block:', error);
-      return 50000; // Return default if fetch fails
+      return 0; // Unknown: the page hides the figure
     }
   }
 

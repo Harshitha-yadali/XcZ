@@ -1039,6 +1039,13 @@ export const ProjectAnalysisModal: React.FC<ProjectAnalysisModalProps> = ({
               >
                 Retry Analysis
               </button>
+              <button
+                type="button"
+                onClick={() => onProjectsUpdated(resumeData)}
+                className="mt-3 sm:mt-0 sm:ml-3 w-full sm:w-auto border border-slate-600 hover:border-slate-400 text-slate-200 font-medium py-3 px-4 rounded-lg transition-colors text-sm min-h-[44px]"
+              >
+                Continue without changes
+              </button>
             </div>
           )}
         </div>

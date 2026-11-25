@@ -416,7 +416,7 @@ export async function sendPurchaseConfirmationEmail(params: {
   const purchasedItems = buildPurchasedItems(plan, purchasedAddOns);
   const entitlements = buildEntitlements(plan, purchasedAddOns);
   const suggestion = resolveSuggestion(plan, purchasedAddOns);
-  const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+  const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboostai.in';
   const ctaUrl = `${siteUrl}${suggestion.ctaPath}`;
   const headline = purchasedItems[0] || 'Your PrimoBoost purchase';
   const subject = `Purchase confirmed: ${headline}`;

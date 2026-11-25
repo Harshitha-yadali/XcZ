@@ -133,7 +133,7 @@ describe('geminiResumeParserService', () => {
       2,
       expect.any(String),
       expect.any(String),
-      { model: 'google/gemma-4-26b-a4b-it:free', temperature: 0.05 },
+      { model: 'google/gemini-3.5-flash-lite', temperature: 0.05 },
     );
   });
 });
