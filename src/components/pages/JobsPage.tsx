@@ -235,7 +235,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
           },
         } : {}),
         ...(j.skills && j.skills.length > 0 ? { skills: j.skills.join(', ') } : {}),
-        url: `https://primoboost.ai/jobs/${j.id}`,
+        url: `https://primoboostai.in/jobs/${j.id}`,
       }));
       setJobsJsonLd({
         '@context': 'https://schema.org',

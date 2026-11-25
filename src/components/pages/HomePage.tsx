@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
-  BarChart3,
   Briefcase,
   CalendarCheck,
   Check,
@@ -556,9 +555,9 @@ function OptimizerPreview({ onOptimize }: { onOptimize: () => void }) {
             <div className="h-2 w-4/5 rounded bg-white/[0.08]" />
             <div className="h-px bg-white/[0.09]" />
             {[
-              'Led end-to-end product design for 3 high-impact workflows, improving activation by 18%.',
-              'Partnered with product and engineering to ship a reusable design system across 2 squads.',
-              'Translated user research into Figma prototypes tested with 24 target customers.',
+              'Led end-to-end product design across core product workflows.',
+              'Partnered with product and engineering to take designs from concept to release.',
+              'Created wireframes that defined the flow of new features.',
             ].map((line, index) => (
               <motion.div
                 key={line}
@@ -657,8 +656,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
-  const [globalResumesCreated, setGlobalResumesCreated] = useState(60070);
-  const [scoreChecksCompleted, setScoreChecksCompleted] = useState(500070);
+  const [globalResumesCreated, setGlobalResumesCreated] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   useEffect(() => {
@@ -673,18 +671,6 @@ export const HomePage: React.FC<HomePageProps> = ({
     fetchGlobalCount();
   }, []);
 
-  useEffect(() => {
-    const base = 500070;
-    const hydrateCount = () => {
-      const stored = Number.parseInt(localStorage.getItem('scoreCheckCount') || '0', 10);
-      setScoreChecksCompleted(base + (Number.isNaN(stored) ? 0 : stored));
-    };
-    hydrateCount();
-    const handleScoreCheck = () => hydrateCount();
-    window.addEventListener('score-check-completed', handleScoreCheck);
-    return () => window.removeEventListener('score-check-completed', handleScoreCheck);
-  }, []);
-
   const startCareerBooster = () => {
     if (!isAuthenticated) {
       onShowAuth();
@@ -694,18 +680,12 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   const metrics = [
-    {
+    ...(globalResumesCreated > 0 ? [{
       value: `${globalResumesCreated.toLocaleString()}+`,
       label: 'Resumes created or optimized',
       source: 'Live platform activity',
       icon: FileCheck2,
-    },
-    {
-      value: `${scoreChecksCompleted.toLocaleString()}+`,
-      label: 'Resume score checks',
-      source: 'Product usage counter',
-      icon: BarChart3,
-    },
+    }] : []),
     {
       value: '28',
       label: 'Resume signals analyzed',
@@ -838,7 +818,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       <section className="relative px-4 py-14 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-px overflow-hidden rounded-[26px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl gap-px overflow-hidden rounded-[26px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2">
           {metrics.map((metric, index) => (
             <motion.div
               key={metric.label}
@@ -871,7 +851,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           <SectionHeading
             eyebrow="One career workspace"
             title="Everything between applying and getting ready for the interview"
-            description="Start with the free diagnosis, then use the right level of support for the gap standing between you and your next opportunity."
+            description="Start with the ₹9 diagnosis, then use the right level of support for the gap standing between you and your next opportunity."
           />
 
           <div className="mt-12 grid auto-rows-auto gap-4 lg:grid-cols-6 lg:auto-rows-[250px]">

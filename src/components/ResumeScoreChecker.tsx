@@ -590,7 +590,7 @@ if (hasScoreCheckCredits) {
   return (
     <>
       <Seo
-        title="ATS Resume Score Checker - Free Resume Analysis & ATS Compatibility Test"
+        title="ATS Resume Score Checker - Resume Analysis & ATS Compatibility Test"
         description="Check your resume ATS score against 30 deterministic, evidence-backed checks. Get detailed keyword analysis, formatting validation, and actionable improvement suggestions."
         keywords="ATS resume score, ATS resume checker, ATS resume score checker, ATS resume analysis, ATS resume scan, ATS resume test, ATS resume compatibility, ATS resume screening, ATS resume parsing test, ATS resume keyword checker, ATS resume keyword analysis, ATS resume keyword optimization, ATS resume scoring system, ATS resume AI, resume score checker, resume keyword score, resume keyword heatmap, resume keyword report, resume ATS compatibility test, resume optimization score, ATS resume India, ATS resume fresher, ATS resume experienced, PrimoBoost AI"
         canonicalPath="/score-checker"

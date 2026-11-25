@@ -220,10 +220,10 @@ Deno.serve(async (req: Request) => {
     </div>
     
     <div class="cta-section">
-      <a href="${Deno.env.get('SITE_URL') || 'https://primoboost.ai'}/profile" class="cta-button">
+      <a href="${Deno.env.get('SITE_URL') || 'https://primoboostai.in'}/profile" class="cta-button">
         ✨ Complete Your Profile
       </a>
-      <a href="${Deno.env.get('SITE_URL') || 'https://primoboost.ai'}/jobs" class="cta-button">
+      <a href="${Deno.env.get('SITE_URL') || 'https://primoboostai.in'}/jobs" class="cta-button">
         🔍 Browse Jobs
       </a>
     </div>

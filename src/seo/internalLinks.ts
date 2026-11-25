@@ -11,7 +11,7 @@ export interface InternalLink {
 export const CORE_LINKS = {
   optimizer: { label: 'JD Resume Optimizer', path: '/optimizer', description: 'Tailor your resume to any job description with AI.' },
   jdOptimizerLanding: { label: 'JD Resume Optimizer Guide', path: '/jd-resume-optimizer', description: 'How JD-based resume tailoring works and when to use it.' },
-  scoreChecker: { label: 'Resume Score Checker', path: '/score-checker', description: 'Get an instant ATS compatibility score for free.' },
+  scoreChecker: { label: 'Resume Score Checker', path: '/score-checker', description: 'Get an instant ATS compatibility score.' },
   atsChecker: { label: 'ATS Resume Checker (16-Parameter)', path: '/ats-16-parameter', description: 'Run a deep 16-point ATS audit on your resume.' },
   guidedBuilder: { label: 'Guided Resume Builder', path: '/guided-builder', description: 'Build a resume section-by-section with AI guidance.' },
   linkedinGenerator: { label: 'LinkedIn Optimization Tool', path: '/linkedin-generator', description: 'Generate LinkedIn outreach and connection messages.' },

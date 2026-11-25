@@ -78,7 +78,7 @@ export function ComparisonPage() {
 
           <div className="flex flex-wrap gap-3">
             <Link to="/score-checker" className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-brand-500 to-cyan-500 text-surface-deep font-semibold hover:opacity-90 transition-opacity">
-              Check My Resume Score Free
+              Check My Resume Score — ₹9
             </Link>
             <Link to="/optimizer" className="px-5 py-2.5 rounded-lg border border-surface hover:border-brand-500/50 transition-colors font-medium">
               Try the JD Resume Optimizer

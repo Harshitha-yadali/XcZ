@@ -75,6 +75,11 @@ export const DATA_SCIENCE_AND_ML = [
   // ML/AI Frameworks
   'tensorflow', 'pytorch', 'keras', 'scikit-learn', 'sklearn', 'xgboost', 'lightgbm',
   'catboost', 'hugging face', 'transformers', 'openai', 'langchain', 'llama',
+  // GenAI
+  'langgraph', 'llamaindex', 'crewai', 'ollama', 'pinecone', 'weaviate', 'chromadb', 'qdrant', 'pgvector',
+  'large language models', 'llm', 'llms', 'generative ai', 'genai', 'rag', 'retrieval augmented generation',
+  'prompt engineering', 'fine-tuning', 'ai agents', 'agentic ai', 'embeddings', 'vector database',
+  'model context protocol', 'mlops', 'llmops', 'github copilot',
   // Data Science Tools
   'pandas', 'numpy', 'scipy', 'matplotlib', 'seaborn', 'plotly', 'jupyter',
   'jupyter notebook', 'anaconda', 'spacy', 'nltk', 'opencv', 'pillow',

@@ -62,4 +62,17 @@ describe('resumeEvidenceValidator', () => {
     expect(result.resume.projects).toEqual([]);
     expect(result.violations.some((item) => item.section === 'projects')).toBe(true);
   });
+
+  it('rejects wording that claims a technology or record the resume does not show', () => {
+    const keep = (bullet: string) => validateAndRepairResume(evidence, {
+      ...evidence,
+      workExperience: [{ ...evidence.workExperience[0], bullets: [bullet] }],
+    }).resume.workExperience[0].bullets?.[0] === bullet;
+
+    expect(keep('Built Node.js APIs using Kubernetes.')).toBe(false);
+    expect(keep('Delivered Node.js APIs with zero production incidents.')).toBe(false);
+    expect(keep('Engineered NodeJS APIs that express internal workflows.')).toBe(true);
+    expect(keep('Developed Node APIs and React screens for internal teams.')).toBe(true);
+    expect(keep('Built Node.js APIs in Java.')).toBe(false);
+  });
 });

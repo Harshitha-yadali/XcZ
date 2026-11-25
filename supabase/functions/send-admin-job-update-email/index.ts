@@ -282,7 +282,7 @@ Deno.serve(async (req: Request) => {
     ${changesHtml}
 
     <div style="text-align: center;">
-      <a href="${Deno.env.get('SITE_URL') || 'https://primoboost.ai'}/admin/jobs/${emailData.jobId}" class="action-button">
+      <a href="${Deno.env.get('SITE_URL') || 'https://primoboostai.in'}/admin/jobs/${emailData.jobId}" class="action-button">
         View Job Details
       </a>
     </div>
@@ -291,7 +291,7 @@ Deno.serve(async (req: Request) => {
       <p><strong>PrimoBoost AI Admin Notifications</strong></p>
       <p>This is an automated notification about job listing changes.</p>
       <p style="margin-top: 15px; font-size: 12px; color: #999;">
-        To manage your notification preferences, visit your <a href="${Deno.env.get('SITE_URL') || 'https://primoboost.ai'}/settings/notifications">settings page</a>.
+        To manage your notification preferences, visit your <a href="${Deno.env.get('SITE_URL') || 'https://primoboostai.in'}/settings/notifications">settings page</a>.
       </p>
     </div>
   </div>

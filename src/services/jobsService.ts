@@ -1,8 +1,6 @@
 // src/services/jobsService.ts
 import { supabase } from '../lib/supabaseClient';
 import { JobListing, JobFilters, AutoApplyResult, ApplicationHistory, OptimizedResume, JobUpdateMetadata } from '../types/jobs';
-import { ResumeData } from '../types/resume';
-import { exportToPDF } from '../utils/exportUtils';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import { isJobOpen } from '../utils/jobStatus';
 
@@ -466,45 +464,6 @@ class JobsService {
     }
   }
 
-  // Store optimized resume data
-  async storeOptimizedResume(
-    userId: string,
-    jobId: string,
-    resumeData: ResumeData
-  ): Promise<string> {
-    try {
-      console.log('JobsService: Storing optimized resume for user:', userId, 'job:', jobId);
-      const optimizationScore = Math.floor(Math.random() * 20) + 80;
-
-      const placeholderPdfUrl = `https://example.com/resumes/optimized_${userId}_${jobId}.pdf`;
-      const placeholderDocxUrl = `https://example.com/resumes/optimized_${userId}_${jobId}.docx`;
-
-      const { data: optimizedResume, error } = await supabase
-        .from('optimized_resumes')
-        .insert({
-          user_id: userId,
-          job_listing_id: jobId,
-          resume_content: resumeData,
-          pdf_url: placeholderPdfUrl,
-          docx_url: placeholderDocxUrl,
-          optimization_score: optimizationScore
-        })
-        .select('id')
-        .single();
-
-      if (error) {
-        console.error('Error storing optimized resume:', error);
-        throw new Error('Failed to store optimized resume');
-      }
-
-      console.log('JobsService: Optimized resume stored with ID:', optimizedResume.id);
-      return optimizedResume.id;
-    } catch (error) {
-      console.error('Error in storeOptimizedResume:', error);
-      throw error;
-    }
-  }
-
   async getOptimizedResumeById(optimizedResumeId: string): Promise<OptimizedResume | null> {
     try {
       const { data: optimizedResume, error } = await supabase
@@ -701,47 +660,6 @@ async getJobListings(filters: JobFilters = {}, limit = 20, offset = 0): Promise<
       return (jobs || []).filter((job) => isJobOpen(job));
     } catch (error) {
       console.error('JobsService: Error fetching all jobs:', error);
-      throw error;
-    }
-  }
-
-  async optimizeResumeForJob(jobId: string, userResumeText?: string): Promise<OptimizedResume> {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Authentication required');
-
-      const response = await fetchWithSupabaseFallback(
-        getSupabaseEdgeFunctionUrl('optimize-resume-for-job'),
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ jobId, userResumeText }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to optimize resume');
-      }
-
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error || 'Resume optimization failed');
-
-      return {
-        id: data.resumeId,
-        user_id: session.user.id,
-        job_listing_id: jobId,
-        resume_content: data.resumeContent,
-        pdf_url: data.pdfUrl,
-        docx_url: data.docxUrl,
-        optimization_score: data.optimizationScore,
-        created_at: new Date().toISOString()
-      };
-    } catch (error) {
-      console.error('Error optimizing resume for job:', error);
       throw error;
     }
   }
