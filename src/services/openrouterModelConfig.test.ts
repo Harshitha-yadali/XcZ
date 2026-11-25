@@ -5,12 +5,12 @@ import {
   DEFAULT_OPENROUTER_MODEL,
   DEEP_OPTIMIZATION_MODEL,
   FREE_OPENROUTER_MODELS,
+  GEMINI_3_5_FLASH_LITE_MODEL,
   GPT_6_LUNA_MODEL,
   GEMMA_4_26B_FREE_MODEL,
   GEMMA_4_31B_FREE_MODEL,
   GPT_6_1_TERRA_MODEL,
   NEMOTRON_3_ULTRA_FREE_MODEL,
-  NORTH_MINI_CODE_FREE_MODEL,
   PINNED_RESUME_PARSER_MODEL,
   QUICK_OPTIMIZATION_MODEL,
   RESUME_PARSER_ESCALATION_MODEL,
@@ -24,7 +24,7 @@ import {
 describe('openrouterModelConfig', () => {
   it('pins resume parsing to one explicit model', () => {
     expect(PINNED_RESUME_PARSER_MODEL).toBe(GEMMA_4_31B_FREE_MODEL);
-    expect(RESUME_PARSER_ESCALATION_MODEL).toBe(GEMMA_4_26B_FREE_MODEL);
+    expect(RESUME_PARSER_ESCALATION_MODEL).toBe(GEMINI_3_5_FLASH_LITE_MODEL);
     expect(getOpenRouterModelsToTry(PINNED_RESUME_PARSER_MODEL)).toEqual(FREE_OPENROUTER_MODELS);
   });
 
@@ -61,11 +61,10 @@ describe('openrouterModelConfig', () => {
   });
 
   it('keeps approved free models retryable within the allowlist', () => {
-    expect(getOpenRouterModelsToTry(NORTH_MINI_CODE_FREE_MODEL)).toEqual([
-      NORTH_MINI_CODE_FREE_MODEL,
+    expect(getOpenRouterModelsToTry(NEMOTRON_3_ULTRA_FREE_MODEL)).toEqual([
+      NEMOTRON_3_ULTRA_FREE_MODEL,
       GEMMA_4_31B_FREE_MODEL,
       GEMMA_4_26B_FREE_MODEL,
-      NEMOTRON_3_ULTRA_FREE_MODEL,
     ]);
   });
 

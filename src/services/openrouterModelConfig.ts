@@ -1,7 +1,6 @@
 export const GEMMA_4_31B_FREE_MODEL = 'google/gemma-4-31b-it:free';
 export const GEMMA_4_26B_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 export const NEMOTRON_3_ULTRA_FREE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
-export const NORTH_MINI_CODE_FREE_MODEL = 'cohere/north-mini-code:free';
 export const GPT_6_1_TERRA_MODEL = 'openai/gpt-6.1-terra';
 export const GEMINI_3_5_FLASH_LITE_MODEL = 'google/gemini-3.5-flash-lite';
 export const CLAUDE_SONNET_5_5_MODEL = 'anthropic/claude-sonnet-5.5';
@@ -14,7 +13,6 @@ export const FREE_OPENROUTER_MODELS = [
   GEMMA_4_31B_FREE_MODEL,
   GEMMA_4_26B_FREE_MODEL,
   NEMOTRON_3_ULTRA_FREE_MODEL,
-  NORTH_MINI_CODE_FREE_MODEL,
 ] as const;
 
 export const ALLOWED_OPENROUTER_MODELS = [
@@ -27,7 +25,9 @@ export const ALLOWED_OPENROUTER_MODELS = [
 
 export const DEFAULT_OPENROUTER_MODEL = GEMMA_4_31B_FREE_MODEL;
 export const PINNED_RESUME_PARSER_MODEL = GEMMA_4_31B_FREE_MODEL;
-export const RESUME_PARSER_ESCALATION_MODEL = GEMMA_4_26B_FREE_MODEL;
+// When every free model is busy or answers badly. Paid: ai-proxy allows signed-in
+// users a fixed number of these calls a day.
+export const RESUME_PARSER_ESCALATION_MODEL = GEMINI_3_5_FLASH_LITE_MODEL;
 export const QUICK_OPTIMIZATION_MODEL = GPT_6_LUNA_MODEL;
 export const SMART_OPTIMIZATION_MODEL = GPT_6_1_TERRA_MODEL;
 export const DEEP_OPTIMIZATION_MODEL = CLAUDE_SONNET_5_5_MODEL;
