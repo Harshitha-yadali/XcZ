@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import type { ResumeData } from '../types/resume';
 import { toPdfText } from './pdfText';
-import { buildResumeDocx } from './resumeDocx';
+import { buildInterviewPackDocx, buildResumeDocx } from './resumeDocx';
 
 const resume: ResumeData = {
   name: 'Asha Rao', phone: '+91 90000 00000', email: 'asha@example.com', location: 'Hyderabad',
@@ -34,5 +34,12 @@ describe('resume export', () => {
     expect(text).toContain('తెలుగు prize');
     expect(body).not.toContain('<w:tbl>');
     expect(body.indexOf('SKILLS')).toBeLessThan(body.indexOf('WORK EXPERIENCE'));
+  });
+
+  it('writes the interview pack as a Word file', () => {
+    const body = strFromU8(unzipSync(buildInterviewPackDocx([{ question: 'Why <us>?', answer: '' }], 'Dear Team,\n\nHello.'))['word/document.xml']);
+    expect(body).toContain('1. Why &lt;us&gt;?');
+    expect(body).toContain('does not show this');
+    expect(body).toContain('Hello.');
   });
 });

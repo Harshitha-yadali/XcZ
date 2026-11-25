@@ -5,6 +5,8 @@ import { getCertificationDisplayParts } from './certificationFormatting';
 // A plain single-column Word document: real headings and real bullets, no
 // tables, text boxes or headers, which applicant tracking systems skip.
 
+export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
 const xml = (value: unknown): string =>
   String(value ?? '')
     // eslint-disable-next-line no-control-regex
@@ -43,6 +45,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:style w:type="paragraph" w:styleId="Contact"><w:name w:val="Contact"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr></w:style>
 <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="808080"/></w:pBdr><w:spacing w:before="160" w:after="60"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="Entry"><w:name w:val="Entry"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:tabs><w:tab w:val="right" w:pos="9890"/></w:tabs><w:spacing w:before="60"/></w:pPr></w:style>
+<w:style w:type="paragraph" w:styleId="Question"><w:name w:val="Question"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="120"/></w:pPr></w:style>
 <w:style w:type="paragraph" w:styleId="ListBullet"><w:name w:val="List Bullet"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style></w:styles>`;
 
 /** The resume as a .docx file, in the same section order as the PDF. */
@@ -80,6 +83,22 @@ export function buildResumeDocx(resume: ResumeData, userType: UserType = 'experi
     extras,
   ].join('');
 
+  return toDocx(body);
+}
+
+/** Interview questions with notes, then the cover letter on its own page. */
+export function buildInterviewPackDocx(questions: { question: string; answer: string }[], letter: string): Uint8Array {
+  return toDocx([
+    heading('Interview questions'),
+    ...questions.map(({ question, answer }, index) =>
+      paragraph(run(`${index + 1}. ${question}`, true), 'Question') + paragraph(run(answer || 'Your resume does not show this. Prepare an honest answer.'))),
+    '<w:p><w:r><w:br w:type="page"/></w:r></w:p>',
+    heading('Cover letter'),
+    ...letter.split('\n').map((line) => paragraph(run(line))),
+  ].join(''));
+}
+
+function toDocx(body: string): Uint8Array {
   return zipSync({
     '[Content_Types].xml': strToU8(TYPES),
     '_rels/.rels': strToU8(RELS),

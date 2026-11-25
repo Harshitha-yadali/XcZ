@@ -9,7 +9,7 @@ import { ExportOptions, defaultExportOptions } from '../types/export';
 import { UserType } from '../types/resume';
 import { getCertificationDisplayParts } from './certificationFormatting';
 import { toPdfSafe } from './pdfText';
-import { buildResumeDocx } from './resumeDocx';
+import { buildResumeDocx, DOCX_MIME } from './resumeDocx';
 
 // Map font family names to jsPDF compatible fonts
 const mapFontFamily = (fontFamily: string): string => {
@@ -1059,7 +1059,7 @@ export const exportToWord = async (resumeData: ResumeData, userType: UserType = 
   try {
     console.log('Generating Word document...');
     const blob = new Blob([buildResumeDocx({ ...resumeData, certifications: getEffectiveCertifications(resumeData) }, userType) as BlobPart], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      type: DOCX_MIME,
     });
     triggerMobileDownload(blob, fileName);
     console.log('Word document downloaded successfully');

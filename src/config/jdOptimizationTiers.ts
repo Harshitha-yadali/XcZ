@@ -37,6 +37,7 @@ export interface JdOptimizationTier {
   experienceRewriting: boolean;
   projectRewriting: boolean;
   projectAnalysis: boolean;
+  interviewPack: boolean;
   roleStrategy: 'Not included' | 'Basic' | 'Detailed';
   accuracyCheck: string;
   bestFor: string;
@@ -69,6 +70,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     experienceRewriting: true,
     projectRewriting: true,
     projectAnalysis: false,
+    interviewPack: false,
     roleStrategy: 'Not included',
     accuracyCheck: 'Basic',
     bestFor: 'Fast basic rewrite',
@@ -99,6 +101,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     experienceRewriting: true,
     projectRewriting: true,
     projectAnalysis: true,
+    interviewPack: false,
     roleStrategy: 'Basic',
     accuracyCheck: 'Verified',
     bestFor: 'Most job applications',
@@ -129,11 +132,12 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     experienceRewriting: true,
     projectRewriting: true,
     projectAnalysis: true,
+    interviewPack: true,
     roleStrategy: 'Detailed',
     accuracyCheck: 'Enhanced audited',
     bestFor: 'Important applications',
     cta: 'Run Deep Optimize',
-    description: 'Our best AI writer for the applications that matter most, with project analysis.',
+    description: 'Our best AI writer, plus interview questions and a cover letter for the applications that matter most.',
   },
 ] as const;
 

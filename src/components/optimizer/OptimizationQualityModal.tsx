@@ -44,6 +44,7 @@ const comparisonRows: ComparisonRow[] = [
   { label: 'Before/after JD match score', value: () => <Included enabled /> },
   { label: 'Missing keywords', value: () => <Included enabled /> },
   { label: 'Project–JD match analysis', value: (tier) => <Included enabled={tier.projectAnalysis} /> },
+  { label: '10 interview questions + cover letter', value: (tier) => <Included enabled={tier.interviewPack} /> },
   { label: 'Editable optimized resume', value: () => <Included enabled /> },
   { label: 'PDF/Word export', value: () => <Included enabled /> },
   { label: 'Best for', value: (tier) => tier.bestFor },
