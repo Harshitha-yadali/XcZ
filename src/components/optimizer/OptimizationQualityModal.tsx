@@ -14,6 +14,8 @@ interface OptimizationQualityModalProps {
   isOpen: boolean;
   processingTier: JdOptimizationTierId | null;
   error?: string | null;
+  /** Optimizations already paid for, by tier. */
+  creditsFor: (tierId: JdOptimizationTierId) => number;
   onClose: () => void;
   onChoose: (tierId: JdOptimizationTierId, packageSize: JdOptimizationPackageSize) => void | Promise<void>;
 }
@@ -33,56 +35,18 @@ const Included = ({ enabled }: { enabled: boolean }) =>
     <span className="inline-flex h-5 w-5 items-center justify-center text-slate-600" aria-label="Not included">—</span>
   );
 
+// Only what the optimizer really does: no row may be a label with no code behind it.
 const comparisonRows: ComparisonRow[] = [
-  { label: 'ATS readability', value: () => <Included enabled /> },
-  { label: 'JD match score', value: () => <Included enabled /> },
+  { label: 'AI writer', value: (tier) => tier.modelLabel },
+  { label: 'Summary, experience and project rewriting', value: () => <Included enabled /> },
+  { label: 'Unsupported-claim protection', value: () => <Included enabled /> },
+  { label: 'Where each line came from', value: () => <Included enabled /> },
+  { label: 'Before/after JD match score', value: () => <Included enabled /> },
   { label: 'Missing keywords', value: () => <Included enabled /> },
-  {
-    label: 'Responsibility matching',
-    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? 'Advanced' : 'Detailed',
-  },
-  {
-    label: 'Project–JD match analysis',
-    value: (tier) => tier.projectAnalysis
-      ? tier.id === 'smart' ? 'Advanced' : 'Detailed'
-      : <Included enabled={false} />,
-  },
-  { label: 'Section-by-section action plan', value: (tier) => <Included enabled={tier.id !== 'quick'} /> },
-  {
-    label: 'Professional summary rewriting',
-    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Strategic rewrite',
-  },
-  {
-    label: 'Experience bullet rewriting',
-    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Impact-focused rewrite',
-  },
-  {
-    label: 'Evidence-based project rewriting',
-    value: (tier) => tier.id === 'quick' ? 'Basic' : tier.id === 'smart' ? <Included enabled /> : 'Detailed rewrite',
-  },
-  { label: 'Before/after score comparison', value: () => <Included enabled /> },
-  {
-    label: 'Role and seniority strategy',
-    value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? 'Basic' : 'Detailed',
-  },
-  {
-    label: 'Project improvement recommendations',
-    value: (tier) => tier.id === 'quick' ? <Included enabled={false} /> : tier.id === 'smart' ? 'Basic' : 'Detailed',
-  },
-  {
-    label: 'Unsupported-claim protection',
-    value: (tier) => tier.id === 'quick' ? <Included enabled /> : tier.id === 'smart' ? 'Evidence validation' : 'Enhanced evidence audit',
-  },
-  {
-    label: 'Processing depth',
-    value: (tier) => tier.id === 'quick' ? '1 optimization stage' : tier.id === 'smart' ? '2 optimization stages' : '3 optimization stages',
-  },
+  { label: 'Project–JD match analysis', value: (tier) => <Included enabled={tier.projectAnalysis} /> },
   { label: 'Editable optimized resume', value: () => <Included enabled /> },
   { label: 'PDF/Word export', value: () => <Included enabled /> },
-  {
-    label: 'Best for',
-    value: (tier) => tier.id === 'quick' ? 'Fast basic rewrite' : tier.id === 'smart' ? 'Most applications' : 'Important and senior roles',
-  },
+  { label: 'Best for', value: (tier) => tier.bestFor },
 ];
 
 const featureRows = comparisonRows.filter((row) => row.label !== 'Best for');
@@ -136,6 +100,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
   isOpen,
   processingTier,
   error,
+  creditsFor,
   onClose,
   onChoose,
 }) => {
@@ -223,7 +188,7 @@ export const OptimizationQualityModal: React.FC<OptimizationQualityModalProps> =
         <span className="absolute inset-0 -z-10 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[120%]" aria-hidden="true" />
         <span className="relative inline-flex items-center justify-center gap-2">
           {isProcessing ? <Loader2 className={`h-4 w-4 ${reduceMotion ? '' : 'animate-spin'}`} aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-          <span>{isProcessing ? 'Processing…' : `Continue with ${tier.name} · ₹${optimizationPackage.offerPrice}`}</span>
+          <span>{isProcessing ? 'Processing…' : creditsFor(tier.id) >= tier.creditCost ? `Continue with ${tier.name} · uses ${tier.creditCost} credit` : `Continue with ${tier.name} · ₹${optimizationPackage.offerPrice}`}</span>
         </span>
       </motion.button>
     );

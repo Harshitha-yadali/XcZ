@@ -21,7 +21,6 @@ import {
 } from '../types/optimizer';
 
 import { GapAnalyzerService } from './gapAnalyzerService';
-import { FullResumeRewriter16ParameterService } from './fullResumeRewriter16ParameterService';
 import { optimizeResume as geminiOptimizeResume } from './geminiService';
 import { validateAndRepairResume, type EvidenceViolation } from './resumeEvidenceValidator';
 import { CanonicalJdScoringService, type CanonicalScoreContext } from './canonicalJdScoringService';
@@ -154,89 +153,6 @@ export class EnhancedJdOptimizerService {
           ? '[Quick Optimization] Full resume rewritten with one basic job-specific pass.'
           : '[AI Optimization] Full resume rewritten for the job description.',
       });
-      
-      // ========================================================================
-      // STEP 2: Score the AI-optimized resume with 16 parameters
-      // ========================================================================
-      // Smart and Deep add the heavier 16-parameter rewrite stage. Quick keeps
-      // the completed one-pass Gemini rewrite and proceeds directly to scoring.
-      if (mode !== 'light') {
-        const rewriteResult = await FullResumeRewriter16ParameterService.rewriteResume(
-          optimizedResume,
-          jobDescription,
-          _targetRole,
-          userType
-        );
-      
-      // Store the AI-optimized data BEFORE 16-parameter rewrite (for fallback)
-      const aiOptimizedSkills = optimizedResume.skills ? JSON.parse(JSON.stringify(optimizedResume.skills)) : null;
-      const aiOptimizedProjects = optimizedResume.projects ? JSON.parse(JSON.stringify(optimizedResume.projects)) : null;
-      const aiOptimizedWorkExp = optimizedResume.workExperience ? JSON.parse(JSON.stringify(optimizedResume.workExperience)) : null;
-      
-      // Use the 16-parameter optimized resume (with any additional fixes)
-      optimizedResume = rewriteResult.rewrittenResume;
-      
-      // ========================================================================
-      // CRITICAL: Preserve AI-optimized content if 16-param rewrite lost it
-      // ========================================================================
-      
-      // Preserve AI-optimized skills if 16-param rewrite lost them
-      if ((!optimizedResume.skills || optimizedResume.skills.length === 0) && aiOptimizedSkills && aiOptimizedSkills.length > 0) {
-        optimizedResume.skills = aiOptimizedSkills;
-      } else if (optimizedResume.skills && aiOptimizedSkills && aiOptimizedSkills.length > optimizedResume.skills.length) {
-        // Merge skills - AI might have more comprehensive skills
-        const existingCategories = new Set(optimizedResume.skills.map(s => s.category.toLowerCase()));
-        aiOptimizedSkills.forEach((aiCat: any) => {
-          if (!existingCategories.has(aiCat.category.toLowerCase())) {
-            optimizedResume.skills!.push(aiCat);
-          }
-        });
-      }
-      
-      // Preserve AI-optimized projects if 16-param rewrite lost them
-      if ((!optimizedResume.projects || optimizedResume.projects.length === 0) && aiOptimizedProjects && aiOptimizedProjects.length > 0) {
-        optimizedResume.projects = aiOptimizedProjects;
-      }
-      
-      // Preserve AI-optimized work experience if 16-param rewrite lost it
-      if ((!optimizedResume.workExperience || optimizedResume.workExperience.length === 0) && aiOptimizedWorkExp && aiOptimizedWorkExp.length > 0) {
-        optimizedResume.workExperience = aiOptimizedWorkExp;
-      }
-      
-      // Final fallback to original resume data if still missing
-      if ((!optimizedResume.skills || optimizedResume.skills.length === 0) && resumeData.skills && resumeData.skills.length > 0) {
-        optimizedResume.skills = resumeData.skills;
-      }
-      
-      if ((!optimizedResume.projects || optimizedResume.projects.length === 0) && resumeData.projects && resumeData.projects.length > 0) {
-        optimizedResume.projects = resumeData.projects;
-      }
-      
-      if ((!optimizedResume.workExperience || optimizedResume.workExperience.length === 0) && resumeData.workExperience && resumeData.workExperience.length > 0) {
-        optimizedResume.workExperience = resumeData.workExperience;
-      }
-      
-      // Store 16-parameter scores
-      parameter16Scores = {
-        beforeScores: rewriteResult.beforeScores,
-        afterScores: rewriteResult.afterScores,
-        overallBefore: rewriteResult.overallBefore,
-        overallAfter: rewriteResult.overallAfter,
-        improvement: rewriteResult.improvement,
-      };
-      
-      // Convert rewrite changes to section changes
-        rewriteResult.changesApplied.forEach(change => {
-          changes.push({
-            section: change.section,
-            changeType: change.changeType as any,
-            description: `[${change.parameter}] ${change.description}`,
-            before: change.before,
-            after: change.after,
-          });
-        });
-      }
-      
     } catch (rewriteError) {
       console.error(`JD optimization failed (${modelOverride || 'default model'}):`, rewriteError);
       throw new Error('The selected AI model could not complete this optimization. No credits were charged. Please try again.');

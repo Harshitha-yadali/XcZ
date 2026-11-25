@@ -11,29 +11,6 @@ import {
   SKILL_CATEGORIES,
 } from '../constants/skillsTaxonomy';
 
-const IMPACT_VERBS = [
-  'Achieved', 'Exceeded', 'Surpassed', 'Delivered', 'Generated', 'Produced',
-  'Spearheaded', 'Led', 'Directed', 'Orchestrated', 'Championed', 'Pioneered',
-  'Engineered', 'Architected', 'Developed', 'Built', 'Designed', 'Implemented',
-  'Optimized', 'Enhanced', 'Streamlined', 'Accelerated', 'Transformed', 'Modernized',
-  'Analyzed', 'Evaluated', 'Assessed', 'Identified', 'Diagnosed', 'Investigated',
-  'Collaborated', 'Coordinated', 'Facilitated', 'Integrated', 'Aligned',
-  'Managed', 'Oversaw', 'Supervised', 'Administered', 'Maintained',
-  'Innovated', 'Conceptualized', 'Formulated', 'Established', 'Launched',
-];
-
-const WEAK_VERBS_MAP: Record<string, string> = {
-  'worked': 'Delivered', 'helped': 'Enabled', 'assisted': 'Supported', 'did': 'Executed',
-  'made': 'Created', 'got': 'Achieved', 'used': 'Leveraged', 'handled': 'Managed',
-  'dealt': 'Resolved', 'participated': 'Engaged',
-};
-
-const VAGUE_PHRASES: Record<string, string> = {
-  'responsible for': 'Managed', 'worked on': 'Developed', 'helped with': 'Facilitated',
-  'involved in': 'Contributed to', 'was part of': 'Collaborated on', 'took care of': 'Administered',
-  'assisted with': 'Supported',
-};
-
 export interface OptimizationChange {
   parameterId: number;
   section: string;
@@ -50,164 +27,6 @@ export interface TargetedOptimizationResult {
 
 export interface TargetedOptimizationOptions {
   model?: string;
-}
-
-const MAX_BULLET_WORDS = 12;
-const METRIC_EVIDENCE_REGEX = /\d+%|\$\d+|\d+\s*(users?|customers?|clients?|team|people|million|k\b|x\b|hrs?|hours?|days?|weeks?|months?|requests?|transactions?|records?)/i;
-const PERFORMANCE_WORD_REGEX = /\b(improved|reduced|optimized|increased|enhanced|decreased|streamlined|accelerated|boosted|maximized|minimized|eliminated|saved|generated|grew|expanded|automated|simplified|transformed)\b/i;
-
-function getAllBullets(resume: ResumeData): string[] {
-  const bullets: string[] = [];
-  resume.workExperience?.forEach(exp => exp.bullets?.forEach(b => bullets.push(b)));
-  resume.projects?.forEach(p => p.bullets?.forEach(b => bullets.push(b)));
-  return bullets;
-}
-
-function fixWeakVerbs(resume: ResumeData): OptimizationChange[] {
-  const changes: OptimizationChange[] = [];
-  const usedVerbs = new Set<string>();
-
-  const fixBullet = (bullet: string, section: string): string => {
-    let fixed = bullet;
-    for (const [weak, strong] of Object.entries(VAGUE_PHRASES)) {
-      const regex = new RegExp(`^${weak}`, 'i');
-      if (regex.test(fixed)) {
-        fixed = fixed.replace(regex, strong);
-        changes.push({ parameterId: 14, section, before: bullet, after: fixed, description: `Replaced vague phrase "${weak}" with "${strong}"` });
-        return fixed;
-      }
-    }
-
-    const firstWord = fixed.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
-    if (firstWord && WEAK_VERBS_MAP[firstWord]) {
-      const replacement = WEAK_VERBS_MAP[firstWord];
-      fixed = replacement + fixed.slice(firstWord.length);
-      changes.push({ parameterId: 14, section, before: bullet, after: fixed, description: `Replaced weak verb "${firstWord}" with "${replacement}"` });
-      return fixed;
-    }
-
-    const isStrongVerb = IMPACT_VERBS.some(v => v.toLowerCase() === firstWord);
-    if (!isStrongVerb && firstWord) {
-      let newVerb = IMPACT_VERBS.find(v => !usedVerbs.has(v.toLowerCase())) || IMPACT_VERBS[0];
-      usedVerbs.add(newVerb.toLowerCase());
-      fixed = `${newVerb} ${fixed.charAt(0).toLowerCase()}${fixed.slice(1)}`;
-      changes.push({ parameterId: 14, section, before: bullet, after: fixed, description: `Added strong action verb "${newVerb}"` });
-    } else if (firstWord) {
-      usedVerbs.add(firstWord);
-    }
-
-    return fixed;
-  };
-
-  resume.workExperience?.forEach(exp => {
-    exp.bullets = exp.bullets?.map(b => fixBullet(b, 'experience')) || [];
-  });
-  resume.projects?.forEach(proj => {
-    proj.bullets = proj.bullets?.map(b => fixBullet(b, 'projects')) || [];
-  });
-
-  return changes;
-}
-
-function fixVerbRepetition(resume: ResumeData): OptimizationChange[] {
-  const changes: OptimizationChange[] = [];
-  const verbCounts: Record<string, number> = {};
-  const allBulletRefs: { bullet: string; container: { bullets?: string[] }; idx: number; section: string }[] = [];
-
-  resume.workExperience?.forEach(exp => {
-    exp.bullets?.forEach((b, idx) => {
-      const firstWord = b.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
-      if (firstWord) verbCounts[firstWord] = (verbCounts[firstWord] || 0) + 1;
-      allBulletRefs.push({ bullet: b, container: exp, idx, section: 'experience' });
-    });
-  });
-  resume.projects?.forEach(proj => {
-    proj.bullets?.forEach((b, idx) => {
-      const firstWord = b.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
-      if (firstWord) verbCounts[firstWord] = (verbCounts[firstWord] || 0) + 1;
-      allBulletRefs.push({ bullet: b, container: proj, idx, section: 'projects' });
-    });
-  });
-
-  const usedReplacements = new Set<string>();
-  const overusedVerbs = Object.entries(verbCounts).filter(([_, count]) => count > 2).map(([verb]) => verb);
-
-  overusedVerbs.forEach(verb => {
-    let replacementsNeeded = verbCounts[verb] - 1;
-    allBulletRefs.forEach(ref => {
-      if (replacementsNeeded <= 0) return;
-      const firstWord = ref.bullet.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, '');
-      if (firstWord !== verb) return;
-
-      const replacement = IMPACT_VERBS.find(v =>
-        v.toLowerCase() !== verb && !usedReplacements.has(v.toLowerCase())
-      );
-      if (!replacement) return;
-
-      usedReplacements.add(replacement.toLowerCase());
-      const newBullet = replacement + ref.bullet.slice(firstWord.length);
-      if (ref.container.bullets) {
-        ref.container.bullets[ref.idx] = newBullet;
-      }
-      changes.push({ parameterId: 15, section: ref.section, before: ref.bullet, after: newBullet, description: `Diversified repeated verb "${verb}" to "${replacement}"` });
-      replacementsNeeded--;
-    });
-  });
-
-  return changes;
-}
-
-function removePassiveVoice(resume: ResumeData): OptimizationChange[] {
-  const changes: OptimizationChange[] = [];
-  const passivePattern = /\b(was|were|been|being|is|are)\s+(\w+ed)\b/gi;
-
-  const fixBullet = (bullet: string, section: string): string => {
-    if (!passivePattern.test(bullet)) return bullet;
-    passivePattern.lastIndex = 0;
-
-    const fixed = bullet.replace(passivePattern, (_match, _aux, verb) => {
-      return verb.charAt(0).toUpperCase() + verb.slice(1);
-    });
-
-    if (fixed !== bullet) {
-      changes.push({ parameterId: 16, section, before: bullet, after: fixed, description: 'Converted passive voice to active voice' });
-    }
-    return fixed;
-  };
-
-  resume.workExperience?.forEach(exp => {
-    exp.bullets = exp.bullets?.map(b => fixBullet(b, 'experience')) || [];
-  });
-  resume.projects?.forEach(proj => {
-    proj.bullets = proj.bullets?.map(b => fixBullet(b, 'projects')) || [];
-  });
-
-  return changes;
-}
-
-function removeVaguePhrases(resume: ResumeData): OptimizationChange[] {
-  const changes: OptimizationChange[] = [];
-
-  const fixBullet = (bullet: string, section: string): string => {
-    let fixed = bullet;
-    for (const [vague, replacement] of Object.entries(VAGUE_PHRASES)) {
-      const regex = new RegExp(vague, 'gi');
-      if (regex.test(fixed)) {
-        fixed = fixed.replace(regex, replacement);
-        changes.push({ parameterId: 13, section, before: bullet, after: fixed, description: `Replaced "${vague}" with "${replacement}"` });
-      }
-    }
-    return fixed;
-  };
-
-  resume.workExperience?.forEach(exp => {
-    exp.bullets = exp.bullets?.map(b => fixBullet(b, 'experience')) || [];
-  });
-  resume.projects?.forEach(proj => {
-    proj.bullets = proj.bullets?.map(b => fixBullet(b, 'projects')) || [];
-  });
-
-  return changes;
 }
 
 function extractOptimizationKeywordsFromJD(jobDescription: string): string[] {
@@ -395,74 +214,6 @@ function fixBulletFormatting(resume: ResumeData): OptimizationChange[] {
   });
   resume.projects?.forEach(proj => {
     proj.bullets = proj.bullets?.map(b => fix(b, 'projects')) || [];
-  });
-
-  return changes;
-}
-
-function enforceBulletWordLimit(resume: ResumeData, maxWords: number = MAX_BULLET_WORDS): OptimizationChange[] {
-  const changes: OptimizationChange[] = [];
-
-  const extractMetricPhrase = (text: string): string | null => {
-    const phraseMatch = text.match(
-      /(?:by|to|over|for|of)?\s*(?:\$\d+(?:\.\d+)?|\d+(?:\.\d+)?%|\d+(?:\.\d+)?\s*(?:users?|customers?|clients?|team|people|million|k\b|x\b|hrs?|hours?|days?|weeks?|months?|requests?|transactions?|records?))/i
-    );
-    return phraseMatch ? phraseMatch[0].trim() : null;
-  };
-
-  const shortenBullet = (bullet: string, section: string): string => {
-    const normalized = bullet.replace(/\s+/g, ' ').trim();
-    const words = normalized.split(' ').filter(Boolean);
-    if (words.length <= maxWords) return normalized;
-
-    const hadMetricEvidence = METRIC_EVIDENCE_REGEX.test(normalized);
-    const hadPerformanceWord = PERFORMANCE_WORD_REGEX.test(normalized);
-    const metricPhrase = hadMetricEvidence ? extractMetricPhrase(normalized) : null;
-
-    let shortened = words.slice(0, maxWords).join(' ');
-
-    if (hadMetricEvidence && !METRIC_EVIDENCE_REGEX.test(shortened) && metricPhrase) {
-      const metricWords = metricPhrase.split(/\s+/).filter(Boolean);
-      const headCount = Math.max(1, maxWords - metricWords.length - 1);
-      shortened = `${words.slice(0, headCount).join(' ')} with ${metricPhrase}`.trim();
-      const finalWords = shortened.split(/\s+/).filter(Boolean);
-      if (finalWords.length > maxWords) {
-        shortened = finalWords.slice(0, maxWords).join(' ');
-      }
-    }
-
-    if (hadPerformanceWord && !PERFORMANCE_WORD_REGEX.test(shortened)) {
-      const wordsWithPerf = shortened.replace(/[.!?]$/, '').split(/\s+/).filter(Boolean);
-      if (wordsWithPerf.length >= 2) {
-        wordsWithPerf.splice(Math.min(2, wordsWithPerf.length), 0, 'improved');
-      } else {
-        wordsWithPerf.push('improved');
-      }
-      shortened = wordsWithPerf.slice(0, maxWords).join(' ');
-    }
-
-    shortened = shortened.replace(/[,:;]+$/g, '');
-    if (!/[.!?]$/.test(shortened)) shortened += '.';
-
-    if (shortened !== bullet) {
-      changes.push({
-        parameterId: 4,
-        section,
-        before: bullet,
-        after: shortened,
-        description: `Shortened bullet to ${maxWords} words max`,
-      });
-    }
-
-    return shortened;
-  };
-
-  resume.workExperience?.forEach(exp => {
-    exp.bullets = exp.bullets?.map(b => shortenBullet(b, 'experience')) || [];
-  });
-
-  resume.projects?.forEach(proj => {
-    proj.bullets = proj.bullets?.map(b => shortenBullet(b, 'projects')) || [];
   });
 
   return changes;
@@ -1014,57 +765,6 @@ function fixSkillsQuality(resume: ResumeData): OptimizationChange[] {
   return changes;
 }
 
-function parseYearRange(yearText?: string): { start: number; end: number; endLabel: string } | null {
-  if (!yearText) return null;
-  const m = yearText.match(/(\d{4})\s*[-–]\s*(\d{4}|present|current|ongoing)/i);
-  if (!m) return null;
-  const start = parseInt(m[1], 10);
-  const endRaw = m[2];
-  const isPresent = /present|current|ongoing/i.test(endRaw);
-  const end = isPresent ? new Date().getFullYear() : parseInt(endRaw, 10);
-  if (Number.isNaN(start) || Number.isNaN(end)) return null;
-  return { start, end, endLabel: isPresent ? 'Present' : String(end) };
-}
-
-function parseRequiredYearsFromJD(jobDescription: string): number {
-  const m = jobDescription.match(/(\d+)\+?\s*(?:years?|yrs?)\s*(?:of)?\s*(?:experience|exp)/i);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
-function getResumeTotalYears(resume: ResumeData): number {
-  let total = 0;
-  for (const exp of resume.workExperience || []) {
-    const parsed = parseYearRange(exp.year);
-    if (!parsed) continue;
-    total += Math.max(0, parsed.end - parsed.start);
-  }
-  return total;
-}
-
-function detectTargetSeniority(jobDescription: string): 'entry' | 'senior' | 'lead' | 'principal' | null {
-  if (/\b(principal|staff|distinguished|director|vp)\b/i.test(jobDescription)) return 'principal';
-  if (/\b(lead|tech lead|team lead)\b/i.test(jobDescription)) return 'lead';
-  if (/\b(senior|sr\.?)\b/i.test(jobDescription)) return 'senior';
-  if (/\b(junior|jr\.?|entry|fresher|graduate|intern)\b/i.test(jobDescription)) return 'entry';
-  return null;
-}
-
-function toTitle(skill: string): string {
-  return skill
-    .split(/\s+/)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
-function slugifyName(name?: string): string {
-  const clean = (name || 'candidate')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
-  return clean || 'candidate';
-}
-
 export async function optimizeByParameter(
   resume: ResumeData,
   jobDescription: string,
@@ -1080,17 +780,8 @@ export async function optimizeByParameter(
   // Evidence-only pipeline: gaps in years, seniority, contact details, and
   // project count require candidate input and must never be auto-filled.
 
-  if (gapIds.has(12) || gapIds.has(13) || gapIds.has(14) || gapIds.has(16)) {
-    allChanges.push(...removeVaguePhrases(optimized));
-    allChanges.push(...fixWeakVerbs(optimized));
-    allChanges.push(...removePassiveVoice(optimized));
-    parametersFixed.push(12, 13, 14, 16);
-  }
-
-  if (gapIds.has(15)) {
-    allChanges.push(...fixVerbRepetition(optimized));
-    parametersFixed.push(15);
-  }
+  // Wording (verbs, voice, vagueness, length) belongs to the AI rewrite. Swapping
+  // or cutting words by list produced broken sentences and inflated claims.
 
   if (gapIds.has(6) || gapIds.has(7) || gapIds.has(8) || gapIds.has(10)) {
     const suggestedKeywords = parseKeywordsFromGapSuggestions(gaps, [6, 7, 8, 10, 23, 28]);
@@ -1129,9 +820,6 @@ export async function optimizeByParameter(
   allChanges.push(...aiSkillReorgChanges);
   allChanges.push(...pruneIrrelevantSkillsToJD(optimized, jobDescription));
   parametersFixed.push(22, 23);
-
-  allChanges.push(...enforceBulletWordLimit(optimized, MAX_BULLET_WORDS));
-  parametersFixed.push(4);
 
   return {
     optimizedResume: optimized,

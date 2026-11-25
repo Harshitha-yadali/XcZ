@@ -45,8 +45,8 @@ BEGIN
       AND ai_calls < 30
       AND (
         p_model IN ('openai/gpt-6-luna', 'google/gemini-3.5-flash-lite')
-        OR (p_model = 'openai/gpt-5.6-terra' AND optimization_tier = 'smart')
-        OR (p_model = 'anthropic/claude-opus-4.8' AND optimization_tier = 'deep')
+        OR (p_model IN ('openai/gpt-6.1-terra', 'openai/gpt-5.6-terra') AND optimization_tier = 'smart')
+        OR (p_model IN ('anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-4.8') AND optimization_tier = 'deep')
       )
     ORDER BY created_at DESC
     LIMIT 1

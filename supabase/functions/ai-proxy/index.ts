@@ -15,6 +15,9 @@ const jsonResponse = (data: any, status = 200) =>
   });
 
 const ALLOWED_OPENROUTER_MODELS = new Set([
+  "openai/gpt-6.1-terra",
+  "anthropic/claude-sonnet-5.5",
+  // Still requested by pages opened before this release.
   "openai/gpt-5.6-terra",
   "google/gemini-3.5-flash-lite",
   "anthropic/claude-opus-4.8",
@@ -29,6 +32,8 @@ const DEFAULT_OPENROUTER_MODEL = ALLOWED_OPENROUTER_MODELS.has(configuredDefault
   ? configuredDefaultModel
   : "google/gemma-4-31b-it:free";
 const MODELS_WITH_FIXED_SAMPLING = new Set([
+  "openai/gpt-6.1-terra",
+  "anthropic/claude-sonnet-5.5",
   "openai/gpt-5.6-terra",
   "openai/gpt-6-luna",
 ]);
@@ -48,6 +53,19 @@ const resolveAllowedModel = (requestedModel: unknown): string | null => {
     ? requestedModel.trim()
     : DEFAULT_OPENROUTER_MODEL;
   return ALLOWED_OPENROUTER_MODELS.has(model) ? model : null;
+};
+
+// Hidden reasoning counts against max_tokens; keep it short so the JSON is not
+// cut off and the cost of an order stays predictable.
+const LOW_REASONING_MODELS = new Set(["openai/gpt-6.1-terra", "anthropic/claude-sonnet-5.5"]);
+const withReasoning = (model: string) =>
+  LOW_REASONING_MODELS.has(model) ? { reasoning: { effort: "low" } } : {};
+
+const logUsage = (model: string, caller: Caller, body: any) => {
+  if (!model.endsWith(":free")) {
+    console.info("ai_usage", JSON.stringify({ model, user: caller.user?.id ?? null, ...body?.usage }));
+  }
+  return body;
 };
 
 const MAX_OUTPUT_TOKENS = 8000;
@@ -128,10 +146,11 @@ async function handleOpenRouter(action: string, params: any, caller: Caller) {
           model,
           messages: [{ role: "user", content: prompt }],
           ...withSupportedSampling(model, temperature),
+          ...withReasoning(model),
           max_tokens: Math.min(Math.max(1, Number(maxTokens) || 4000), outputCap),
         }),
       });
-      return jsonResponse(await res.json(), res.status);
+      return jsonResponse(logUsage(model, caller, await res.json()), res.status);
     }
 
     case "chat_with_system": {
@@ -155,10 +174,11 @@ async function handleOpenRouter(action: string, params: any, caller: Caller) {
             { role: "user", content: userPrompt },
           ],
           ...withSupportedSampling(model, temperature),
+          ...withReasoning(model),
           max_tokens: outputCap,
         }),
       });
-      return jsonResponse(await res.json(), res.status);
+      return jsonResponse(logUsage(model, caller, await res.json()), res.status);
     }
 
     default:

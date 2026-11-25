@@ -75,4 +75,21 @@ describe('resumeEvidenceValidator', () => {
     expect(keep('Developed Node APIs and React screens for internal teams.')).toBe(true);
     expect(keep('Built Node.js APIs in Java.')).toBe(false);
   });
+
+  it('keeps each rewrite under its own employer when the order changes', () => {
+    const two: ResumeData = { ...evidence, workExperience: [
+      evidence.workExperience[0],
+      { role: 'Tester', company: 'Beta', year: '2023', bullets: ['Tested React screens.'] },
+    ] };
+    const swapped = { ...two, workExperience: [
+      { ...two.workExperience[1], bullets: ['Verified React screens.'] },
+      { ...two.workExperience[0], bullets: ['Developed Node.js APIs for an internal application.'] },
+    ] };
+    const jobs = validateAndRepairResume(two, swapped).resume.workExperience;
+    expect(jobs[0].bullets).toEqual(['Developed Node.js APIs for an internal application.']);
+    expect(jobs[1].bullets).toEqual(['Verified React screens.']);
+
+    const onlyBeta = { ...two, workExperience: [swapped.workExperience[0]] };
+    expect(validateAndRepairResume(two, onlyBeta).resume.workExperience[0].bullets).toEqual(two.workExperience[0].bullets);
+  });
 });

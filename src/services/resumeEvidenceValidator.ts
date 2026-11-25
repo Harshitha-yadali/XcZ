@@ -27,9 +27,9 @@ const normalize = (value: string): string =>
 const numericClaims = (value: string): string[] =>
   value.match(/(?:[$₹£€]\s*)?\d+(?:[.,]\d+)*(?:\s*[%+xkKmMbB])?/g) || [];
 
-const hasUnsupportedNumber = (candidate: string, evidenceText: string): boolean => {
+const unsupportedNumbers = (candidate: string, evidenceText: string): string[] => {
   const evidenceClaims = new Set(numericClaims(evidenceText).map(normalize));
-  return numericClaims(candidate).some((claim) => !evidenceClaims.has(normalize(claim)));
+  return numericClaims(candidate).filter((claim) => !evidenceClaims.has(normalize(claim)));
 };
 
 // Names that are also everyday English or too general to be a claim.
@@ -74,13 +74,35 @@ const namedSkills = (value: string): Set<string> => {
 
 const FLAWLESS_CLAIM = /\b(?:zero|no)\s+(?:\w+\s+)?(?:incidents?|downtime|defects?|bugs?|errors?|outages?)\b/i;
 
-/** A number, technology or "zero incidents" style claim the resume never made. */
-const hasUnsupportedClaim = (candidate: string, evidenceText: string): boolean => {
-  if (hasUnsupportedNumber(candidate, evidenceText)) return true;
-  if (FLAWLESS_CLAIM.test(candidate) && !FLAWLESS_CLAIM.test(evidenceText)) return true;
+/** Numbers, technologies and "zero incidents" style claims the resume never made. */
+export function unsupportedClaims(candidate: string, evidenceText: string): string[] {
+  const flawless = candidate.match(FLAWLESS_CLAIM)?.[0];
   const known = namedSkills(evidenceText);
-  return [...namedSkills(candidate)].some((skill) => !known.has(skill));
-};
+  return [
+    ...unsupportedNumbers(candidate, evidenceText).map((claim) => claim.trim()),
+    ...(flawless && !FLAWLESS_CLAIM.test(evidenceText) ? [flawless] : []),
+    ...[...namedSkills(candidate)].filter((skill) => !known.has(skill)),
+  ];
+}
+
+const hasUnsupportedClaim = (candidate: string, evidenceText: string): boolean =>
+  unsupportedClaims(candidate, evidenceText).length > 0;
+
+/**
+ * The rewritten entry for source[index]: by name where the names say so, by
+ * position otherwise, and never an entry that names a different source. A
+ * reordered rewrite must not put one employer's work under another.
+ */
+function rewrittenEntry<T>(source: T[], candidates: T[] | undefined, index: number, nameOf: (item: T) => string): T | undefined {
+  const list = candidates || [];
+  const names = source.map(nameOf);
+  // Two entries with one name can only be told apart by position.
+  if (names.filter((name) => name === names[index]).length > 1) return list[index];
+  const byName = list.find((item) => nameOf(item) === names[index]);
+  if (byName) return byName;
+  const byPosition = list[index];
+  return byPosition && !names.includes(nameOf(byPosition)) ? byPosition : undefined;
+}
 
 function validateBullets(
   candidateBullets: string[] | undefined,
@@ -147,8 +169,9 @@ export function validateAndRepairResume(
   if ((candidate.workExperience?.length || 0) !== (evidence.workExperience?.length || 0)) {
     violations.push({ section: 'experience', message: 'Blocked an unsupported work-experience entry.' });
   }
+  const rewrittenJobs = candidate.workExperience;
   candidate.workExperience = (evidence.workExperience || []).map((source, index) => {
-    const rewritten = candidate.workExperience?.[index];
+    const rewritten = rewrittenEntry(evidence.workExperience, rewrittenJobs, index, (job) => normalize(`${job.company}|${job.role}`));
     return {
       ...source,
       bullets: validateBullets(rewritten?.bullets, source.bullets, evidenceText, 'experience', violations),
@@ -158,8 +181,9 @@ export function validateAndRepairResume(
   if ((candidate.projects?.length || 0) !== (evidence.projects?.length || 0)) {
     violations.push({ section: 'projects', message: 'Blocked an unsupported generated project.' });
   }
+  const rewrittenProjects = candidate.projects;
   candidate.projects = (evidence.projects || []).map((source, index) => {
-    const rewritten = candidate.projects?.[index];
+    const rewritten = rewrittenEntry(evidence.projects, rewrittenProjects, index, (project) => normalize(project.title || ''));
     return {
       ...source,
       description: rewritten?.description && !hasUnsupportedClaim(rewritten.description, evidenceText)

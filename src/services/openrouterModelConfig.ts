@@ -2,9 +2,9 @@ export const GEMMA_4_31B_FREE_MODEL = 'google/gemma-4-31b-it:free';
 export const GEMMA_4_26B_FREE_MODEL = 'google/gemma-4-26b-a4b-it:free';
 export const NEMOTRON_3_ULTRA_FREE_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
 export const NORTH_MINI_CODE_FREE_MODEL = 'cohere/north-mini-code:free';
-export const GPT_5_6_TERRA_MODEL = 'openai/gpt-5.6-terra';
+export const GPT_6_1_TERRA_MODEL = 'openai/gpt-6.1-terra';
 export const GEMINI_3_5_FLASH_LITE_MODEL = 'google/gemini-3.5-flash-lite';
-export const CLAUDE_OPUS_4_8_MODEL = 'anthropic/claude-opus-4.8';
+export const CLAUDE_SONNET_5_5_MODEL = 'anthropic/claude-sonnet-5.5';
 // Served by ZenMux, not OpenRouter; ai-proxy routes it.
 export const GPT_6_LUNA_MODEL = 'openai/gpt-6-luna';
 
@@ -18,9 +18,9 @@ export const FREE_OPENROUTER_MODELS = [
 ] as const;
 
 export const ALLOWED_OPENROUTER_MODELS = [
-  GPT_5_6_TERRA_MODEL,
+  GPT_6_1_TERRA_MODEL,
   GEMINI_3_5_FLASH_LITE_MODEL,
-  CLAUDE_OPUS_4_8_MODEL,
+  CLAUDE_SONNET_5_5_MODEL,
   GPT_6_LUNA_MODEL,
   ...FREE_OPENROUTER_MODELS,
 ] as const;
@@ -28,12 +28,11 @@ export const ALLOWED_OPENROUTER_MODELS = [
 export const DEFAULT_OPENROUTER_MODEL = GEMMA_4_31B_FREE_MODEL;
 export const PINNED_RESUME_PARSER_MODEL = GEMMA_4_31B_FREE_MODEL;
 export const RESUME_PARSER_ESCALATION_MODEL = GEMMA_4_26B_FREE_MODEL;
-export const QUICK_OPTIMIZATION_MODEL = GEMINI_3_5_FLASH_LITE_MODEL;
-export const SMART_OPTIMIZATION_MODEL = GPT_5_6_TERRA_MODEL;
-export const DEEP_OPTIMIZATION_MODEL = CLAUDE_OPUS_4_8_MODEL;
-// Cheap first pass for every tier; the tier's own model refines it and takes
-// over pass 1 when Luna fails (see ResumeOptimizer).
-export const FIRST_PASS_OPTIMIZATION_MODEL = GPT_6_LUNA_MODEL;
+export const QUICK_OPTIMIZATION_MODEL = GPT_6_LUNA_MODEL;
+export const SMART_OPTIMIZATION_MODEL = GPT_6_1_TERRA_MODEL;
+export const DEEP_OPTIMIZATION_MODEL = CLAUDE_SONNET_5_5_MODEL;
+// Skill sorting and other side jobs: the cheapest model is enough.
+export const SIDE_JOB_MODEL = GPT_6_LUNA_MODEL;
 
 const MODEL_FALLBACK_POOL = FREE_OPENROUTER_MODELS;
 const ALLOWED_MODEL_SET = new Set<string>(ALLOWED_OPENROUTER_MODELS);
@@ -57,7 +56,8 @@ const MODEL_UNAVAILABLE_ERROR_PATTERNS = [
 
 const normalizeModelId = (model?: string) => model?.trim() || '';
 
-const FIXED_SAMPLING_MODELS = new Set<string>([GPT_5_6_TERRA_MODEL, GPT_6_LUNA_MODEL]);
+const TIER_MODELS = new Set<string>([QUICK_OPTIMIZATION_MODEL, SMART_OPTIMIZATION_MODEL, DEEP_OPTIMIZATION_MODEL]);
+const FIXED_SAMPLING_MODELS = new Set<string>([GPT_6_LUNA_MODEL, GPT_6_1_TERRA_MODEL, CLAUDE_SONNET_5_5_MODEL]);
 
 export const supportsCustomSamplingParameters = (model?: string) =>
   !FIXED_SAMPLING_MODELS.has(normalizeModelId(model));
@@ -98,8 +98,8 @@ export const getOpenRouterModelsToTry = (requestedModel?: string) => {
   if (!normalizedRequestedModel || !ALLOWED_MODEL_SET.has(normalizedRequestedModel)) {
     return [...OPENROUTER_MODEL_FALLBACKS];
   }
-  // No free-model fallback for Luna: the caller falls back to the paid tier model.
-  if (normalizedRequestedModel === GPT_6_LUNA_MODEL) return [GPT_6_LUNA_MODEL];
+  // A paid rewrite is never quietly replaced by a free model: it fails and is refunded.
+  if (TIER_MODELS.has(normalizedRequestedModel)) return [normalizedRequestedModel];
 
   return dedupeModels([normalizedRequestedModel, ...OPENROUTER_MODEL_FALLBACKS]);
 };

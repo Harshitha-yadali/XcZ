@@ -29,8 +29,8 @@ describe('JD optimization tiers — runtime differentiators', () => {
   /**
    * Quick and Smart now run the same number of passes, so pass count alone no
    * longer separates them. These are the differentiators that remain, and the
-   * price gap rests on them: a cheaper model, the 'light' mode that skips the
-   * 16-parameter rewrite, and no project analysis.
+   * price gap rests on them: a cheaper model, the 'light' prompt mode, and no
+   * project analysis.
    */
   it('keeps Quick below Smart on model, mode, and project analysis', () => {
     const quick = getJdOptimizationTier('quick');
@@ -50,18 +50,17 @@ describe('JD optimization tiers — runtime differentiators', () => {
     expect(new Set(modes).size).toBe(3);
   });
 
-  it('routes refinement passes through the tier model, one entry per extra pass', () => {
+  it('has one side-job model per extra pass, and writes the resume with the tier model', () => {
     for (const tier of JD_OPTIMIZATION_TIERS) {
       expect(tier.refinementModels).toHaveLength(tier.aiPasses - 1);
-      expect(tier.refinementModels.every((model) => model === tier.modelId)).toBe(true);
     }
+    expect(repoFile('src/components/ResumeOptimizer.tsx')).toContain('let firstPassModel = qualityTier.modelId;');
   });
 
-  it('keeps Quick on the cheap single pass and skips the 16-parameter rewrite', () => {
-    // enhancedJdOptimizerService gates the heavy rewrite behind `mode !== 'light'`.
-    // Quick is the only 'light' tier, so this is what the price gap buys.
-    const source = repoFile('src/services/enhancedJdOptimizerService.ts');
-    expect(source).toContain("if (mode !== 'light')");
+  it('never runs the 16-parameter rewriter over a paid rewrite', () => {
+    // It appended invented metrics to every line. The evidence guard then put the
+    // original lines back, so Smart and Deep buyers lost the AI rewrite entirely.
+    expect(repoFile('src/services/enhancedJdOptimizerService.ts')).not.toContain('rewriteResume(');
     expect(getJdOptimizationTier('quick').mode).toBe('light');
     expect(getJdOptimizationTier('smart').mode).not.toBe('light');
     expect(getJdOptimizationTier('deep').mode).not.toBe('light');
