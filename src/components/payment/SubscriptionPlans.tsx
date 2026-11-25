@@ -529,7 +529,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
               <h2 className="text-base font-bold text-white mb-3 flex items-center">
                 <Wallet className="w-4 h-4 mr-2 text-emerald-400" />Wallet Balance
               </h2>
-              {loadingWallet ? <div className="text-slate-400 text-sm">Loading wallet...</div> : (
+              {!user ? <div className="text-slate-400 text-sm">Sign in to see your wallet balance.</div> : loadingWallet ? <div className="text-slate-400 text-sm">Loading wallet...</div> : (
                 <div className="flex items-center gap-4">
                   <span className="text-xl font-bold text-white">&#8377;{(walletBalance / 100).toFixed(2)}</span>
                   {walletBalance > 0 && (

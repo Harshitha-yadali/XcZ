@@ -46,9 +46,7 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
 
   const [stats, setStats] = useState({
     totalPosts: 0,
-    totalCategories: 0,
-    featuredPosts: 0,
-    averageReadingTime: 5
+    totalCategories: 0
   });
 
   const pageSize = 12;
@@ -205,8 +203,6 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
         <BlogStats
           totalPosts={stats.totalPosts}
           totalCategories={stats.totalCategories}
-          featuredPosts={stats.featuredPosts}
-          averageReadingTime={stats.averageReadingTime}
         />
 
         <div className="mb-8">

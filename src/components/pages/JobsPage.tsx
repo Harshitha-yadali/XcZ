@@ -33,29 +33,13 @@ import { aiJobMatchingService } from '../../services/aiJobMatchingService';
 import { useAutoApply } from '../../hooks/useAutoApply';
 import { profileResumeService } from '../../services/profileResumeService';
 import { Seo } from '../../seo/Seo';
+import { buildSearchParamsFromFilters, readFiltersFromSearchParams } from '../../utils/jobSearchParams';
 
 interface JobsPageProps {
   isAuthenticated: boolean;
   onShowAuth: () => void;
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
 }
-
-const buildSearchParamsFromFilters = (filters: JobFilters, page: number): URLSearchParams => {
-  const params = new URLSearchParams({ page: page.toString() });
-
-  if (filters.search) params.set('search', filters.search);
-  if (filters.domain) params.set('domain', filters.domain);
-  if (filters.location_type) params.set('location_type', filters.location_type);
-  if (filters.job_category) params.set('job_category', filters.job_category);
-  if (filters.experience_required) params.set('experience_required', filters.experience_required);
-  if (filters.eligible_year) params.set('eligible_year', filters.eligible_year);
-  if (typeof filters.package_min === 'number') params.set('package_min', filters.package_min.toString());
-  if (typeof filters.package_max === 'number') params.set('package_max', filters.package_max.toString());
-  if (filters.sort_by) params.set('sort_by', filters.sort_by);
-  if (filters.sort_order) params.set('sort_order', filters.sort_order);
-
-  return params;
-};
 
 export const JobsPage: React.FC<JobsPageProps> = ({
   isAuthenticated,
@@ -70,7 +54,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
 
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [jobsJsonLd, setJobsJsonLd] = useState<Record<string, unknown> | null>(null);
-  const [filters, setFilters] = useState<JobFilters>({});
+  const [filters, setFilters] = useState<JobFilters>(() => readFiltersFromSearchParams(searchParams));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
