@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion';
 import {
-  Building2,
   MapPin,
   Clock,
   Calendar,
   Users,
-  Sparkles
+  Sparkles,
+  Zap,
+  ArrowUpRight,
 } from 'lucide-react';
 import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -136,18 +137,41 @@ export const JobCard: React.FC<JobCardProps> = ({
   const jobOpen = isJobOpen(job);
   const expiryLabel = formatJobExpiryLabel(job.expires_at);
 
+  // 3D: the card tilts toward the mouse and a soft light follows it; the logo
+  // sits on a raised layer, so the tilt shows real depth. Mouse only: touch and
+  // reduced-motion users get a flat card.
+  const pointerX = useMotionValue(0.5);
+  const pointerY = useMotionValue(0.5);
+  const tilt = { stiffness: 260, damping: 24 };
+  const rotateX = useSpring(useTransform(pointerY, [0, 1], [4, -4]), tilt);
+  const rotateY = useSpring(useTransform(pointerX, [0, 1], [-5, 5]), tilt);
+  const glowX = useTransform(pointerX, (value) => `${value * 100}%`);
+  const glowY = useTransform(pointerY, (value) => `${value * 100}%`);
+  const spotlight = useMotionTemplate`radial-gradient(420px circle at ${glowX} ${glowY}, rgba(52,211,153,0.10), transparent 60%)`;
+  const depth = prefersReducedMotion ? {} : {
+    style: { rotateX, rotateY, transformPerspective: 1100, transformStyle: 'preserve-3d' as const },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== 'mouse') return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      pointerX.set((event.clientX - rect.left) / rect.width);
+      pointerY.set((event.clientY - rect.top) / rect.height);
+    },
+    onPointerLeave: () => { pointerX.set(0.5); pointerY.set(0.5); },
+  };
+  const shownSkills = skillTags.slice(0, 4);
+
   return (
     <motion.div
       layout
-      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.995 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.995 }}
-      whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+      {...depth}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 22, rotateX: 8 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+      whileHover={prefersReducedMotion ? undefined : { y: -5, scale: 1.006 }}
       transition={{
         layout: { type: 'spring', stiffness: 320, damping: 30 },
-        opacity: { duration: 0.22, delay: animationDelay },
-        y: { type: 'spring', stiffness: 280, damping: 26, delay: animationDelay },
-        scale: { duration: 0.22, delay: animationDelay },
+        opacity: { duration: 0.3, delay: animationDelay },
+        y: { type: 'spring', stiffness: 260, damping: 24, delay: animationDelay },
       }}
       onClick={handleCardClick}
       onKeyDown={(event) => {
@@ -160,12 +184,18 @@ export const JobCard: React.FC<JobCardProps> = ({
       role="link"
       tabIndex={0}
       aria-label={`View ${job.role_title} at ${job.company_name}`}
-      className={`bg-slate-900/80 backdrop-blur-xl rounded-xl border ${
+      className={`relative rounded-2xl border bg-gradient-to-b from-slate-900/90 to-slate-950/90 backdrop-blur-xl ${
         job.match_score
-          ? 'border-green-500/50 shadow-lg shadow-green-500/20'
-          : 'border-slate-700/50'
-      } group hover:border-emerald-400/50 hover:shadow-xl hover:shadow-emerald-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 transition-[border-color,box-shadow] duration-300 cursor-pointer overflow-hidden`}
+          ? 'border-emerald-400/40 shadow-lg shadow-emerald-500/15'
+          : 'border-white/[0.07] shadow-[0_10px_30px_rgba(0,0,0,0.25)]'
+      } group hover:border-emerald-400/40 hover:shadow-[0_22px_60px_rgba(16,185,129,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 transition-[border-color,box-shadow] duration-300 cursor-pointer overflow-hidden`}
     >
+      {/* Light that follows the mouse. */}
+      {!prefersReducedMotion && (
+        <motion.div aria-hidden className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" style={{ background: spotlight }} />
+      )}
+      {/* A thin lit edge along the top. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
       {job.match_score && (
         <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-white">
@@ -179,10 +209,13 @@ export const JobCard: React.FC<JobCardProps> = ({
           )}
         </div>
       )}
-      <div className="p-3 sm:p-4">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
-          {/* Company Logo */}
-          <div className="flex-shrink-0 w-16 h-16 sm:w-16 sm:h-16 bg-slate-800/50 rounded-lg border border-slate-700/50 group-hover:border-emerald-500/30 flex items-center justify-center p-1 sm:p-2 overflow-hidden transition-colors duration-300">
+      <div className="relative p-4 sm:p-5" style={prefersReducedMotion ? undefined : { transformStyle: 'preserve-3d' }}>
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-5">
+          {/* Company logo, on a raised layer so the tilt shows depth. */}
+          <div
+            style={prefersReducedMotion ? undefined : { transform: 'translateZ(28px)' }}
+            className="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] ring-1 ring-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.35)] group-hover:ring-emerald-400/30 flex items-center justify-center p-2 overflow-hidden transition-[box-shadow] duration-300"
+          >
             {logoCandidates[logoIndex] ? (
               <img
                 src={logoCandidates[logoIndex]}
@@ -206,18 +239,29 @@ export const JobCard: React.FC<JobCardProps> = ({
           </div>
 
           {/* Job Info */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0" style={prefersReducedMotion ? undefined : { transform: 'translateZ(12px)' }}>
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1 min-w-0 pr-4">
-                <h3 className="text-base sm:text-lg font-semibold text-white mb-1 truncate">
-                  {job.role_title}
-                </h3>
-                {job.job_category && (
-                  <span className={`inline-block px-2 py-0.5 mb-1 rounded-full text-[10px] font-semibold uppercase tracking-wide border ${JOB_CATEGORY_BADGE_CLASSES[job.job_category] || 'bg-slate-700/40 text-slate-300 border-slate-600/50'}`}>
-                    {job.job_category}
-                  </span>
-                )}
-                <p className="text-sm text-slate-400 mb-2">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <h3 className="text-base sm:text-lg font-semibold tracking-tight text-white truncate max-w-full group-hover:text-emerald-50 transition-colors">
+                    {job.role_title}
+                  </h3>
+                  <ArrowUpRight className="hidden sm:block w-4 h-4 text-slate-600 transition-all duration-300 group-hover:text-emerald-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                  {job.job_category && (
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border ${JOB_CATEGORY_BADGE_CLASSES[job.job_category] || 'bg-slate-700/40 text-slate-300 border-slate-600/50'}`}>
+                      {job.job_category}
+                    </span>
+                  )}
+                  {jobOpen && !smart && autoApplyEnabled && (
+                    <span title="We tested this job's form: we can apply for you start to finish." className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                      <Zap className="w-2.5 h-2.5" />
+                      Auto Apply ready
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-medium text-slate-300/90 mb-2">
                   <span
                     role="link"
                     tabIndex={0}
@@ -271,7 +315,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             </div>
 
             {/* Job Details */}
-            <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs text-slate-400 mb-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] sm:text-xs text-slate-400 mb-3">
               <div className="flex items-center space-x-1">
                 <MapPin className="w-3.5 h-3.5" />
                 <span>{job.location_city || job.location_type}</span>
@@ -293,24 +337,24 @@ export const JobCard: React.FC<JobCardProps> = ({
             </div>
 
             {/* Skill Tags */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {skillTags.slice(0, 6).map((tag, index) => (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {shownSkills.map((tag, index) => (
                 <span
                   key={index}
-                  className="px-2 py-0.5 bg-cyan-500/10 text-cyan-300 rounded text-[11px] font-medium border border-cyan-500/30 transition-colors duration-200 group-hover:border-cyan-400/40"
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] text-slate-300 text-[11px] font-medium ring-1 ring-white/[0.07] transition-colors duration-200 group-hover:ring-emerald-400/20"
                 >
                   {tag}
                 </span>
               ))}
-              {skillTags.length > 6 && (
-                <span className="px-2 py-0.5 bg-slate-800/50 text-slate-400 rounded text-[11px] font-medium">
-                  +{skillTags.length - 6}
+              {skillTags.length > shownSkills.length && (
+                <span className="px-2 py-1 text-slate-500 text-[11px] font-medium">
+                  +{skillTags.length - shownSkills.length} more
                 </span>
               )}
             </div>
 
             {/* Actions Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-white/[0.05]">
               <div className="flex items-center space-x-1.5">
                 {job.has_referral && (
                   <span className="px-2 py-0.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded text-[10px] font-semibold flex items-center shadow-sm shadow-emerald-500/20">
@@ -340,19 +384,19 @@ export const JobCard: React.FC<JobCardProps> = ({
               </div>
 
               {/* Apply Buttons */}
-              <div className="flex items-center sm:space-x-2 gap-2 sm:gap-0">
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
                 {jobOpen ? (
                   <>
-                    <div className="relative">
+                    <div className="relative w-full sm:w-auto">
                       <button
                         onClick={handleAutoApply}
                         disabled={!autoApplyEnabled || autoState !== 'idle'}
                         aria-disabled={!autoApplyEnabled || autoState !== 'idle'}
                         aria-live="polite"
                         title={smart ? 'We tailor your resume for this job; you submit it on the company site.' : 'We apply for you, start to finish.'}
-                        className={`px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-lg text-xs font-semibold shadow-md transition-all duration-200 w-auto flex items-center space-x-1 ${autoApplyEnabled && autoState === 'idle' ? 'hover:from-emerald-400 hover:to-green-400 hover:shadow-emerald-500/30 hover:-translate-y-0.5 active:translate-y-0' : autoApplyEnabled ? 'cursor-default' : 'opacity-50 cursor-not-allowed'}`}
+                        className={`h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 text-sm font-semibold shadow-[0_8px_24px_rgba(52,211,153,0.25)] transition-all duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto ${autoApplyEnabled && autoState === 'idle' ? 'hover:brightness-110 hover:shadow-[0_12px_32px_rgba(52,211,153,0.35)] hover:-translate-y-0.5 active:translate-y-0' : autoApplyEnabled ? 'cursor-default' : 'opacity-50 cursor-not-allowed'}`}
                       >
-                        <Sparkles className={`w-3 h-3 ${autoState === 'applying' ? 'animate-spin' : ''}`} />
+                        {smart ? <Sparkles className={`w-4 h-4 ${autoState === 'applying' ? 'animate-spin' : ''}`} /> : <Zap className={`w-4 h-4 ${autoState === 'applying' ? 'animate-pulse' : ''}`} />}
                         <span>{autoState === 'applying'
                           ? (smart ? 'Preparing...' : 'Applying...')
                           : autoState === 'applied' ? 'Applied ✓' : smart ? 'Smart Apply' : 'Auto Apply'}</span>
@@ -365,7 +409,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                     </div>
                     <button
                       onClick={handleManualApply}
-                      className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg text-sm font-semibold hover:from-cyan-400 hover:to-blue-400 shadow-md hover:shadow-cyan-500/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 w-full sm:w-auto"
+                      className="h-10 px-4 rounded-xl text-sm font-semibold text-slate-200 ring-1 ring-white/15 bg-white/[0.03] hover:bg-white/[0.08] hover:ring-white/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 w-full sm:w-auto"
                     >
                       Manual Apply
                     </button>

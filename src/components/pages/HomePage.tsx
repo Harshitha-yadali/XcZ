@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   AnimatePresence,
+  animate,
   motion,
   useMotionValue,
   useReducedMotion,
@@ -434,6 +435,49 @@ function GlassCard({ className = '', children }: { className?: string; children:
   );
 }
 
+/** A number that counts up once, from 0. Reduced motion shows the final value. */
+function CountUp({ to, delay = 0 }: { to: number; delay?: number }) {
+  const reduceMotion = useReducedMotion();
+  const value = useMotionValue(reduceMotion ? to : 0);
+  const shown = useTransform(value, (latest) => Math.round(latest));
+  useEffect(() => {
+    if (reduceMotion) return;
+    const controls = animate(value, to, { duration: 1.4, delay, ease: [0.22, 1, 0.36, 1] });
+    return () => controls.stop();
+  }, [delay, reduceMotion, to, value]);
+  return <motion.span>{shown}</motion.span>;
+}
+
+/**
+ * A chip floating in front of the card. It sits `depth` px towards the viewer,
+ * so when the card tilts it moves more than the card does: real parallax.
+ */
+function DepthChip({
+  depth,
+  className,
+  delay,
+  children,
+}: {
+  depth: number;
+  className: string;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div
+      aria-hidden
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1, y: reduceMotion ? 0 : [0, -6, 0] }}
+      transition={{ opacity: { delay }, scale: { delay, type: 'spring', stiffness: 260, damping: 20 }, y: { duration: 5 + depth / 30, repeat: Infinity, ease: 'easeInOut', delay } }}
+      style={reduceMotion ? undefined : { transform: `translateZ(${depth}px)` }}
+      className={`pointer-events-none absolute hidden items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:flex ${className}`}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
   const reduceMotion = useReducedMotion();
   const issues = [
@@ -450,10 +494,28 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
       style={{ transformPerspective: 1200 }}
       className="relative mx-auto min-w-0 w-full max-w-[570px]"
     >
+      {/* Orbit rings behind the card: a slow 3D gyroscope, purely decorative. */}
+      {!reduceMotion && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 grid place-items-center" style={{ perspective: 900 }}>
+          {[0, 1].map((ring) => (
+            <motion.div
+              key={ring}
+              className="absolute h-[118%] w-[118%] rounded-full border border-emerald-300/[0.12]"
+              style={{ rotateX: ring ? 68 : 74, rotateY: ring ? 18 : -12 }}
+              animate={{ rotateZ: ring ? -360 : 360 }}
+              transition={{ duration: ring ? 46 : 34, repeat: Infinity, ease: 'linear' }}
+            >
+              <span className="absolute left-1/2 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
+            </motion.div>
+          ))}
+          <div className="absolute h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
+        </div>
+      )}
       <TiltDiv
-        max={10}
+        max={12}
         animate={reduceMotion ? undefined : { y: [0, -9, 0] }}
         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ transformStyle: 'preserve-3d' }}
       >
         <GlassCard className="p-3 sm:p-5">
           <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-emerald-400/[0.12] to-transparent" />
@@ -478,7 +540,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
               <div className="relative mx-auto grid h-28 w-28 place-items-center rounded-full bg-[conic-gradient(#34d399_0_72%,rgba(255,255,255,0.08)_72%_100%)]">
                 <div className="grid h-[94px] w-[94px] place-items-center rounded-full bg-surface-sunken text-center">
                   <div>
-                    <div className="text-3xl font-semibold tracking-tight text-white">72</div>
+                    <div className="text-3xl font-semibold tracking-tight text-white"><CountUp to={72} delay={0.6} /></div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">ATS score</div>
                   </div>
                 </div>
@@ -531,6 +593,25 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
             </button>
           </div>
         </GlassCard>
+        {/* After the card, so they are drawn in front of it. */}
+        <DepthChip depth={70} delay={1.3} className="-right-10 -top-6 z-20">
+          <div className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-400/15">
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-300" />
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-white">+18 keywords matched</div>
+            <div className="text-[10px] text-slate-500">after optimization</div>
+          </div>
+        </DepthChip>
+        <DepthChip depth={95} delay={1.6} className="-left-16 top-[60%] z-20">
+          <div className="grid h-7 w-7 place-items-center rounded-lg bg-sky-400/15">
+            <BadgeCheck className="h-3.5 w-3.5 text-sky-300" />
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-white">Application submitted</div>
+            <div className="text-[10px] text-slate-500">Auto Apply · Greenhouse</div>
+          </div>
+        </DepthChip>
       </TiltDiv>
 
       <motion.div
