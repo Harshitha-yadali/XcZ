@@ -42,13 +42,15 @@ interface JobsPageProps {
   onShowAuth: () => void;
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
   onShowSubscriptionPlans?: (featureId?: string, expandAddons?: boolean) => void;
+  onShowAlert?: (title: string, message: string, type?: 'info' | 'success' | 'warning' | 'error', actionText?: string, onAction?: () => void) => void;
 }
 
 export const JobsPage: React.FC<JobsPageProps> = ({
   isAuthenticated,
   onShowAuth,
   onShowProfile,
-  onShowSubscriptionPlans
+  onShowSubscriptionPlans,
+  onShowAlert
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -288,8 +290,16 @@ export const JobsPage: React.FC<JobsPageProps> = ({
       // Runs in the background; true tells the card to show "Applied".
       const outcome = await startAutoApply(job);
       if (outcome?.error === 'NO_CREDITS') {
-        alert('Auto Apply and Smart Apply use 1 Quick credit per job. Buy Quick credits to keep applying.');
-        onShowSubscriptionPlans?.('optimizer', true);
+        const buy = () => onShowSubscriptionPlans?.('optimizer', true);
+        if (onShowAlert) {
+          onShowAlert(
+            'No Quick credits left',
+            'Auto Apply and Smart Apply use 1 Quick credit per job: we tailor your resume for that job and apply. Buy Quick credits to keep applying.',
+            'warning',
+            'Buy Quick credits',
+            buy
+          );
+        } else buy();
         return false;
       }
       return outcome?.error === 'QUEUED';
