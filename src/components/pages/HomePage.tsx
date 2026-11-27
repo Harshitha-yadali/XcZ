@@ -271,9 +271,19 @@ const serviceCards: Array<{
   span: string;
 }> = [
   {
+    title: 'AI Job Search',
+    description: 'Fresh roles every day. Your resume is tailored to each job and Auto Apply sends it in one click.',
+    eyebrow: 'New · Auto Apply',
+    path: '/jobs',
+    cta: 'Find jobs',
+    icon: Briefcase,
+    accent: 'from-cyan-400/20 via-cyan-400/5 to-transparent',
+    span: 'lg:col-span-2',
+  },
+  {
     title: 'ATS Score Check',
     description: 'See how well your resume matches a role and uncover the issues that can block shortlisting.',
-    eyebrow: 'Start for ₹9',
+    eyebrow: 'Know your score',
     path: '/score-checker',
     cta: 'Check my resume',
     icon: Gauge,
@@ -288,16 +298,6 @@ const serviceCards: Array<{
     cta: 'Optimize with AI',
     icon: Wand2,
     accent: 'from-blue-400/20 via-blue-400/5 to-transparent',
-    span: 'lg:col-span-2',
-  },
-  {
-    title: 'AI Job Search',
-    description: 'Discover curated roles and move from job match to a tailored application in one flow.',
-    eyebrow: 'Find your next role',
-    path: '/jobs',
-    cta: 'Explore jobs',
-    icon: Briefcase,
-    accent: 'from-cyan-400/20 via-cyan-400/5 to-transparent',
     span: 'lg:col-span-2',
   },
   {
@@ -324,9 +324,9 @@ const serviceCards: Array<{
 
 const faqs = [
   {
-    question: 'How much does the ATS resume check cost?',
+    question: 'Why should I check my ATS score first?',
     answer:
-      'A resume score check costs ₹9. It helps you understand your match, missing keywords and formatting risks before deciding whether to purchase an optimization plan.',
+      'A score check shows your match, missing keywords and formatting risks in about 2 minutes, so you know exactly what to fix before you apply.',
   },
   {
     question: 'What happens after I receive my score?',
@@ -530,7 +530,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
                   <div className="mt-0.5 text-xs text-slate-500">Product Designer · Acme</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+              <div className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-2.5 py-1 text-[11px] font-medium text-emerald-200">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
                 Analysis ready
               </div>
@@ -822,14 +822,14 @@ export const HomePage: React.FC<HomePageProps> = ({
   return (
     <>
       <Seo
-        title="Check What Is Blocking Your Resume From Shortlisting"
-        description="Get an ATS score, identify resume gaps, and fix them with PrimoBoost AI."
+        title="Find Jobs, Tailor Your Resume and Auto Apply with AI"
+        description="Fresh jobs every day, a resume tailored to each one, and one-click Auto Apply with PrimoBoost AI."
         keywords="ATS resume checker, ATS score checker, resume optimizer, job description resume match, AI resume optimization, CareerBooster, resume review, interview preparation"
         canonicalPath="/"
         ogType="website"
       />
-      <main className="relative min-h-screen overflow-hidden bg-surface-deepest text-slate-100 md:ml-16">
-      <div className="pointer-events-none fixed inset-0 md:left-16">
+      <main className="relative min-h-screen overflow-hidden bg-surface-deepest text-slate-100 ">
+      <div className="pointer-events-none fixed inset-0">
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:linear-gradient(to_bottom,black,transparent_65%)]" />
         <div className="absolute -left-48 -top-40 h-[620px] w-[620px] rounded-full bg-emerald-500/[0.12] blur-[140px]" />
         <div className="absolute -right-44 top-16 h-[620px] w-[620px] rounded-full bg-blue-600/[0.13] blur-[150px]" />
@@ -852,7 +852,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-60" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-300" />
               </span>
-              Built for the modern job search
+              New · AI Auto Apply is live
             </motion.div>
 
             <motion.h1
@@ -860,9 +860,9 @@ export const HomePage: React.FC<HomePageProps> = ({
               transition={{ duration: 0.55 }}
               className="mt-6 max-w-3xl text-balance text-[2.6rem] font-semibold leading-[1.04] tracking-[-0.055em] text-white sm:text-6xl lg:text-[4.25rem]"
             >
-              Applied everywhere but still not getting{' '}
+              Your next job,{' '}
               <span className="bg-gradient-to-r from-emerald-300 via-cyan-300 to-blue-400 bg-clip-text text-transparent">
-                interview calls?
+                applied for you.
               </span>
             </motion.h1>
 
@@ -871,32 +871,33 @@ export const HomePage: React.FC<HomePageProps> = ({
               transition={{ duration: 0.55 }}
               className="mt-6 max-w-2xl text-base leading-7 text-slate-400 sm:text-lg sm:leading-8"
             >
-              Check your resume against any job description, identify ATS problems and fix the issues preventing shortlisting.
+              Fresh jobs every day. AI tailors your resume to each one and applies in a click, so you spend time on interviews, not forms.
             </motion.p>
 
             <motion.div variants={reveal} transition={{ duration: 0.55 }} className="mt-8 flex flex-col gap-3 sm:flex-row">
               <motion.button
                 type="button"
-                onClick={() => navigate('/score-checker')}
+                onClick={() => navigate('/jobs')}
                 whileHover={{ y: -2, scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 className="group inline-flex min-h-12 items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-6 py-3.5 text-sm font-bold text-slate-950 shadow-[0_16px_45px_rgba(52,211,153,0.22)] transition hover:brightness-110 sm:text-base"
               >
-                Check My Resume — ₹9
+                <Zap className="h-4 w-4" />
+                Find Jobs &amp; Auto Apply
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </motion.button>
               <button
                 type="button"
-                onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => navigate('/score-checker')}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-6 py-3.5 text-sm font-semibold text-slate-200 backdrop-blur-xl transition hover:border-white/20 hover:bg-white/[0.07] sm:text-base"
               >
-                See how it works
-                <ChevronDown className="h-4 w-4" />
+                <Gauge className="h-4 w-4 text-emerald-300" />
+                Check my resume score
               </button>
             </motion.div>
 
             <motion.div variants={reveal} transition={{ duration: 0.55 }} className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-              {['One-time ₹9 check', 'Takes about 2 minutes', 'Clear, actionable report'].map((item) => (
+              {['New jobs added daily', 'Resume tailored to every job', 'Apply in one click'].map((item) => (
                 <span key={item} className="inline-flex items-center gap-1.5">
                   <Check className="h-3.5 w-3.5 text-emerald-300" />
                   {item}
@@ -976,7 +977,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           <SectionHeading
             eyebrow="One career workspace"
             title="Everything between applying and getting ready for the interview"
-            description="Start with the ₹9 diagnosis, then use the right level of support for the gap standing between you and your next opportunity."
+            description="Find the job, fix the resume, apply and prepare for the interview, all in one place."
           />
 
           <div className="mt-12 grid auto-rows-auto gap-4 lg:grid-cols-6 lg:auto-rows-[250px]">
@@ -1095,7 +1096,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               onClick={() => navigate('/score-checker')}
               className="group inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-white"
             >
-              Start with my ₹9 score <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              Check my resume score <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </button>
           </div>
         </div>
@@ -1170,7 +1171,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div className="mx-auto max-w-7xl">
           <SectionHeading
             eyebrow="Simple ways to start"
-            title="Start with a ₹9 score check"
+            title="Pick how you want to start"
             description="Understand the problem first, then choose AI fixes or expert guidance only when you need them."
           />
 
@@ -1178,8 +1179,8 @@ export const HomePage: React.FC<HomePageProps> = ({
             {[
               {
                 name: 'ATS Check',
-                price: '₹9',
-                note: 'One resume score check',
+                price: '2-minute check',
+                note: 'See your score before you apply',
                 features: ['Resume-to-JD score', 'ATS issue summary', 'Missing keyword signals', 'Clear next steps'],
                 cta: 'Check My Resume',
                 action: () => navigate('/score-checker'),
@@ -1375,15 +1376,15 @@ export const HomePage: React.FC<HomePageProps> = ({
               Your resume should open doors, not disappear into a system.
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-300">
-              Start with a ₹9 ATS check. See the gaps. Then decide whether AI optimization or expert guidance is the right next step.
+              Browse today's jobs, let AI tailor your resume, and apply in one click. Check your score anytime.
             </p>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <button
                 type="button"
-                onClick={() => navigate('/score-checker')}
+                onClick={() => navigate('/jobs')}
                 className="group inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-50"
               >
-                Check My Resume — ₹9 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                Find Jobs &amp; Auto Apply <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </button>
               <button
                 type="button"
