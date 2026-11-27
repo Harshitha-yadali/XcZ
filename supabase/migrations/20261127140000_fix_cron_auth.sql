@@ -1,20 +1,28 @@
--- Crons that read app.settings.* never ran: those settings are not set on
--- this project (and can't be on hosted Supabase). Point every such job at the
--- project URL and authenticate with the Vault cron secret, the same way
--- check-job-links does. Only the command changes; schedules stay as they are.
--- The called functions accept CHECK_JOBS_SECRET (see _shared/auth.ts) and are
--- deployed with --no-verify-jwt.
+-- publish-instagram-posts read app.settings.* (not set on hosted Supabase, so
+-- it failed every run) and job-digest-every-8-hours sent the public anon key
+-- (refused by the function's admin check). Both now authenticate with the
+-- Vault cron secret like check-job-links; the functions accept
+-- CHECK_JOBS_SECRET (_shared/auth.ts) and are deployed with --no-verify-jwt.
+-- Schedules are unchanged.
 do $$
-declare j record;
+declare
+  j record;
+  fn text;
 begin
-  for j in select jobid, command from cron.job where command like '%app.settings.%' loop
-    perform cron.alter_job(
-      j.jobid,
-      command := replace(replace(j.command,
-        'current_setting(''app.settings.supabase_url'')',
-        '''https://rixmudvtbfkjpwjoefon.supabase.co'''),
-        'current_setting(''app.settings.supabase_service_role_key'')',
-        '(select decrypted_secret from vault.decrypted_secrets where name = ''check_jobs_secret'')')
-    );
+  for j in select jobid, jobname from cron.job
+           where jobname in ('publish-instagram-posts', 'job-digest-every-8-hours') loop
+    fn := case j.jobname when 'publish-instagram-posts' then 'publish-instagram-posts'
+                         else 'process-daily-job-digest' end;
+    perform cron.alter_job(j.jobid, command := format($cmd$
+  select net.http_post(
+    url := 'https://rixmudvtbfkjpwjoefon.supabase.co/functions/v1/%s',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'check_jobs_secret')
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 150000
+  ) as request_id;
+  $cmd$, fn));
   end loop;
 end $$;
