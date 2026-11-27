@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  ArrowLeft,
   Briefcase,
   Sparkles,
   TrendingUp,
@@ -364,25 +363,7 @@ const stats = [
 
       {/* Christmas Snow */}
       {isChristmasMode && <ChristmasSnow count={30} />}
-      {/* Sub-Header - positioned below main navbar */}
-      <div className="bg-slate-900/40 backdrop-blur-md border-b border-slate-800/30">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-14 py-2">
-            <GradientButton
-              onClick={() => navigate('/')}
-              variant="primary"
-              size="sm"
-              icon={ArrowLeft}
-              className="lg:hidden"
-            >
-              <span className="hidden sm:block">Back to Home</span>
-            </GradientButton>
-            <div className="w-24"></div>
-          </div>
-        </div>
-      </div>
-
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-12">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-12 sm:py-12">
         {/* Hero Section */}
         <motion.div
           className="text-center mb-12"
@@ -394,14 +375,14 @@ const stats = [
             initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.88, rotate: -5 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 240, damping: 20, delay: 0.08 }}
-            className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg ${
+            className={`hidden sm:flex w-20 h-20 rounded-3xl items-center justify-center mx-auto mb-6 shadow-lg ${
             isChristmasMode
               ? 'bg-gradient-to-br from-red-500 via-emerald-500 to-green-600 shadow-green-500/50'
               : 'bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-emerald-500/50'
           }`}>
             <Briefcase className="w-10 h-10 text-white" />
           </motion.div>
-          <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
+          <h1 className="text-3xl sm:text-5xl font-bold text-white mb-2 sm:mb-4 tracking-tight">
             {showingRecommendations ? (
               'Your Recommended Jobs'
             ) : (
@@ -417,14 +398,14 @@ const stats = [
               </>
             )}
           </h1>
-          <p className="text-xl text-slate-300 max-w-3xl mx-auto">
+          <p className="text-sm sm:text-xl text-slate-300 max-w-3xl mx-auto">
             {showingRecommendations
               ? 'AI-powered recommendations based on your profile and preferences'
               : 'Discover opportunities, apply with AI-optimized resumes, and track your applications all in one place.'}
           </p>
 
           {hasCompletedOnboarding && (
-            <div className="flex items-center justify-center flex-wrap gap-4 mt-6">
+            <div className="flex items-center justify-start sm:justify-center flex-nowrap sm:flex-wrap overflow-x-auto gap-2 sm:gap-4 mt-4 sm:mt-6 -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 [scrollbar-width:none]">
               <GradientButton
                 onClick={() => {
                   const next = !showingRecommendations;
@@ -476,7 +457,8 @@ const stats = [
         </motion.div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {/* Numbers about the board: useful on a wide screen, in the way of the jobs on a phone. */}
+        <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {stats.map((stat, index) => (
             <AnimatedCard
               key={index}

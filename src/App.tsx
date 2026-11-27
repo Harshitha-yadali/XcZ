@@ -13,7 +13,6 @@ import { IndependenceOfferBanner } from './components/IndependenceOfferBanner';
 import { isIndependenceWindow } from './config/independenceOffer';
 import { TricolorConfetti } from './components/ui/IndependenceTheme';
 import { SnowEffect, SantaSleigh } from './components/ui/ChristmasTheme';
-import { PageSidebar } from './components/navigation/PageSidebar';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SuspenseFallback } from './components/SuspenseFallback';
 
@@ -518,7 +517,7 @@ const handleDiwaliCTAClick = useCallback(() => {
         )}
 
         {/* Global Sidebar - visible on all pages except interview and reset password */}
-        {!isInterviewMode && !isResetPasswordMode && <PageSidebar />}
+        {/* The icon sidebar is gone: every page it held is in the top menu, with names. */}
 
         <ErrorBoundary>
         <Suspense fallback={<SuspenseFallback />}>
@@ -618,7 +617,7 @@ const handleDiwaliCTAClick = useCallback(() => {
             path="/admin/sessions"
             element={
               <AdminRoute>
-                <div className="min-h-screen pb-20 md:pl-16">
+                <div className="min-h-screen pb-20">
                   <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-8 space-y-6">
                     <h1 className="text-2xl font-bold text-white">Session Schedule Management</h1>
                     <AdminSessionServiceEditor />

@@ -210,11 +210,11 @@ export const JobCard: React.FC<JobCardProps> = ({
         </div>
       )}
       <div className="relative p-4 sm:p-5" style={prefersReducedMotion ? undefined : { transformStyle: 'preserve-3d' }}>
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-5">
+        <div className="flex flex-row items-start gap-3 sm:gap-5">
           {/* Company logo, on a raised layer so the tilt shows depth. */}
           <div
             style={prefersReducedMotion ? undefined : { transform: 'translateZ(28px)' }}
-            className="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/[0.04] ring-1 ring-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.35)] group-hover:ring-emerald-400/30 flex items-center justify-center p-2 overflow-hidden transition-[box-shadow] duration-300"
+            className="flex-shrink-0 w-11 h-11 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-white/[0.04] ring-1 ring-white/10 shadow-[0_8px_24px_rgba(0,0,0,0.35)] group-hover:ring-emerald-400/30 flex items-center justify-center p-1.5 sm:p-2 overflow-hidden transition-[box-shadow] duration-300"
           >
             {logoCandidates[logoIndex] ? (
               <img
@@ -329,7 +329,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                 <span>{job.experience_required}</span>
               </div>
               {eligibleYearTags.length > 0 && (
-                <div className="flex items-center space-x-1">
+                <div className="hidden sm:flex items-center space-x-1">
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{eligibleYearTags.join(' / ')}</span>
                 </div>
@@ -341,13 +341,18 @@ export const JobCard: React.FC<JobCardProps> = ({
               {shownSkills.map((tag, index) => (
                 <span
                   key={index}
-                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] text-slate-300 text-[11px] font-medium ring-1 ring-white/[0.07] transition-colors duration-200 group-hover:ring-emerald-400/20"
+                  className={`${index >= 2 ? 'hidden sm:inline-block' : 'inline-block'} max-w-[11rem] truncate px-2.5 py-1 rounded-lg bg-white/[0.04] text-slate-300 text-[11px] font-medium ring-1 ring-white/[0.07] transition-colors duration-200 group-hover:ring-emerald-400/20`}
                 >
                   {tag}
                 </span>
               ))}
+              {skillTags.length > 2 && (
+                <span className="sm:hidden px-1 py-1 text-slate-500 text-[11px] font-medium">
+                  +{skillTags.length - 2} more
+                </span>
+              )}
               {skillTags.length > shownSkills.length && (
-                <span className="px-2 py-1 text-slate-500 text-[11px] font-medium">
+                <span className="hidden sm:inline px-2 py-1 text-slate-500 text-[11px] font-medium">
                   +{skillTags.length - shownSkills.length} more
                 </span>
               )}
@@ -384,17 +389,17 @@ export const JobCard: React.FC<JobCardProps> = ({
               </div>
 
               {/* Apply Buttons */}
-              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex flex-row items-center gap-2">
                 {jobOpen ? (
                   <>
-                    <div className="relative w-full sm:w-auto">
+                    <div className="relative flex-[1.35] sm:flex-none">
                       <button
                         onClick={handleAutoApply}
                         disabled={!autoApplyEnabled || autoState !== 'idle'}
                         aria-disabled={!autoApplyEnabled || autoState !== 'idle'}
                         aria-live="polite"
                         title={smart ? 'We tailor your resume for this job; you submit it on the company site.' : 'We apply for you, start to finish.'}
-                        className={`h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 text-sm font-semibold shadow-[0_8px_24px_rgba(52,211,153,0.25)] transition-all duration-200 flex items-center justify-center gap-1.5 w-full sm:w-auto ${autoApplyEnabled && autoState === 'idle' ? 'hover:brightness-110 hover:shadow-[0_12px_32px_rgba(52,211,153,0.35)] hover:-translate-y-0.5 active:translate-y-0' : autoApplyEnabled ? 'cursor-default' : 'opacity-50 cursor-not-allowed'}`}
+                        className={`h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 text-sm font-semibold shadow-[0_8px_24px_rgba(52,211,153,0.25)] transition-all duration-200 flex items-center justify-center gap-1.5 whitespace-nowrap w-full sm:w-auto ${autoApplyEnabled && autoState === 'idle' ? 'hover:brightness-110 hover:shadow-[0_12px_32px_rgba(52,211,153,0.35)] hover:-translate-y-0.5 active:translate-y-0' : autoApplyEnabled ? 'cursor-default' : 'opacity-50 cursor-not-allowed'}`}
                       >
                         {smart ? <Sparkles className={`w-4 h-4 ${autoState === 'applying' ? 'animate-spin' : ''}`} /> : <Zap className={`w-4 h-4 ${autoState === 'applying' ? 'animate-pulse' : ''}`} />}
                         <span>{autoState === 'applying'
@@ -409,7 +414,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                     </div>
                     <button
                       onClick={handleManualApply}
-                      className="h-10 px-4 rounded-xl text-sm font-semibold text-slate-200 ring-1 ring-white/15 bg-white/[0.03] hover:bg-white/[0.08] hover:ring-white/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 w-full sm:w-auto"
+                      className="h-10 px-4 rounded-xl text-sm font-semibold text-slate-200 ring-1 ring-white/15 bg-white/[0.03] hover:bg-white/[0.08] hover:ring-white/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex-1 sm:flex-none whitespace-nowrap"
                     >
                       Manual Apply
                     </button>

@@ -80,6 +80,12 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
       compactLabel: "Learn",
       icon: <BookOpen className="w-4 h-4" />,
     },
+    {
+      id: "/pricing",
+      label: "Pricing",
+      compactLabel: "Pricing",
+      icon: <TicketPercent className="w-4 h-4" />,
+    },
   ];
 
   const dashboardItems = [
@@ -93,6 +99,11 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
     { id: "/contact", label: "Contact", icon: <Phone className="w-4 h-4" /> },
     ...(isAuthenticated
       ? [
+          {
+            id: "/jobs/auto-applied",
+            label: "My Auto Applications",
+            icon: <Sparkles className="w-4 h-4" />,
+          },
           {
             id: "/jobs/applications",
             label: "My Applications",
@@ -111,6 +122,8 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
     { id: "/optimizer", label: "Resume Optimizer", icon: <Target className="w-4 h-4" /> },
     { id: "/score-checker", label: "Score Checker", icon: <TrendingUp className="w-4 h-4" /> },
     { id: "/linkedin-generator", label: "LinkedIn Messages", icon: <MessageCircle className="w-4 h-4" /> },
+    { id: "/mock-interview", label: "AI Mock Interview", icon: <MessageCircle className="w-4 h-4" /> },
+    { id: "/session", label: "Resume Session", icon: <CalendarCheck className="w-4 h-4" /> },
   ];
 
   const adminItems = [
