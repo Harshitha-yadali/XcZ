@@ -41,12 +41,14 @@ interface JobsPageProps {
   isAuthenticated: boolean;
   onShowAuth: () => void;
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
+  onShowSubscriptionPlans?: (featureId?: string, expandAddons?: boolean) => void;
 }
 
 export const JobsPage: React.FC<JobsPageProps> = ({
   isAuthenticated,
   onShowAuth,
-  onShowProfile
+  onShowProfile,
+  onShowSubscriptionPlans
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -284,7 +286,13 @@ export const JobsPage: React.FC<JobsPageProps> = ({
       }
 
       // Runs in the background; true tells the card to show "Applied".
-      return (await startAutoApply(job))?.error === 'QUEUED';
+      const outcome = await startAutoApply(job);
+      if (outcome?.error === 'NO_CREDITS') {
+        alert('Auto Apply and Smart Apply use 1 Quick credit per job. Buy Quick credits to keep applying.');
+        onShowSubscriptionPlans?.('optimizer', true);
+        return false;
+      }
+      return outcome?.error === 'QUEUED';
     } catch (error) {
       console.error('Error starting auto-apply:', error);
       alert('Failed to start auto-apply. Please try again.');

@@ -238,7 +238,9 @@ class AutoApplyOrchestratorService {
       const runId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `auto-apply-${jobId}-${Date.now()}`;
       const reservation = await paymentService.reserveOptimization(userId, 'quick', runId);
       if (!reservation.success || !reservation.reservationId) {
-        throw new Error(reservation.error || 'No Quick Scan credits left. Buy a Quick Scan pack to keep auto applying.');
+        // A failed call is a real error; anything else means the user is out of Quick credits.
+        if (reservation.error?.startsWith('Unable to reserve')) throw new Error(reservation.error);
+        throw new Error('NO_CREDITS');
       }
       reservationId = reservation.reservationId;
       // The project-selection step does not carry the resume text along.

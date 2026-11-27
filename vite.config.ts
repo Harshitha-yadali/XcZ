@@ -76,7 +76,6 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-motion': ['framer-motion'],
           'vendor-supabase': ['@supabase/supabase-js'],
-          'vendor-pdf': ['jspdf', 'pdfjs-dist'],
           'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
         },
       },

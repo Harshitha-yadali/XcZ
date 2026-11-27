@@ -47,7 +47,8 @@ export function useAutoApply() {
       setShowProjectModal(true);
     } else if (!applyResult.success && ['INPUT_REQUIRED', 'LOGIN_REQUIRED'].includes(applyResult.error || '')) {
       setPending(applyResult);
-    } else if (applyResult.error === 'QUEUED') {
+    } else if (applyResult.error === 'QUEUED' || applyResult.error === 'NO_CREDITS') {
+      // NO_CREDITS: the jobs page opens the plans to buy Quick credits instead.
       // Handed to a worker, quietly: the job card says "Applied", and anything
       // the worker needs is asked for on My Auto Applications.
       setResult(null);
