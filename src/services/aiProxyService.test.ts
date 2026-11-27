@@ -16,7 +16,7 @@ vi.mock('../lib/supabaseClient', () => ({
 }));
 
 import { openrouter } from './aiProxyService';
-import { FREE_OPENROUTER_MODELS, GEMMA_4_26B_FREE_MODEL, QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
+import { FREE_OPENROUTER_MODELS, GEMMA_4_26B_FREE_MODEL, GEMINI_3_5_FLASH_LITE_MODEL } from './openrouterModelConfig';
 
 describe('aiProxyService', () => {
   beforeEach(() => {
@@ -77,14 +77,14 @@ describe('aiProxyService', () => {
       );
 
     await expect(
-      openrouter.chat('Optimize this resume', { model: QUICK_OPTIMIZATION_MODEL }),
+      openrouter.chat('Optimize this resume', { model: GEMINI_3_5_FLASH_LITE_MODEL }),
     ).resolves.toBe('Optimized resume');
 
     expect(fetchWithSupabaseFallback).toHaveBeenCalledTimes(2);
     expect(warnSpy).toHaveBeenCalledWith(
       'AI request served by fallback model instead of the requested model',
       expect.objectContaining({
-        requestedModel: QUICK_OPTIMIZATION_MODEL,
+        requestedModel: GEMINI_3_5_FLASH_LITE_MODEL,
         servedModel: FREE_OPENROUTER_MODELS[0],
         fallbackDepth: 1,
       }),
@@ -97,7 +97,7 @@ describe('aiProxyService', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await expect(
-      openrouter.chat('Optimize this resume', { model: QUICK_OPTIMIZATION_MODEL }),
+      openrouter.chat('Optimize this resume', { model: GEMINI_3_5_FLASH_LITE_MODEL }),
     ).resolves.toBe('Optimized resume');
 
     expect(warnSpy).not.toHaveBeenCalled();

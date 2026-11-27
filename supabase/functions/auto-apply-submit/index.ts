@@ -4,7 +4,8 @@ import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 import { denied, getCaller } from "../_shared/auth.ts";
 import { decryptSecret } from "../_shared/vault.ts";
 import { openPage, type Page } from "../_shared/cdp.ts";
-import { answerKey, detectPlatform, runApplication, type ApplyResult, type Question } from "../_shared/applyForm.ts";
+import { USER_ONLY, answerKey, detectPlatform, runApplication, type ApplyResult, type Question } from "../_shared/applyForm.ts";
+import { applicantFrom } from "../_shared/applicant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,10 +41,6 @@ const STATUS_FOR: Partial<Record<ApplyResult['status'], string>> = {
 };
 
 const RESUME_BUCKET = 'user-resumes';
-
-// Never inferred, whatever the model says: these are personal facts, legal
-// statements or consent, and only the user can answer them.
-const USER_ONLY = /gender|\bsex\b|birth|\bdob\b|\bage\b|race|ethnic|disab|veteran|religio|caste|marital|salary|\bctc\b|compensation|visa|sponsor|authori[sz]|citizen|consent|agree|criminal|convict|hear about|source/i;
 
 /**
  * Answers form questions from the tailored resume with one model call.
@@ -267,13 +264,6 @@ Deno.serve(async (req: Request) => {
 
     const fullName = profile.full_name || '';
     const content = resume?.resume_content || {};
-    const education = Array.isArray(content.education) ? content.education[0] : null;
-    // Whole skill names only, short enough for a typical 100-character box.
-    const skills: string[] = [];
-    for (const name of (Array.isArray(content.skills) ? content.skills : []).flatMap((group: any) => group?.list || [])) {
-      if ([...skills, name].join(', ').length > 100) break;
-      skills.push(String(name));
-    }
     // What the user approved on the review screen applies to this run only.
     const forThisRun: Record<string, string> = { ...saved };
     if (submitting) {
@@ -289,18 +279,7 @@ Deno.serve(async (req: Request) => {
       page = await openPage(browserWs);
       result = await runApplication(page, {
         url: application.application_url,
-        profile: {
-          fullName,
-          email: profile.email_address || user.email || '',
-          phone: profile.phone || '',
-          linkedin: profile.linkedin_profile_url || '',
-          github: profile.github_profile_url || '',
-          location: profile.current_location || content.location || '',
-          college: education?.school || '',
-          degree: education?.degree || '',
-          graduationYear: (String(education?.year || '').match(/\d{4}/g) || []).pop() || '',
-          skills: skills.join(', '),
-        },
+        profile: applicantFrom({ ...profile, email_address: profile.email_address || user.email }, content),
         saved: forThisRun,
         resume: {
           name: `${fullName.replace(/[^A-Za-z0-9]+/g, '_') || 'Resume'}_Resume.pdf`,
@@ -387,7 +366,7 @@ async function emailLoginRequest(
     const what = job?.role_title && job?.company_name
       ? `an application for ${escapeHtml(job.role_title)} at ${escapeHtml(job.company_name)}`
       : 'an application';
-    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboostai.in';
     const html = `
 <!DOCTYPE html>
 <html lang="en">

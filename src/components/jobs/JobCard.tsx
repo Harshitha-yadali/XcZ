@@ -12,6 +12,7 @@ import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
+import { canAutoApply } from '../../../supabase/functions/_shared/applyForm';
 
 const JOB_CATEGORY_BADGE_CLASSES: Record<string, string> = {
   Fresher: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
@@ -28,7 +29,8 @@ interface JobCardProps {
   isAuthenticated: boolean;
   onShowAuth: () => void;
   onManualApply?: (job: JobListing) => void;
-  onAutoApply?: (job: JobListing) => Promise<void>;
+  /** Resolves true once the application is queued, so the button can say "Applied". */
+  onAutoApply?: (job: JobListing) => Promise<boolean | void>;
   onCompleteProfile?: () => void;
   animationDelay?: number;
 }
@@ -78,6 +80,10 @@ export const JobCard: React.FC<JobCardProps> = ({
   }, [job.application_link, job.company_logo, job.company_logo_url, job.company_website]);
 
   const [logoIndex, setLogoIndex] = useState(0);
+  const [autoState, setAutoState] = useState<'idle' | 'applying' | 'applied'>('idle');
+  // Auto Apply only where the runner has test-filled this very job; anywhere
+  // else (untested, blocked, unsupported site) the tailored resume (Smart Apply).
+  const smart = !(canAutoApply(job.application_link || '') && job.apply_check === 'works');
 
   useEffect(() => {
     setLogoIndex(0);
@@ -118,8 +124,9 @@ export const JobCard: React.FC<JobCardProps> = ({
       onShowAuth();
       return;
     }
-    if (onAutoApply) {
-      await onAutoApply(job);
+    if (onAutoApply && autoState === 'idle') {
+      setAutoState('applying');
+      setAutoState((await onAutoApply(job)) ? 'applied' : 'idle');
     }
   };
 
@@ -339,12 +346,16 @@ export const JobCard: React.FC<JobCardProps> = ({
                     <div className="relative">
                       <button
                         onClick={handleAutoApply}
-                        disabled={!autoApplyEnabled}
-                        aria-disabled={!autoApplyEnabled}
-                        className={`px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-lg text-xs font-semibold shadow-md transition-all duration-200 w-auto flex items-center space-x-1 ${autoApplyEnabled ? 'hover:from-emerald-400 hover:to-green-400 hover:shadow-emerald-500/30 hover:-translate-y-0.5 active:translate-y-0' : 'opacity-50 cursor-not-allowed'}`}
+                        disabled={!autoApplyEnabled || autoState !== 'idle'}
+                        aria-disabled={!autoApplyEnabled || autoState !== 'idle'}
+                        aria-live="polite"
+                        title={smart ? 'We tailor your resume for this job; you submit it on the company site.' : 'We apply for you, start to finish.'}
+                        className={`px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-lg text-xs font-semibold shadow-md transition-all duration-200 w-auto flex items-center space-x-1 ${autoApplyEnabled && autoState === 'idle' ? 'hover:from-emerald-400 hover:to-green-400 hover:shadow-emerald-500/30 hover:-translate-y-0.5 active:translate-y-0' : autoApplyEnabled ? 'cursor-default' : 'opacity-50 cursor-not-allowed'}`}
                       >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Auto Apply</span>
+                        <Sparkles className={`w-3 h-3 ${autoState === 'applying' ? 'animate-spin' : ''}`} />
+                        <span>{autoState === 'applying'
+                          ? (smart ? 'Preparing...' : 'Applying...')
+                          : autoState === 'applied' ? 'Applied ✓' : smart ? 'Smart Apply' : 'Auto Apply'}</span>
                       </button>
                       {!autoApplyEnabled && (
                         <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-amber-500 text-[8px] font-bold text-white rounded-full leading-none whitespace-nowrap shadow-sm">

@@ -94,7 +94,7 @@ export const ResumeExportSettings: React.FC<ResumeExportSettingsProps> = ({
     }
   };
 
-  const fontFamilies = [ 'Times New Roman', 'Arial', 'Verdana', 'Georgia','Calibri'];
+  const fontFamilies = ['Helvetica', 'Times New Roman'];
 
   const containerGrid = showInlinePreview ? 'grid grid-cols-1 lg:grid-cols-2' : 'grid grid-cols-1';
 

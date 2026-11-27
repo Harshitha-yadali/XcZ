@@ -195,6 +195,44 @@ try {
     assert.equal(sent, null);
   });
 
+  await check('names a security page in front of the job', { url: fixture('bot-check.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /refuses visits it thinks are automated/);
+    assert.equal(sent, null);
+  });
+
+  await check('treats a page with nothing on it as a refusal, not a closed job', { url: fixture('blank.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /refuses visits it thinks are automated/);
+    assert.equal(sent, null);
+  });
+
+  await check('says a job has closed when the page says so', { url: fixture('closed.html'), submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /has closed/);
+    assert.equal(sent, null);
+  });
+
+  const growing = { country: 'India', state: 'Telangana', city: 'Hyderabad', college: 'Example University' };
+
+  await check('keeps filling a form that grows with each answer', { url: fixture('cascade.html'), saved: growing }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.equal(sent.state, 'Telangana');
+    assert.equal(sent.city, 'Hyderabad');
+  });
+
+  await check('stops before Submit when a field will not keep its answer', { url: `${fixture('cascade.html')}?drops=1`, saved: growing }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /would not keep the answer for "College"/);
+    assert.equal(sent, null);
+  });
+
+  await check('asks about a field that turns required part way, before Submit', { url: `${fixture('cascade.html')}?late=1`, saved: growing }, (result, sent) => {
+    assert.equal(result.status, 'needs_input', result.message);
+    assert.deepEqual(result.questions.map((question) => question.label), ['Portfolio']);
+    assert.equal(sent, null);
+  });
+
   await check('submits a hosted questionnaire that has no resume box', { url: fixture('questionnaire.html') }, (result, sent) => {
     assert.equal(result.status, 'submitted', result.message);
     assert.deepEqual(sent, {
@@ -223,6 +261,11 @@ try {
       request.on('end', () => { typed.push(JSON.parse(body)); response.end('ok'); });
       return;
     }
+    // A closed job sending its visitor to a form that is not this job's.
+    if (request.url === '/jobs/123456') {
+      response.writeHead(302, { Location: '/single.html' });
+      return response.end();
+    }
     try {
       const name = path.basename(new URL(request.url, 'http://localhost').pathname);
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -248,6 +291,17 @@ try {
     typed.length = 0;
     await check(name, { submit: false, ...run }, verify);
   };
+
+  await check('will not fill a form the job link was redirected to', { url: `http://${careers}/jobs/123456`, submit: false }, (result, sent) => {
+    assert.equal(result.status, 'failed');
+    assert.match(result.message, /opens a different page/);
+    assert.equal(sent, null);
+  });
+
+  await check('fills a form whose address still carries the job number', { url: `http://${careers}/jobs/654321/single.html`, submit: false, saved: { gender: 'Male', [consent]: 'yes' } }, (result, sent) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.equal(sent, null);
+  });
 
   // A form that marks nothing required and only says what is missing once
   // Submit has been pressed. Giving up there throws away everything already
@@ -422,6 +476,31 @@ try {
     assert.match(result.message, /not on the job link's own secure site/);
     assert.deepEqual(store.asked, []);
     assert.deepEqual(typed, []);
+  });
+
+  store = vault({ [signInHost]: goodLogin });
+  store = vault({ [signInHost]: goodLogin });
+  await signInCheck('enters the code the site emailed, on the site that asked for it', {
+    url: gated(undefined, '&mfa=1'), loginFor: store.loginFor, saved: { gender: 'Male', [consent]: 'yes' },
+    codeFor: async (host) => { assert.equal(host, signInHost.split(':')[0]); return '482913'; },
+  }, (result) => {
+    assert.equal(result.status, 'dry_run', result.message);
+    assert.deepEqual(typed.filter((entry) => entry.step === 'code').map((entry) => entry.value), ['482913']);
+  });
+
+  store = vault({ [signInHost]: goodLogin });
+  await signInCheck('hands over when the emailed code is refused, after one try', {
+    url: gated(undefined, '&mfa=1'), loginFor: store.loginFor, codeFor: async () => '111111',
+  }, (result) => {
+    assert.equal(result.status, 'failed');
+    assert.equal(typed.filter((entry) => entry.step === 'code').length, 1);
+  });
+
+  await check('enters a code asked for after Submit, and sends once', {
+    url: `${fixture('single.html')}?code=1`, saved: { gender: 'Female', [consent]: 'yes' }, codeFor: async () => '482913',
+  }, (result, sent) => {
+    assert.equal(result.status, 'submitted', result.message);
+    assert.ok(sent);
   });
 
   store = vault({ [signInHost]: goodLogin });

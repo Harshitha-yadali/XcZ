@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, Minimize2, Check } from 'lucide-react';
 import { ResumeData, UserType } from '../types/resume';
-import { ExportOptions, defaultExportOptions, LayoutType, PaperSize } from '../types/export';
-import { exportToPDF, exportToWord } from '../utils/exportUtils';
+import { ExportOptions, defaultExportOptions, LayoutType, PaperSize, PDF_FONT_FAMILIES } from '../types/export';
+import { exportToPDF, exportToWord, fitResumeToOnePage } from '../utils/exportUtils';
 import { ResumePreview } from './ResumePreview';
 
 interface ExportResumeModalProps {
@@ -11,27 +11,6 @@ interface ExportResumeModalProps {
   resumeData: ResumeData;
   userType: UserType;
 }
-
-const COMPACT_ONE_PAGE: ExportOptions = {
-  layoutType: 'compact',
-  paperSize: 'a4',
-  fontFamily: 'Calibri',
-  nameSize: 20,
-  sectionHeaderSize: 11,
-  subHeaderSize: 9.5,
-  bodyTextSize: 9.5,
-  sectionSpacing: 2,
-  entrySpacing: 1,
-};
-
-const FONT_FAMILIES = [
-  'Helvetica',
-  'Times New Roman',
-  'Arial',
-  'Calibri',
-  'Georgia',
-  'Courier New',
-];
 
 const SIZE_OPTIONS = [8, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13, 14, 16, 18, 20, 22, 24, 26];
 
@@ -45,18 +24,28 @@ const ExportResumeModal: React.FC<ExportResumeModalProps> = ({
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [exportMsg, setExportMsg] = useState<{ type: string; ok: boolean } | null>(null);
-  const [fittedOnePage, setFittedOnePage] = useState(false);
+  // Pages after the last "Fit to One Page": null until pressed, or after a manual change.
+  const [fitPages, setFitPages] = useState<number | null>(null);
+  const [isFitting, setIsFitting] = useState(false);
 
-  const update = useCallback(
-    (patch: Partial<ExportOptions>) => setOptions((prev) => ({ ...prev, ...patch })),
-    []
-  );
-
-  const handleFitOnePage = useCallback(() => {
-    setOptions(COMPACT_ONE_PAGE);
-    setFittedOnePage(true);
-    setTimeout(() => setFittedOnePage(false), 2000);
+  const update = useCallback((patch: Partial<ExportOptions>) => {
+    setOptions((prev) => ({ ...prev, ...patch }));
+    setFitPages(null);
   }, []);
+
+  const handleFitOnePage = useCallback(async () => {
+    if (isFitting) return;
+    setIsFitting(true);
+    try {
+      const fit = await fitResumeToOnePage(resumeData, userType, options);
+      setOptions(fit.options);
+      setFitPages(fit.pages);
+    } catch {
+      setFitPages(null);
+    } finally {
+      setIsFitting(false);
+    }
+  }, [resumeData, userType, options, isFitting]);
 
   const handleExportPDF = useCallback(async () => {
     if (isExportingPDF) return;
@@ -177,22 +166,27 @@ const ExportResumeModal: React.FC<ExportResumeModalProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={handleFitOnePage}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-sm font-medium transition-all duration-200"
-            >
-              {fittedOnePage ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  Applied!
-                </>
-              ) : (
-                <>
-                  <Minimize2 className="w-4 h-4" />
-                  Fit Resume to One Page
-                </>
+            <div>
+              <button
+                onClick={handleFitOnePage}
+                disabled={isFitting}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-sm font-medium transition-all duration-200 disabled:opacity-60"
+              >
+                <Minimize2 className="w-4 h-4" />
+                {isFitting ? 'Fitting…' : 'Fit Resume to One Page'}
+              </button>
+              {fitPages === 1 && (
+                <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
+                  <Check className="w-3.5 h-3.5" />
+                  Fits on one page.
+                </p>
               )}
-            </button>
+              {fitPages !== null && fitPages > 1 && (
+                <p role="status" className="mt-2 text-xs text-amber-400">
+                  Still {fitPages} pages at the smallest readable size. Remove some content to fit one page.
+                </p>
+              )}
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
@@ -203,7 +197,7 @@ const ExportResumeModal: React.FC<ExportResumeModalProps> = ({
                 onChange={(e) => update({ fontFamily: e.target.value })}
                 className="w-full bg-slate-800 border border-slate-600/50 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
-                {FONT_FAMILIES.map((f) => (
+                {PDF_FONT_FAMILIES.map((f) => (
                   <option key={f} value={f}>
                     {f}
                   </option>

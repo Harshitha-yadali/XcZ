@@ -55,16 +55,16 @@ export function softwareApplicationSchema(opts?: {
     name: opts?.name || SITE_NAME,
     description:
       opts?.description ||
-      'Free ATS resume checking, job-specific AI resume optimization, job discovery, interview preparation and expert career guidance.',
+      'ATS resume checking, job-specific AI resume optimization, job discovery, interview preparation and expert career guidance.',
     url: SITE_URL,
     applicationCategory: opts?.category || 'BusinessApplication',
     operatingSystem: 'Web',
     image: DEFAULT_OG_IMAGE,
     offers: {
       '@type': 'Offer',
-      price: '0',
+      price: '9',
       priceCurrency: 'INR',
-      description: 'Free ATS Resume Score Check',
+      description: 'ATS Resume Score Check',
     },
     ...(opts?.ratingValue
       ? {

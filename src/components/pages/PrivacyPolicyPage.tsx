@@ -8,7 +8,10 @@ const sections = [
     bullets: [
       'Resume files uploaded by users',
       'Job descriptions entered by users',
-      'Basic account information such as email address if account creation is required',
+      'Account and profile information such as your name, email address, phone number, education, skills and links',
+      'Job applications you make through the platform and the answers you give for them',
+      'If you choose to save one for Auto Apply, the username and password for a job site. The password is encrypted before it is stored',
+      'Payment records. Card and bank details are handled by our payment provider',
     ],
   },
   {
@@ -16,6 +19,7 @@ const sections = [
     paragraphs: ['The information you provide is used only for:'],
     bullets: [
       'Generating optimized resumes based on job descriptions',
+      'Filling and submitting job applications when you ask us to',
       'Improving the functionality and performance of the platform',
       'Providing customer support if required',
     ],
@@ -23,20 +27,20 @@ const sections = [
   {
     title: 'Data Sharing',
     paragraphs: [
-      'Primoboost AI does not sell, rent, or share user data with any external organizations or recruiters.',
-      'Your resume and job description are used only for generating the requested output.',
+      'Primoboost AI does not sell or rent user data, and does not share it with recruiters unless you apply to a job through the platform.',
+      'Your resume and job description are used only for generating the requested output. When you apply through the platform, your application is sent to that employer or its job site.',
     ],
   },
   {
     title: 'AI Processing',
     paragraphs: [
-      'To generate optimized resumes, user data may be temporarily processed by secure AI service providers. These providers process data only for generating results and do not store or use the information for other purposes.',
+      'To generate optimized resumes, user data is sent to third-party AI service providers for processing. Their own terms govern how they handle that data.',
     ],
   },
   {
     title: 'Data Storage',
     paragraphs: [
-      'Uploaded resumes and job descriptions are processed temporarily and are not permanently stored on our servers.',
+      'We store your profile, optimization history (including the resume text and job description), resumes prepared for applications, and applications in your account, so that you can return to them. Parts of the service that do not need this data process it without storing it.',
     ],
   },
   {
@@ -60,7 +64,7 @@ export const PrivacyPolicyPage: React.FC = () => (
     canonical="/privacy-policy"
     eyebrow="Legal"
     badgeLabel="Privacy Policy"
-    effectiveDate="March 2026"
+    effectiveDate="November 2026"
     intro="Primoboost AI respects your privacy and is committed to protecting your personal information."
     sections={sections}
   />

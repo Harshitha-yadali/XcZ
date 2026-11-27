@@ -30,8 +30,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shared = (name) => pathToFileURL(path.join(here, '..', 'supabase', 'functions', '_shared', name)).href;
 const { openPage } = await import(shared('cdp.ts'));
-const { runApplication } = await import(shared('applyForm.ts'));
+const { runApplication, USER_ONLY } = await import(shared('applyForm.ts'));
+const { applicantFrom } = await import(shared('applicant.ts'));
 const { decryptSecret, encryptSecret } = await import(shared('vault.ts'));
+const { findCode, mailIsFrom } = await import(shared('applyMail.ts'));
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -40,9 +42,14 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 // Opening an account commits the user's real name to an employer's terms, so
 // it stays off until it is switched on deliberately. Until the per-user
 // setting of Phase 6 exists, this flag is the whole of the kill switch.
+// Until mail to the agents' own addresses is delivered, companies are given the
+// applicant's email, so that no reply can be lost.
+const APPLY_MAIL = process.env.APPLY_MAIL === '1';
 const AUTO_REGISTER = process.env.AUTO_REGISTER === '1';
 const WORKER_ID = process.env.WORKER_ID || `${hostname()}:${process.pid}`;
 const POLL_MS = Number(process.env.POLL_MS || 5000);
+// How long a site's emailed code is waited for.
+const CODE_WAIT_MS = Number(process.env.CODE_WAIT_MS || 90_000);
 // How often to look for work a stopped worker left behind. Rare and cheap.
 const SWEEP_MS = 5 * 60 * 1000;
 const RESUME_BUCKET = 'user-resumes';
@@ -96,8 +103,6 @@ const claim = (batch = 1) =>
   rest('rpc/claim_auto_apply_work', { method: 'POST', body: JSON.stringify({ worker_id: WORKER_ID, batch }) });
 
 // ------------------------------------------------------------------- answers
-
-const USER_ONLY = /gender|\bsex\b|birth|\bdob\b|\bage\b|race|ethnic|disab|veteran|religio|caste|marital|salary|\bctc\b|compensation|visa|sponsor|authori[sz]|citizen|consent|agree|criminal|convict|hear about|source/i;
 
 /**
  * Answers form questions from the tailored resume with one model call. Returns
@@ -171,6 +176,16 @@ async function runOne(application, endpoint) {
   const profile = await one(`user_profiles?select=full_name,email_address,phone,linkedin_profile_url,github_profile_url,current_location,apply_answers&id=eq.${userId}`);
   if (!profile) throw new Error('profile not found');
 
+  // The user's agreement, checked again here: it may have been withdrawn since
+  // this was queued, and a requeue does not pass through auto-apply-queue.
+  const agent = await one(`apply_agents?select=address,active&user_id=eq.${userId}`);
+  if (!agent?.active) {
+    await patchApplication(application.id, { status: 'failed', error_message: 'Your apply agent is off, so nothing was sent. Turn it on and try again.' });
+    return 'failed';
+  }
+
+  const email = APPLY_MAIL ? agent.address : profile.email_address;
+
   // Answers remembered from earlier jobs, with anything the user gave for this
   // application on top. The second kind is deliberately not remembered: a tick
   // against one employer's declaration authorises that application alone.
@@ -197,12 +212,6 @@ async function runOne(application, endpoint) {
   const pdf = Buffer.from(await file.arrayBuffer()).toString('base64');
 
   const content = resume.resume_content || {};
-  const education = Array.isArray(content.education) ? content.education[0] : null;
-  const skills = [];
-  for (const name of (Array.isArray(content.skills) ? content.skills : []).flatMap((group) => group?.list || [])) {
-    if ([...skills, name].join(', ').length > 100) break;
-    skills.push(String(name));
-  }
   const fullName = profile.full_name || '';
 
   // The engine asks for a login only while the browser is on a sign-in page at
@@ -234,7 +243,7 @@ async function runOne(application, endpoint) {
    */
   const registerAs = async (host) => {
     if (!AUTO_REGISTER || !CREDENTIALS_KEY) return null;
-    const username = profile.email_address;
+    const username = email;
     if (!username) return null;
     // A login already saved for this site that we could not read - the key it
     // was encrypted under has changed - is still an account the user holds
@@ -259,31 +268,32 @@ async function runOne(application, endpoint) {
     return { username, password };
   };
 
+  // Only mail that arrived during this run, from the site that is asking.
+  const codeFor = async (host) => {
+    const since = new Date(startedAt).toISOString();
+    for (const deadline = Date.now() + CODE_WAIT_MS; Date.now() < deadline; await sleep(3000)) {
+      const mails = await rest(`apply_mail?select=from_address,subject,body&user_id=eq.${userId}&kind=eq.code&received_at=gte.${since}&order=received_at.desc&limit=5`).catch(() => []);
+      const mail = (mails || []).find((candidate) => mailIsFrom(host, candidate));
+      if (mail) return findCode(mail.subject, mail.body);
+    }
+    return '';
+  };
+
   let page = null;
   let submitPressed = false;
   let result;
   try {
     page = await openPage(endpoint);
-    await patchApplication(application.id, { status: 'filling_form' });
     result = await runApplication(page, {
       url: application.application_url,
-      profile: {
-        fullName,
-        email: profile.email_address || '',
-        phone: profile.phone || '',
-        linkedin: profile.linkedin_profile_url || '',
-        github: profile.github_profile_url || '',
-        location: profile.current_location || content.location || '',
-        college: education?.school || '',
-        degree: education?.degree || '',
-        graduationYear: (String(education?.year || '').match(/\d{4}/g) || []).pop() || '',
-        skills: skills.join(', '),
-      },
+      profile: { ...applicantFrom(profile, content), email },
       saved,
       resume: { name: `${fullName.replace(/[^A-Za-z0-9]+/g, '_') || 'Resume'}_Resume.pdf`, base64: pdf },
       submit: true,
       loginFor,
       registerAs,
+      codeFor: APPLY_MAIL ? codeFor : undefined,
+      onStage: (status) => patchApplication(application.id, { status }).catch(() => {}),
       infer: (questions) => inferAnswers(questions, content, profile.current_location || content.location || ''),
       // Written before the click: if this process dies after it, the row still
       // says a submission was attempted, and it is never retried.
@@ -302,6 +312,14 @@ async function runOne(application, endpoint) {
   }
 
   const status = statusFor(result);
+  // A site that put up a sign-in, captcha or bot wall for a real applicant will
+  // do it for the next one too: the job goes to Smart Apply for everyone now.
+  // A late email code is not the site's fault, so only real walls count.
+  const walled = status === 'needs_login'
+    || (status === 'needs_manual_action' && /captcha|refuses visits|never use your|only lets you sign in|account to be created/i.test(result.message || ''));
+  if (application.job_listing_id && walled) {
+    await markJob(application.job_listing_id, verdictFor(result)).catch(() => {});
+  }
   await patchApplication(application.id, {
     status,
     submission_time: status === 'submitted' ? new Date().toISOString() : null,
@@ -324,6 +342,57 @@ async function runOne(application, endpoint) {
     });
   }
   return status;
+}
+
+// ---------------------------------------------------------------- job checks
+
+// Whether the runner can apply to a job by itself, found by test-filling it
+// with a made-up applicant and stopping before Submit. Only "works" jobs get
+// Auto Apply on the site; the rest get Smart Apply. Real applications always
+// come first: a job is only checked when nothing is queued.
+const RECHECK_MS = 3 * 24 * 60 * 60 * 1000;
+const CHECK_LIMIT_MS = 3 * 60 * 1000;
+const TEST_APPLICANT = applicantFrom(
+  { full_name: 'Test Applicant', email_address: 'apply-check@primoboostjobs.in', phone: '+919000000000', current_location: 'Bengaluru' },
+  {
+    workExperience: [{ role: 'Software Engineering Intern', company: 'Example Labs', year: 'Jan 2024 – Apr 2024' }],
+    education: [{ degree: 'Bachelor of Technology in Computer Science', school: 'Example Institute of Technology', year: '2021 - 2025', cgpa: '8.0' }],
+    skills: [{ category: 'Languages', list: ['JavaScript', 'Python', 'SQL'] }],
+  },
+);
+const TEST_RESUME = { name: 'Test_Applicant_Resume.pdf', base64: Buffer.from('%PDF-1.4\n%job check\n').toString('base64') };
+
+/** 'works' when the form can be filled up to Submit (questions are fine: users answer them). */
+function verdictFor(result) {
+  if (result.status === 'dry_run' || result.status === 'needs_input') return { apply_check: 'works', apply_check_reason: null };
+  return { apply_check: 'blocked', apply_check_reason: (result.message || (result.status === 'needs_login' ? `Needs a sign-in at ${result.site || 'the site'}.` : 'The form could not be filled.')).slice(0, 300) };
+}
+
+const markJob = (id, fields) =>
+  rest(`job_listings?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify({ ...fields, apply_checked_at: new Date().toISOString() }), headers: { Prefer: 'return=minimal' } });
+
+/** Checks the next job that is due. False when none is, so the loop can rest. */
+async function checkDueJob(endpoint) {
+  const cutoff = new Date(Date.now() - RECHECK_MS).toISOString();
+  const job = await one(`job_listings?select=id,application_link&is_active=eq.true&application_link=not.is.null&or=(apply_checked_at.is.null,apply_checked_at.lt.${cutoff})&order=apply_checked_at.asc.nullsfirst,created_at.desc&limit=1`);
+  if (!job) return false;
+  let page = null;
+  let result;
+  try {
+    page = await openPage(endpoint);
+    result = await Promise.race([
+      runApplication(page, { url: job.application_link, profile: TEST_APPLICANT, saved: {}, resume: TEST_RESUME, submit: false }),
+      sleep(CHECK_LIMIT_MS).then(() => ({ status: 'failed', message: 'The form took too long to load.' })),
+    ]);
+  } catch (error) {
+    result = { status: 'failed', message: `The check could not run: ${String(error?.message || error).slice(0, 120)}` };
+  } finally {
+    try { page?.close(); } catch { /* already gone */ }
+  }
+  const verdict = verdictFor(result);
+  await markJob(job.id, verdict);
+  console.log(`[check ${job.id}] ${verdict.apply_check}${verdict.apply_check_reason ? `: ${verdict.apply_check_reason}` : ''}`);
+  return true;
 }
 
 // ------------------------------------------------------------------ the loop
@@ -378,7 +447,10 @@ try {
       console.error('Could not claim work:', error.message);
     }
     if (!claimed.length) {
-      await sleep(POLL_MS);
+      // Idle: test one job that is due, then look for real work again.
+      let checked = false;
+      try { checked = await checkDueJob(endpoint); } catch (error) { console.error('Job check failed:', error.message); }
+      if (!checked) await sleep(POLL_MS);
       continue;
     }
     for (const application of claimed) {

@@ -75,6 +75,11 @@ export const DATA_SCIENCE_AND_ML = [
   // ML/AI Frameworks
   'tensorflow', 'pytorch', 'keras', 'scikit-learn', 'sklearn', 'xgboost', 'lightgbm',
   'catboost', 'hugging face', 'transformers', 'openai', 'langchain', 'llama',
+  // GenAI
+  'langgraph', 'llamaindex', 'crewai', 'ollama', 'pinecone', 'weaviate', 'chromadb', 'qdrant', 'pgvector',
+  'large language models', 'llm', 'llms', 'generative ai', 'genai', 'rag', 'retrieval augmented generation',
+  'prompt engineering', 'fine-tuning', 'ai agents', 'agentic ai', 'embeddings', 'vector database',
+  'model context protocol', 'mlops', 'llmops', 'github copilot',
   // Data Science Tools
   'pandas', 'numpy', 'scipy', 'matplotlib', 'seaborn', 'plotly', 'jupyter',
   'jupyter notebook', 'anaconda', 'spacy', 'nltk', 'opencv', 'pillow',
@@ -189,7 +194,17 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
   'iac': 'Infrastructure as Code',
   'tdd': 'Test-Driven Development',
   'bdd': 'Behavior-Driven Development',
-  'qa': 'QA'
+  'qa': 'QA',
+  'mongodb': 'MongoDB', 'mysql': 'MySQL', 'postgresql': 'PostgreSQL', 'postgres': 'PostgreSQL', 'sqlite': 'SQLite',
+  'mariadb': 'MariaDB', 'dynamodb': 'DynamoDB', 'nosql': 'NoSQL', 'bigquery': 'BigQuery', 'graphql': 'GraphQL',
+  'rest api': 'REST API', 'rest apis': 'REST APIs', 'restful': 'RESTful', 'restful api': 'RESTful API',
+  'restful apis': 'RESTful APIs', 'fastapi': 'FastAPI', 'nest.js': 'Nest.js', 'nestjs': 'NestJS', 'grpc': 'gRPC',
+  'jquery': 'jQuery', 'php': 'PHP', 'junit': 'JUnit', 'testng': 'TestNG',
+  'tensorflow': 'TensorFlow', 'pytorch': 'PyTorch', 'numpy': 'NumPy', 'opencv': 'OpenCV', 'nltk': 'NLTK',
+  'nlp': 'NLP', 'llm': 'LLM', 'llms': 'LLMs', 'rag': 'RAG', 'langchain': 'LangChain', 'power bi': 'Power BI',
+  'github': 'GitHub', 'gitlab': 'GitLab', 'github actions': 'GitHub Actions', 'gitlab ci': 'GitLab CI', 'npm': 'npm',
+  'vscode': 'VS Code', 'vs code': 'VS Code', 'intellij': 'IntelliJ', 'ec2': 'EC2', 's3': 'S3', 'rds': 'RDS',
+  'aws ec2': 'AWS EC2', 'aws s3': 'AWS S3', 'aws lambda': 'AWS Lambda', 'sql server': 'SQL Server', 'java': 'Java',
 };
 
 /**
@@ -200,34 +215,42 @@ export const SKILL_DISPLAY_NAMES: Record<string, string> = {
 export function categorizeSkill(skill: string): SkillCategoryName | null {
   const skillLower = skill.toLowerCase().trim();
 
+  // A skill listed by its full name goes where it is listed.
+  for (const [category, names] of Object.entries(CATEGORY_SKILLS_MAP)) {
+    if (names.includes(skillLower)) return category as SkillCategoryName;
+  }
+  // Otherwise by a whole word: "javascript" holds "ava" and "storage" holds "rag".
+  const has = (name: string) =>
+    new RegExp(`(^|[^a-z0-9+#])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(s|js|[0-9.]+)?($|[^a-z0-9+#])`).test(skillLower);
+
   // Check each category in priority order
   // Order matters! Check more specific categories first to prevent false matches
 
   // 1. Check Data Science & ML FIRST (most specific)
-  if (DATA_SCIENCE_AND_ML.some(ml => skillLower.includes(ml))) {
+  if (DATA_SCIENCE_AND_ML.some(has)) {
     return SKILL_CATEGORIES.DATA_SCIENCE_AND_ML;
   }
 
   // 2. Check Frontend Technologies BEFORE Programming Languages
   // Prevents "React" from matching as programming language
-  if (FRONTEND_TECHNOLOGIES.some(tech => skillLower.includes(tech))) {
+  if (FRONTEND_TECHNOLOGIES.some(has)) {
     return SKILL_CATEGORIES.FRONTEND_TECHNOLOGIES;
   }
 
   // 3. Check Backend Technologies BEFORE Programming Languages
   // Prevents "Express" from being miscategorized
-  if (BACKEND_TECHNOLOGIES.some(tech => skillLower.includes(tech))) {
+  if (BACKEND_TECHNOLOGIES.some(has)) {
     return SKILL_CATEGORIES.BACKEND_TECHNOLOGIES;
   }
 
   // 4. Check Databases BEFORE Programming Languages
   // Prevents "SQL" databases from being miscategorized
-  if (DATABASES.some(db => skillLower.includes(db))) {
+  if (DATABASES.some(has)) {
     return SKILL_CATEGORIES.DATABASES;
   }
 
   // 5. Check Testing & QA BEFORE Programming Languages
-  if (TESTING_AND_QA.some(test => skillLower.includes(test))) {
+  if (TESTING_AND_QA.some(has)) {
     return SKILL_CATEGORIES.TESTING_AND_QA;
   }
 
@@ -243,17 +266,17 @@ export function categorizeSkill(skill: string): SkillCategoryName | null {
   }
 
   // 7. Check Cloud & DevOps
-  if (CLOUD_AND_DEVOPS.some(tool => skillLower.includes(tool))) {
+  if (CLOUD_AND_DEVOPS.some(has)) {
     return SKILL_CATEGORIES.CLOUD_AND_DEVOPS;
   }
 
   // 8. Check Tools & Platforms
-  if (TOOLS_AND_PLATFORMS.some(tool => skillLower.includes(tool))) {
+  if (TOOLS_AND_PLATFORMS.some(has)) {
     return SKILL_CATEGORIES.TOOLS_AND_PLATFORMS;
   }
 
   // 9. Check Soft Skills (least specific)
-  if (SOFT_SKILLS.some(soft => skillLower.includes(soft))) {
+  if (SOFT_SKILLS.some(has)) {
     return SKILL_CATEGORIES.SOFT_SKILLS;
   }
 

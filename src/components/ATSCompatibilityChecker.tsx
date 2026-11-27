@@ -189,7 +189,7 @@ function analyzeFontAndText(options: ExportOptions): ATSCategory {
   const fixes: string[] = [];
   let score = 10;
 
-  const atsFriendlyFonts = ['Calibri', 'Arial', 'Times New Roman', 'Verdana'];
+  const atsFriendlyFonts = ['Helvetica', 'Calibri', 'Arial', 'Times New Roman', 'Verdana'];
   if (!atsFriendlyFonts.includes(options.fontFamily)) {
     issues.push('Font family may not be ATS-friendly');
     fixes.push('Use Calibri, Arial, Times New Roman, or Verdana');

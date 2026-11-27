@@ -1,10 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+  type HTMLMotionProps,
+  type MotionStyle,
+} from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
-  BarChart3,
   Briefcase,
   CalendarCheck,
   Check,
@@ -346,10 +354,43 @@ const faqs = [
   },
 ];
 
+// Content tips forward into place, like a page lifting off the screen.
 const reveal = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0 },
+  hidden: { opacity: 0, y: 24, rotateX: 14, transformPerspective: 900 },
+  visible: { opacity: 1, y: 0, rotateX: 0, transformPerspective: 900 },
 };
+
+// Mouse-follow 3D tilt. Touch and reduced-motion users get a flat card.
+function useTilt(max: number, style?: MotionStyle) {
+  const reduceMotion = useReducedMotion();
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const spring = { stiffness: 220, damping: 22 };
+  const rotateX = useSpring(useTransform(pointerY, [-0.5, 0.5], [max, -max]), spring);
+  const rotateY = useSpring(useTransform(pointerX, [-0.5, 0.5], [-max, max]), spring);
+  if (reduceMotion) return { style };
+  return {
+    style: { ...style, rotateX, rotateY, transformPerspective: 1000 },
+    onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+      if (event.pointerType !== 'mouse') return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      pointerX.set((event.clientX - rect.left) / rect.width - 0.5);
+      pointerY.set((event.clientY - rect.top) / rect.height - 0.5);
+    },
+    onPointerLeave: () => {
+      pointerX.set(0);
+      pointerY.set(0);
+    },
+  };
+}
+
+const TiltDiv = ({ max = 7, style, ...props }: HTMLMotionProps<'div'> & { max?: number }) => (
+  <motion.div {...props} {...useTilt(max, style)} />
+);
+
+const TiltButton = ({ max = 7, style, ...props }: HTMLMotionProps<'button'> & { max?: number }) => (
+  <motion.button {...props} {...useTilt(max, style)} />
+);
 
 function SectionHeading({
   eyebrow,
@@ -403,12 +444,14 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 40, scale: 0.96 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      transition={{ duration: 0.75, delay: 0.25 }}
+      initial={{ opacity: 0, x: 40, scale: 0.96, rotateY: reduceMotion ? 0 : -24 }}
+      animate={{ opacity: 1, x: 0, scale: 1, rotateY: 0 }}
+      transition={{ duration: 0.9, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformPerspective: 1200 }}
       className="relative mx-auto min-w-0 w-full max-w-[570px]"
     >
-      <motion.div
+      <TiltDiv
+        max={10}
         animate={reduceMotion ? undefined : { y: [0, -9, 0] }}
         transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
       >
@@ -488,7 +531,7 @@ function HeroProductPreview({ onOptimize }: { onOptimize: () => void }) {
             </button>
           </div>
         </GlassCard>
-      </motion.div>
+      </TiltDiv>
 
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
@@ -556,9 +599,9 @@ function OptimizerPreview({ onOptimize }: { onOptimize: () => void }) {
             <div className="h-2 w-4/5 rounded bg-white/[0.08]" />
             <div className="h-px bg-white/[0.09]" />
             {[
-              'Led end-to-end product design for 3 high-impact workflows, improving activation by 18%.',
-              'Partnered with product and engineering to ship a reusable design system across 2 squads.',
-              'Translated user research into Figma prototypes tested with 24 target customers.',
+              'Led end-to-end product design across core product workflows.',
+              'Partnered with product and engineering to take designs from concept to release.',
+              'Created wireframes that defined the flow of new features.',
             ].map((line, index) => (
               <motion.div
                 key={line}
@@ -657,8 +700,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
-  const [globalResumesCreated, setGlobalResumesCreated] = useState(60070);
-  const [scoreChecksCompleted, setScoreChecksCompleted] = useState(500070);
+  const [globalResumesCreated, setGlobalResumesCreated] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   useEffect(() => {
@@ -673,18 +715,6 @@ export const HomePage: React.FC<HomePageProps> = ({
     fetchGlobalCount();
   }, []);
 
-  useEffect(() => {
-    const base = 500070;
-    const hydrateCount = () => {
-      const stored = Number.parseInt(localStorage.getItem('scoreCheckCount') || '0', 10);
-      setScoreChecksCompleted(base + (Number.isNaN(stored) ? 0 : stored));
-    };
-    hydrateCount();
-    const handleScoreCheck = () => hydrateCount();
-    window.addEventListener('score-check-completed', handleScoreCheck);
-    return () => window.removeEventListener('score-check-completed', handleScoreCheck);
-  }, []);
-
   const startCareerBooster = () => {
     if (!isAuthenticated) {
       onShowAuth();
@@ -694,18 +724,12 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   const metrics = [
-    {
+    ...(globalResumesCreated > 0 ? [{
       value: `${globalResumesCreated.toLocaleString()}+`,
       label: 'Resumes created or optimized',
       source: 'Live platform activity',
       icon: FileCheck2,
-    },
-    {
-      value: `${scoreChecksCompleted.toLocaleString()}+`,
-      label: 'Resume score checks',
-      source: 'Product usage counter',
-      icon: BarChart3,
-    },
+    }] : []),
     {
       value: '28',
       label: 'Resume signals analyzed',
@@ -838,7 +862,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       </section>
 
       <section className="relative px-4 py-14 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-px overflow-hidden rounded-[26px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-7xl gap-px overflow-hidden rounded-[26px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-2">
           {metrics.map((metric, index) => (
             <motion.div
               key={metric.label}
@@ -871,12 +895,12 @@ export const HomePage: React.FC<HomePageProps> = ({
           <SectionHeading
             eyebrow="One career workspace"
             title="Everything between applying and getting ready for the interview"
-            description="Start with the free diagnosis, then use the right level of support for the gap standing between you and your next opportunity."
+            description="Start with the ₹9 diagnosis, then use the right level of support for the gap standing between you and your next opportunity."
           />
 
           <div className="mt-12 grid auto-rows-auto gap-4 lg:grid-cols-6 lg:auto-rows-[250px]">
             {serviceCards.map((card, index) => (
-              <motion.button
+              <TiltButton
                 type="button"
                 key={card.title}
                 onClick={() => navigate(card.path)}
@@ -902,10 +926,10 @@ export const HomePage: React.FC<HomePageProps> = ({
                     <div className="mt-4 text-sm font-semibold text-slate-200">{card.cta}</div>
                   </div>
                 </div>
-              </motion.button>
+              </TiltButton>
             ))}
 
-            <motion.button
+            <TiltButton
               type="button"
               onClick={startCareerBooster}
               initial={{ opacity: 0, y: 24 }}
@@ -933,7 +957,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   </div>
                 </div>
               </div>
-            </motion.button>
+            </TiltButton>
           </div>
         </div>
       </section>
@@ -1102,7 +1126,8 @@ export const HomePage: React.FC<HomePageProps> = ({
                 icon: Headphones,
               },
             ].map((plan) => (
-              <motion.div
+              <TiltDiv
+                max={5}
                 key={plan.name}
                 initial={{ opacity: 0, y: 24 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -1145,7 +1170,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 >
                   {plan.cta}
                 </button>
-              </motion.div>
+              </TiltDiv>
             ))}
           </div>
           <div className="mt-7 text-center">

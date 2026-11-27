@@ -48,9 +48,9 @@ export function useAutoApply() {
     } else if (!applyResult.success && ['INPUT_REQUIRED', 'LOGIN_REQUIRED'].includes(applyResult.error || '')) {
       setPending(applyResult);
     } else if (applyResult.error === 'QUEUED') {
-      // Handed to a worker. Anything it needs is asked for on My Auto
-      // Applications, which the user reaches whether or not this page is open.
-      setResult(applyResult);
+      // Handed to a worker, quietly: the job card says "Applied", and anything
+      // the worker needs is asked for on My Auto Applications.
+      setResult(null);
     } else {
       setResult(applyResult);
     }
@@ -67,14 +67,15 @@ export function useAutoApply() {
   }, [settle]);
 
   const startAutoApply = useCallback(
-    async (job: JobListing) => {
+    async (job: JobListing): Promise<AutoApplyResult | null> => {
       if (!user) {
         throw new Error('User not authenticated');
       }
 
+      // No progress overlay: the resume is tailored and the application queued
+      // in the background while the job card shows "Applying...".
       setCurrentJob(job);
       setIsProcessing(true);
-      setShowStatusModal(true);
       setResult(null);
 
       try {
@@ -93,9 +94,11 @@ export function useAutoApply() {
         );
 
         settle(applyResult);
+        return applyResult;
       } catch (error: any) {
         console.error('Auto-apply error:', error);
         fail(error);
+        return null;
       } finally {
         setIsProcessing(false);
       }

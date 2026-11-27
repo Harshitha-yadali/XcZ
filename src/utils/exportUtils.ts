@@ -5,24 +5,11 @@
 import { jsPDF } from 'jspdf';
 import { ResumeData, Certification } from '../types/resume'; // Import Certification type
 import { saveAs } from 'file-saver';
-import { ExportOptions, defaultExportOptions } from '../types/export';
+import { ExportOptions, defaultExportOptions, layoutConfigs, pdfFontFamily, gradeLabel } from '../types/export';
 import { UserType } from '../types/resume';
 import { getCertificationDisplayParts } from './certificationFormatting';
-
-// Map font family names to jsPDF compatible fonts
-const mapFontFamily = (fontFamily: string): string => {
-  const fontMap: Record<string, string> = {
-    'Times New Roman': 'times',
-    'Arial': 'helvetica',
-    'Verdana': 'helvetica',
-    'Georgia': 'times',
-    'Calibri': 'helvetica',
-    'Helvetica': 'helvetica',
-    'Courier': 'courier',
-    'Courier New': 'courier'
-  };
-  return fontMap[fontFamily] || 'helvetica';
-};
+import { toPdfSafe } from './pdfText';
+import { buildResumeDocx, DOCX_MIME } from './resumeDocx';
 
 // Professional PDF Layout Constants - Updated to meet specifications
 const createPDFConfig = (options: ExportOptions) => {
@@ -35,14 +22,8 @@ const createPDFConfig = (options: ExportOptions) => {
     pageWidth,
     pageHeight,
 
-    // Professional margins in mm (0.7 inch = 17.78mm) - ATS Optimized
-    margins: {
-      top: options.layoutType === 'compact' ? 12 : options.layoutType === 'ats-optimized' ? 17.78 : 17.78,
-      // Use a consistent 4mm bottom margin so content can go lower on the page
-      bottom: 4,
-      left: options.layoutType === 'compact' ? 12 : options.layoutType === 'ats-optimized' ? 17.78 : 17.78,
-      right: options.layoutType === 'compact' ? 12 : options.layoutType === 'ats-optimized' ? 17.78 : 17.78
-    },
+    // In mm, the same as the preview.
+    margins: (layoutConfigs[options.layoutType] || layoutConfigs.standard).margins,
 
     // Calculated content area
     get contentWidth() { return this.pageWidth - this.margins.left - this.margins.right; },
@@ -59,7 +40,6 @@ const createPDFConfig = (options: ExportOptions) => {
       body: { size: options.bodyTextSize, weight: 'normal' }
     },
     spacing: {
-      nameFromTop: 10,
       afterName: 0,
       afterContact: 2,
       sectionSpacingBefore: options.sectionSpacing,
@@ -75,7 +55,7 @@ const createPDFConfig = (options: ExportOptions) => {
       secondary: [80, 80, 80],
       accent: [37, 99, 235]
     },
-    fontFamily: mapFontFamily(options.fontFamily)
+    fontFamily: pdfFontFamily(options.fontFamily)
   };
 };
 
@@ -222,17 +202,27 @@ function checkPageSpace(state: PageState, requiredHeight: number, PDF_CONFIG: an
 function addNewPage(state: PageState, PDF_CONFIG: any): void {
   state.doc.addPage();
   state.currentPage++;
-  state.currentY = PDF_CONFIG.margins.top;
+  state.currentY = PDF_CONFIG.margins.top + PDF_CONFIG.fonts.sectionTitle.size * 0.25;
+}
 
-  // Add page number
-  const pageText = `Page ${state.currentPage}`;
-  state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
-  state.doc.setFontSize(9);
-  state.doc.setTextColor(128, 128, 128); // Gray
-
-  const pageWidth = state.doc.internal.pageSize.getWidth();
-  const textWidth = state.doc.getTextWidth(pageText);
-  state.doc.text(pageText, pageWidth - PDF_CONFIG.margins.right - textWidth, PDF_CONFIG.pageHeight - PDF_CONFIG.margins.bottom / 2); // Adjusted Y for page number
+// A bullet whose wrapped lines start under the text, not under the dot.
+function drawBullet(state: PageState, text: string, PDF_CONFIG: any, fontWeight = 'normal'): number {
+  const size = PDF_CONFIG.fonts.body.size;
+  const x = PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent;
+  const maxWidth = PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent;
+  const lineHeight = size * PDF_CONFIG.spacing.lineHeight * 0.352778;
+  state.doc.setFont(PDF_CONFIG.fontFamily, fontWeight);
+  state.doc.setFontSize(size);
+  state.doc.setTextColor(0, 0, 0);
+  if (!checkPageSpace(state, state.doc.splitTextToSize(text, maxWidth).length * lineHeight, PDF_CONFIG)) {
+    addNewPage(state, PDF_CONFIG);
+  }
+  // The dot goes first, so text extraction reads "• text".
+  state.doc.text('•', x - size * 0.25, state.currentY);
+  const height = drawText(state, text, x, PDF_CONFIG, { fontSize: size, fontWeight, maxWidth });
+  const gap = PDF_CONFIG.spacing.entrySpacing * 0.25;
+  state.currentY += gap;
+  return height + gap;
 }
 
 // Draw text with automatic wrapping and return height used
@@ -328,13 +318,12 @@ function renderCertificationsForPDF(state: PageState, certifications: (string | 
     const primary = title || description;
 
     if (primary) {
-      const titleHeight = drawText(state, `• ${primary}`, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-        fontWeight: 'bold',
-        maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-      });
+      // Bold only to set a title apart from the description under it.
+      const hasDescription = !!(description && title && description !== title);
+      const titleHeight = drawBullet(state, primary, PDF_CONFIG, hasDescription ? 'bold' : 'normal');
       totalHeight += titleHeight;
 
-      if (description && title && description !== title) {
+      if (hasDescription) {
         state.currentY += 1;
         const descHeight = drawText(state, description, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent * 2, PDF_CONFIG, {
           maxWidth: PDF_CONFIG.contentWidth - (PDF_CONFIG.spacing.bulletIndent * 2)
@@ -398,23 +387,24 @@ function renderCertificationsLegacyUnused(state: PageState, certifications: (str
 // FIXED: Draw section title with underline and proper spacing - prevents black bar on page 2
 function drawSectionTitle(state: PageState, title: string, PDF_CONFIG: any): number {
   // Calculate the FULL height needed for this section header as an atomic unit:
-  // - Initial spacing before title (1mm)
+  // - Initial spacing before title
   // - Title line height
   // - Underline space
   // - Spacing after section header
-  // - Minimum breathing room (5mm) to prevent drawing too close to page edge
+  // - Room for the start of the section's content
   const lineHeight = PDF_CONFIG.fonts.sectionTitle.size * PDF_CONFIG.spacing.lineHeight * 0.352778;
   const underlineSpace = 1; // Space for the underline itself
-  const minimumBreathingRoom = 5; // Minimum mm from page bottom
-  const estimatedSectionHeaderHeight = 1 + lineHeight + underlineSpace + PDF_CONFIG.spacing.sectionSpacingAfter + minimumBreathingRoom;
+  // Room for a heading line and two body lines of the first entry, so a heading is
+  // never left alone at the page end. A fixed 27mm pushed short sections to a new page.
+  const minimumBreathingRoom = (PDF_CONFIG.fonts.jobTitle.size + PDF_CONFIG.fonts.body.size * 2) * PDF_CONFIG.spacing.lineHeight * 0.352778;
+  const estimatedSectionHeaderHeight = PDF_CONFIG.spacing.sectionSpacingBefore + lineHeight + underlineSpace + PDF_CONFIG.spacing.sectionSpacingAfter + minimumBreathingRoom;
   
   // Check if we have enough space BEFORE adding initial spacing
   if (!checkPageSpace(state, estimatedSectionHeaderHeight, PDF_CONFIG)) {
       addNewPage(state, PDF_CONFIG);
+  } else {
+      state.currentY += PDF_CONFIG.spacing.sectionSpacingBefore;
   }
-
-  // Now add initial spacing
-  state.currentY += 1;
 
   // Ensure bold font is explicitly set for section titles
   state.doc.setFont(PDF_CONFIG.fontFamily, 'bold');
@@ -437,28 +427,9 @@ function drawSectionTitle(state: PageState, title: string, PDF_CONFIG: any): num
 }
 
 // Helper to extract short display text from URLs
-function getShortLinkText(url: string, type: 'linkedin' | 'github'): string {
-  if (!url) return '';
-
-  const cleanUrl = url.trim().toLowerCase();
-
-  if (type === 'linkedin') {
-    const linkedinMatch = cleanUrl.match(/linkedin\.com\/in\/([^\/\?]+)/i);
-    if (linkedinMatch) {
-      return `linkedin/${linkedinMatch[1]}`;
-    }
-    return 'LinkedIn';
-  }
-
-  if (type === 'github') {
-    const githubMatch = cleanUrl.match(/github\.com\/([^\/\?]+)/i);
-    if (githubMatch) {
-      return `github/${githubMatch[1]}`;
-    }
-    return 'GitHub';
-  }
-  
-  return url;
+// The whole address, as an applicant tracking system has to recognise it.
+function getLinkText(url: string): string {
+  return url.trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
 }
 
 // Draw contact information - two lines: basic info on line 1, links on line 2
@@ -473,6 +444,10 @@ function drawContactInfo(state: PageState, resumeData: ResumeData, PDF_CONFIG: a
   // Line 2: LinkedIn, GitHub
   const line2Items: ContactItem[] = [];
   
+  if (isValidField(resumeData.location)) {
+    line1Items.push({ text: resumeData.location!.trim() });
+  }
+
   if (isValidField(resumeData.phone, 'phone')) {
     line1Items.push({ text: resumeData.phone!, url: `tel:${resumeData.phone}` });
   }
@@ -483,14 +458,12 @@ function drawContactInfo(state: PageState, resumeData: ResumeData, PDF_CONFIG: a
 
   if (isValidField(resumeData.linkedin, 'url')) {
     const linkedinUrl = resumeData.linkedin!.startsWith('http') ? resumeData.linkedin! : `https://${resumeData.linkedin}`;
-    const shortText = getShortLinkText(resumeData.linkedin!, 'linkedin');
-    line1Items.push({ text: shortText, url: linkedinUrl });
+    line2Items.push({ text: getLinkText(resumeData.linkedin!), url: linkedinUrl });
   }
 
   if (isValidField(resumeData.github, 'url')) {
     const githubUrl = resumeData.github!.startsWith('http') ? resumeData.github! : `https://${resumeData.github}`;
-    const shortText = getShortLinkText(resumeData.github!, 'github');
-    line1Items.push({ text: shortText, url: githubUrl });
+    line2Items.push({ text: getLinkText(resumeData.github!), url: githubUrl });
   }
 
   if (line1Items.length === 0 && line2Items.length === 0) return 0;
@@ -548,6 +521,7 @@ function drawContactInfo(state: PageState, resumeData: ResumeData, PDF_CONFIG: a
   };
   
   drawContactLine(line1Items);
+  drawContactLine(line2Items);
   
   // Reset font to normal
   state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
@@ -563,11 +537,8 @@ function drawContactInfo(state: PageState, resumeData: ResumeData, PDF_CONFIG: a
 function drawWorkExperience(state: PageState, workExperience: any[], userType: UserType = 'experienced', PDF_CONFIG: any): number {
   if (!workExperience || workExperience.length === 0) return 0;
 
-  // Add extra 1.5mm spacing before Work Experience section
-  state.currentY += 1.5;
-
   const sectionTitle = (userType === 'fresher' || userType === 'student') ? 'Work Experience' : 'Professional Experience';
-  let totalHeight = drawSectionTitle(state, sectionTitle, PDF_CONFIG) + 1.5;
+  let totalHeight = drawSectionTitle(state, sectionTitle, PDF_CONFIG);
 
   workExperience.forEach((job, index) => {
     const estimatedJobHeaderHeight = (PDF_CONFIG.fonts.jobTitle.size) * PDF_CONFIG.spacing.lineHeight * 0.352778;
@@ -581,42 +552,40 @@ function drawWorkExperience(state: PageState, workExperience: any[], userType: U
 
     const yearText = job.year;
     
-    // MODIFIED: Added isValidField check for job.year and render dates in bold, visually aligned with job title
+    let yearWidth = 0;
     if (isValidField(yearText)) {
-      state.doc.setFont(PDF_CONFIG.fontFamily, 'bold'); // Make dates bold
+      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
       state.doc.setFontSize(PDF_CONFIG.fonts.year.size);
-      const yearWidth = state.doc.getTextWidth(yearText);
-      const yearX = PDF_CONFIG.margins.left + PDF_CONFIG.contentWidth - yearWidth;
-      // Slight upward tweak (~0.5mm) so the date visually aligns with the job title text
-      const yearY = initialYForJob - 0.5;
-      state.doc.text(yearText, yearX, yearY);
-      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal'); // Reset to normal after drawing dates
+      yearWidth = state.doc.getTextWidth(yearText);
     }
 
     drawText(state, combinedTitle, PDF_CONFIG.margins.left, PDF_CONFIG, {
       fontSize: PDF_CONFIG.fonts.jobTitle.size,
       fontWeight: 'bold', // Changed to bold
-      maxWidth: PDF_CONFIG.contentWidth - (isValidField(yearText) ? state.doc.getTextWidth(yearText) : 0) - 5 // Adjust maxWidth if year is present
+      maxWidth: PDF_CONFIG.contentWidth - yearWidth - 5
     });
+    // Written after the title and on its baseline, so it reads as "title, date".
+    if (isValidField(yearText)) {
+      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
+      state.doc.setFontSize(PDF_CONFIG.fonts.year.size);
+      state.doc.text(yearText, PDF_CONFIG.margins.left + PDF_CONFIG.contentWidth - yearWidth, initialYForJob);
+      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
+    }
 
     state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
 
     if (job.bullets && job.bullets.length > 0) {
       state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
       job.bullets.forEach((bullet: string) => {
-        const bulletText = `• ${bullet}`;
-        const bulletHeight = drawText(state, bulletText, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-          fontSize: PDF_CONFIG.fonts.body.size,
-          maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-        });
+        const bulletHeight = drawBullet(state, bullet, PDF_CONFIG);
         totalHeight += bulletHeight;
       });
       state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
     }
 
     if (index < workExperience.length - 1) {
-      state.currentY += 1;
-      totalHeight += 1;
+      state.currentY += PDF_CONFIG.spacing.entrySpacing;
+      totalHeight += PDF_CONFIG.spacing.entrySpacing;
     }
   });
 
@@ -629,14 +598,21 @@ function drawEducation(state: PageState, education: any[], PDF_CONFIG: any): num
   let totalHeight = drawSectionTitle(state, 'Education', PDF_CONFIG);
 
   education.forEach((edu, index) => {
-    const initialYForEdu = state.currentY;
     if (!checkPageSpace(state, 20, PDF_CONFIG)) {
       addNewPage(state, PDF_CONFIG);
     }
+    const initialYForEdu = state.currentY;
     const degreeHeight = drawText(state, edu.degree, PDF_CONFIG.margins.left, PDF_CONFIG, {
       fontSize: PDF_CONFIG.fonts.jobTitle.size,
       fontWeight: PDF_CONFIG.fonts.jobTitle.weight // Already bold
     });
+    if (isValidField(edu.year)) {
+      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
+      state.doc.setFontSize(PDF_CONFIG.fonts.year.size);
+      const yearWidth = state.doc.getTextWidth(edu.year);
+      state.doc.text(edu.year, PDF_CONFIG.margins.left + PDF_CONFIG.contentWidth - yearWidth, initialYForEdu);
+      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal');
+    }
     const schoolText = `${edu.school}${isValidField(edu.location) ? `, ${edu.location}` : ''}`;
     const schoolHeight = drawText(state, schoolText, PDF_CONFIG.margins.left, PDF_CONFIG, {
       fontSize: PDF_CONFIG.fonts.company.size,
@@ -645,31 +621,16 @@ function drawEducation(state: PageState, education: any[], PDF_CONFIG: any): num
     });
     let cgpaHeight = 0;
     if (isValidField(edu.cgpa)) {
-      cgpaHeight = drawText(state, `CGPA: ${edu.cgpa}`, PDF_CONFIG.margins.left, PDF_CONFIG, {
+      cgpaHeight = drawText(state, `${gradeLabel(edu.cgpa)}: ${edu.cgpa}`, PDF_CONFIG.margins.left, PDF_CONFIG, {
         fontSize: PDF_CONFIG.fonts.body.size,
         fontWeight: PDF_CONFIG.fonts.body.weight,
         color: PDF_CONFIG.colors.secondary
       });
     }
-    // Removed edu.relevantCoursework block
-    // MODIFIED: Removed redundant setFont call and added isValidField check
-    state.doc.setFontSize(PDF_CONFIG.fonts.year.size);
-    state.doc.setTextColor(PDF_CONFIG.colors.primary[0], PDF_CONFIG.colors.primary[1], PDF_CONFIG.colors.primary[2]);
-    
-    if (isValidField(edu.year)) { // ADDED: Check if edu.year is valid
-      const yearText = edu.year;
-      state.doc.setFont(PDF_CONFIG.fontFamily, 'bold'); // Ensure year is bold
-      const yearWidth = state.doc.getTextWidth(yearText);
-      const yearX = PDF_CONFIG.margins.left + PDF_CONFIG.contentWidth - yearWidth; // CORRECTED calculation
-      // Slight upward tweak (~0.5mm) so the date visually aligns with the degree text
-      const yearY = initialYForEdu - 0.5;
-      state.doc.text(yearText, yearX, yearY);
-      state.doc.setFont(PDF_CONFIG.fontFamily, 'normal'); // Reset font to normal after drawing year
-    }
     totalHeight += degreeHeight + schoolHeight + cgpaHeight;
     if (index < education.length - 1) {
-      state.currentY += 1;
-      totalHeight += 1;
+      state.currentY += PDF_CONFIG.spacing.entrySpacing;
+      totalHeight += PDF_CONFIG.spacing.entrySpacing;
     }
   });
   return totalHeight;
@@ -698,19 +659,15 @@ function drawProjects(state: PageState, projects: any[], PDF_CONFIG: any): numbe
     if (project.bullets && project.bullets.length > 0) {
       state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
       project.bullets.forEach((bullet: string) => {
-        const bulletText = `• ${bullet}`;
-        const bulletHeight = drawText(state, bulletText, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-          fontSize: PDF_CONFIG.fonts.body.size,
-          maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-        });
+        const bulletHeight = drawBullet(state, bullet, PDF_CONFIG);
         totalHeight += bulletHeight;
       });
       state.currentY += PDF_CONFIG.spacing.bulletListSpacing;
     }
 
     if (index < projects.length - 1) {
-      state.currentY += 1;
-      totalHeight += 1;
+      state.currentY += PDF_CONFIG.spacing.entrySpacing;
+      totalHeight += PDF_CONFIG.spacing.entrySpacing;
     }
   });
 
@@ -824,7 +781,6 @@ function drawProfessionalSummary(state: PageState, summary: string, PDF_CONFIG: 
     maxWidth: PDF_CONFIG.contentWidth
   });
   totalHeight += summaryHeight;
-  state.currentY += 3;
   return totalHeight;
 }
 
@@ -832,14 +788,12 @@ function drawProfessionalSummary(state: PageState, summary: string, PDF_CONFIG: 
 function drawCareerObjective(state: PageState, objective: string, PDF_CONFIG: any): number {
   if (!objective) return 0;
   let totalHeight = drawSectionTitle(state, 'Career Objective', PDF_CONFIG);
-  state.currentY += 3;
   const objectiveHeight = drawText(state, objective, PDF_CONFIG.margins.left, PDF_CONFIG, {
     fontSize: PDF_CONFIG.fonts.body.size,
     fontWeight: PDF_CONFIG.fonts.body.weight,
     maxWidth: PDF_CONFIG.contentWidth
   });
   totalHeight += objectiveHeight;
-  state.currentY += 3;
   return totalHeight;
 }
 
@@ -854,14 +808,10 @@ function drawAchievementsAndExtras(state: PageState, resumeData: ResumeData, PDF
     if (!checkPageSpace(state, 10, PDF_CONFIG)) {
       addNewPage(state, PDF_CONFIG);
     }
-    const itemHeight = drawText(state, `• ${item}`, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-      fontSize: PDF_CONFIG.fonts.body.size,
-      maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-    });
+    const itemHeight = drawBullet(state, item, PDF_CONFIG);
     totalHeight += itemHeight;
   });
 
-  state.currentY += 2;
   return totalHeight;
 }
 
@@ -875,21 +825,18 @@ function drawAdditionalSection(state: PageState, section: { title: string; bulle
     if (!checkPageSpace(state, 10, PDF_CONFIG)) {
       addNewPage(state, PDF_CONFIG);
     }
-    const bulletHeight = drawText(state, `• ${bullet}`, PDF_CONFIG.margins.left + PDF_CONFIG.spacing.bulletIndent, PDF_CONFIG, {
-      fontSize: PDF_CONFIG.fonts.body.size,
-      maxWidth: PDF_CONFIG.contentWidth - PDF_CONFIG.spacing.bulletIndent
-    });
+    const bulletHeight = drawBullet(state, bullet, PDF_CONFIG);
     totalHeight += bulletHeight;
   });
 
-  state.currentY += 2;
   return totalHeight;
 }
 
 
 // Draws the resume into a jsPDF document; the callers decide what to do with it.
-const renderResumePDF = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<jsPDF> => {
+const renderResumePDF = async (sourceResume: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<jsPDF> => {
   // Validate resume data before attempting export
+  const resumeData = toPdfSafe(sourceResume);
   if (!resumeData) {
     throw new Error('Resume data is required for PDF export');
   }
@@ -956,7 +903,8 @@ const renderResumePDF = async (resumeData: ResumeData, userType: UserType = 'exp
       creator: 'Resume Optimizer'
     });
 
-    state.currentY = PDF_CONFIG.spacing.nameFromTop;
+    // Text is placed by its baseline, so the capitals start at the margin.
+    state.currentY = PDF_CONFIG.margins.top + PDF_CONFIG.fonts.name.size * 0.25;
     drawText(state, resumeData.name.toUpperCase(), PDF_CONFIG.margins.left, PDF_CONFIG, {
       fontSize: PDF_CONFIG.fonts.name.size,
       fontWeight: PDF_CONFIG.fonts.name.weight,
@@ -965,8 +913,6 @@ const renderResumePDF = async (resumeData: ResumeData, userType: UserType = 'exp
     state.currentY += PDF_CONFIG.spacing.afterName;
 
     drawContactInfo(state, resumeData, PDF_CONFIG);
-    
-    state.currentY += 3;
 
     if (userType === 'experienced' && resumeData.summary && resumeData.summary.trim() !== '') {
       drawProfessionalSummary(state, resumeData.summary, PDF_CONFIG);
@@ -1014,7 +960,7 @@ const renderResumePDF = async (resumeData: ResumeData, userType: UserType = 'exp
     const totalPages = state.currentPage;
     if (totalPages > 1) {
       for (let i = 1; i <= totalPages; i++) {
-        if (i > 1) { doc.setPage(i); }
+        doc.setPage(i);
         const pageText = `Page ${i} of ${totalPages}`;
         doc.setFont(PDF_CONFIG.fontFamily, 'normal');
         doc.setFontSize(9);
@@ -1055,8 +1001,40 @@ export const exportToPDF = async (resumeData: ResumeData, userType: UserType = '
 export const exportToPDFBlob = async (resumeData: ResumeData, userType: UserType = 'experienced', options: ExportOptions = defaultExportOptions): Promise<Blob> =>
   (await renderResumePDF(resumeData, userType, options)).output('blob');
 
+// Smallest body size still comfortable to read on a resume.
+const MIN_FIT_BODY_SIZE = 9;
+
+/**
+ * Finds the largest compact settings that put the resume on one page, by
+ * rendering the real PDF and counting its pages. When even the smallest size
+ * runs over, returns that size and its page count so the caller can say so.
+ */
+export const fitResumeToOnePage = async (
+  resumeData: ResumeData,
+  userType: UserType,
+  base: ExportOptions,
+): Promise<{ options: ExportOptions; pages: number }> => {
+  let last = { options: base, pages: Infinity };
+  for (let body = 11; body >= MIN_FIT_BODY_SIZE; body -= 0.5) {
+    const options: ExportOptions = {
+      ...base,
+      layoutType: 'compact',
+      nameSize: Math.min(22, body + 10),
+      sectionHeaderSize: body + 1.5,
+      subHeaderSize: body,
+      bodyTextSize: body,
+      sectionSpacing: body >= 10 ? 3 : 2,
+      entrySpacing: body >= 10 ? 1.5 : 1,
+    };
+    const pages = (await renderResumePDF(resumeData, userType, options)).getNumberOfPages();
+    last = { options, pages };
+    if (pages === 1) break;
+  }
+  return last;
+};
+
 // Centralized getFileName function (from exportUtils.ts)
-export const getFileName = (resumeData: ResumeData, fileExtension: 'pdf' | 'doc'): string => {
+export const getFileName = (resumeData: ResumeData, fileExtension: 'pdf' | 'docx'): string => {
     const namePart = resumeData.name.replace(/\s+/g, '_');
     const rolePart = resumeData.targetRole ? `_${resumeData.targetRole.replace(/\s+/g, '_')}` : '';
     // Clean filename: Name_Role_Resume.pdf (no "Optimized" suffix)
@@ -1074,12 +1052,12 @@ export const exportToWord = async (resumeData: ResumeData, userType: UserType = 
     throw new Error('Resume must have a name to export');
   }
 
-  const fileName = getFileName(resumeData, 'doc');
+  const fileName = getFileName(resumeData, 'docx');
   try {
     console.log('Generating Word document...');
-    const htmlContent = generateWordHTMLContent(resumeData, userType);
-    console.log('Word HTML content generated successfully');
-    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-word' });
+    const blob = new Blob([buildResumeDocx({ ...resumeData, certifications: getEffectiveCertifications(resumeData) }, userType) as BlobPart], {
+      type: DOCX_MIME,
+    });
     triggerMobileDownload(blob, fileName);
     console.log('Word document downloaded successfully');
   } catch (error) {
@@ -1089,349 +1067,4 @@ export const exportToWord = async (resumeData: ResumeData, userType: UserType = 
     }
     throw new Error('Word export failed. Please try again.');
   }
-};
-
-const generateWordHTMLContent = (data: ResumeData, userType: UserType = 'experienced'): string => {
-  const contactParts: string[] = [];
-
-  const addContactFieldHtml = (label: string, fieldValue?: string | null, fieldType: 'phone' | 'email' | 'url' | 'text' = 'text', linkType?: 'tel' | 'mailto' | 'http') => {
-    if (!fieldValue) return;
-    const parts = fieldValue.split(/[,|]/).map(p => p.trim());
-    const validParts = parts.filter(p => isValidField(p, fieldType));
-    if (validParts.length > 0) {
-      const content = validParts.map(part => {
-        if (linkType === 'tel') return `<a href="tel:${part}" style="color: #2563eb !important; text-decoration: underline !important;">${part}</a>`;
-        if (linkType === 'mailto') return `<a href="mailto:${part}" style="color: #2563eb !important; text-decoration: underline !important;">${part}</a>`;
-        if (linkType === 'http') return `<a href="${part}" target="_blank" rel="noopener noreferrer" style="color: #2563eb !important; text-decoration: underline !important;">${part}</a>`;
-        return part;
-      }).join(' | ');
-      contactParts.push(`${content}`); // Removed label for cleaner display
-    }
-  };
-
-  addContactFieldHtml('Phone no', data.phone, 'phone', 'tel');
-  addContactFieldHtml('Email', data.email, 'email', 'mailto');
-  addContactFieldHtml('LinkedIn', data.linkedin, 'url', 'http');
-  addContactFieldHtml('GitHub', data.github, 'url', 'http');
-
-  const contactInfo = contactParts.join(' | ');
-
-  const summaryHtml = data.summary ? `
-  <div style="margin-top: 5pt;">
-    <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">PROFESSIONAL SUMMARY</div>
-    <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-    <p style="margin-bottom: 12pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10pt;">${data.summary}</p>
-  </div>
-` : '';
-
-  const educationHtml = data.education && data.education.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">EDUCATION</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      ${data.education.map(edu => `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 2pt;">
-          <tr>
-            <td style="padding: 0; vertical-align: top; text-align: left;">
-              <div class="degree" style="font-size: 9.5pt; font-weight: bold; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${edu.degree}</div>
-              <div class="school" style="font-size: 9.5pt; font-weight: normal; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${edu.school}${isValidField(edu.location) ? `, ${edu.location}` : ''}</div>
-              ${isValidField(edu.cgpa) ? `<div style="font-size: 9.5pt; color: #4B5563; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">CGPA: ${edu.cgpa}</div>` : ''}
-            </td>
-            <td style="padding: 0; vertical-align: top; text-align: right; white-space: nowrap;">
-              <div class="year" style="font-size: 9.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: bold;">${edu.year}</div>
-            </td>
-          </tr>
-        </table>
-      `).join('')}
-    </div>
-  ` : '';
-
-  const workExperienceHtml = data.workExperience && data.workExperience.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${userType === 'fresher' ? 'WORK EXPERIENCE' : 'EXPERIENCE'}</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      ${data.workExperience.map(job => `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 1pt;">
-          <tr>
-            <td style="padding: 0; vertical-align: top; text-align: left;">
-              <div class="job-title" style="font-size: 9.5pt; font-weight: bold; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${job.role} | ${job.company}${isValidField(job.location) ? `, ${job.location}` : ''}</div>
-            </td>
-            <td style="padding: 0; vertical-align: top; text-align: right; white-space: nowrap;">
-              <div class="year" style="font-size: 9.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: normal;">${job.year}</div>
-            </td>
-          </tr>
-        </table>
-        ${job.bullets && job.bullets.length > 0 ? `
-          <ul class="bullets" style="margin-left: 5mm; margin-bottom: 6pt; margin-top: 2pt; list-style-type: disc;">
-            ${job.bullets.map(bullet => `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 2pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${bullet}</li>`).join('')}
-          </ul>
-        ` : ''}
-      `).join('')}
-    </div>
-  ` : '';
-
-  const projectsHtml = data.projects && data.projects.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">PROJECTS</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      ${data.projects.map(project => `
-        <div style="margin-bottom: 6pt;">
-          <div class="project-title" style="font-size: 9.5pt; font-weight: bold; margin-bottom: 1pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${project.title}</div>
-          ${project.bullets && project.bullets.length > 0 ? `
-            <ul class="bullets" style="margin-left: 5mm; margin-bottom: 6pt; margin-top: 2pt; list-style-type: disc;">
-              ${project.bullets.map(bullet => `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 2pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${bullet}</li>`).join('')}
-            </ul>
-          ` : ''}
-        </div>
-      `).join('')}
-    </div>
-  ` : '';
-
-  const skillsHtml = data.skills && data.skills.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">SKILLS</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      ${data.skills.map(skill => `
-        <div class="skills-item" style="font-size: 9.5pt; margin: 0.5pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-          <span class="skill-category" style="font-weight: bold; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${skill.category}:</span> ${skill.list ? skill.list.join(', ') : ''}
-        </div>
-      `).join('')}
-    </div>
-  ` : '';
-
-  const effectiveCerts = getEffectiveCertifications(data);
-  const certificationsHtml = effectiveCerts && effectiveCerts.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">CERTIFICATIONS</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      <ul class="bullets" style="margin-left: 5mm; margin-bottom: 6pt; margin-top: 6pt; list-style-type: disc;">
-        ${effectiveCerts
-          .filter((cert: any) =>
-            typeof cert === 'string'
-              ? (String(cert).trim().length > 0 && !isPlaceholderText(String(cert)))
-              : (cert && (!isPlaceholderText(toPlainText(cert)) || !isPlaceholderText(toPlainText(cert.description))))
-          )
-          .map((cert: any) => {
-          const { title, description } = getCertificationDisplayParts(cert);
-          const primary = title || description;
-          const certText = description && title ? `
-            <div style="font-weight: bold; margin-bottom: 2pt;">${title}</div>
-            <div style="font-size: 8.5pt; font-weight: normal; color: #4a5568; margin-left: 3mm; line-height: 1.3;">${description}</div>
-          ` : primary;
-          return `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 4pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${certText}</li>`;
-        }).join('')}
-      </ul>
-    </div>
-  ` : '';
-
-  const achievementsHtml = data.achievements && data.achievements.length > 0 ? `
-    <div style="margin-top: 5pt;">
-      <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">ACHIEVEMENTS</div>
-      <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-      <ul class="bullets" style="margin-left: 7.5mm; margin-bottom: 6pt; margin-top: 2pt; list-style-type: disc;">
-        ${data.achievements.map(item => `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 2pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${item}</li>`).join('')}
-      </ul>
-    </div>
-  ` : '';
-
-  let sectionOrderHtml = '';
-
-  const careerObjectiveHtml = data.careerObjective && data.careerObjective.trim() !== '' ? `
-  <div style="margin-top: 5pt;">
-    <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">CAREER OBJECTIVE</div>
-    <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-    <p style="margin-bottom: 12pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10pt;">${data.careerObjective}</p>
-  </div>
-` : '';
-
-
-  const additionalSectionsHtml = data.additionalSections && data.additionalSections.length > 0 ? `
-    ${data.additionalSections.map(section => `
-      <div style="margin-top: 5pt;">
-        <div class="section-title" style="font-size: 10pt; font-weight: bold; margin-bottom: 4pt; text-transform: uppercase; letter-spacing: 0.5pt; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${section.title.toUpperCase()}</div>
-        <div class="section-underline" style="border-bottom: 0.5pt solid #808080; margin-bottom: 4pt; height: 1px;"></div>
-        <ul class="bullets" style="margin-left: 5mm; margin-bottom: 6pt; margin-top: 2pt; list-style-type: disc;">
-          ${section.bullets.map(bullet => `<li class="bullet" style="font-size: 9.5pt; line-height: 1.4; margin: 0 0 2pt 0; font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${bullet}</li>`).join('')}
-        </ul>
-      </div>
-    `).join('')}
-  ` : '';
-
-  if (userType === 'experienced') {
-    // ATS-Compliant Order: Summary → Skills → Experience → Projects → Education
-    sectionOrderHtml = `
-      ${summaryHtml}
-      ${skillsHtml}
-      ${workExperienceHtml}
-      ${projectsHtml}
-      ${educationHtml}
-      ${certificationsHtml}
-      ${additionalSectionsHtml}
-    `;
-  } else if (userType === 'student') {
-    sectionOrderHtml = `
-      ${careerObjectiveHtml}
-      ${educationHtml}
-      ${skillsHtml}
-      ${projectsHtml}
-      ${workExperienceHtml}
-      ${certificationsHtml}
-      ${achievementsHtml}
-      ${additionalSectionsHtml}
-    `;
-  } else {
-    sectionOrderHtml = `
-      ${careerObjectiveHtml}
-      ${skillsHtml}
-      ${workExperienceHtml}
-      ${projectsHtml}
-      ${educationHtml}
-      ${certificationsHtml}
-      ${achievementsHtml}
-      ${additionalSectionsHtml}
-    `;
-  }
-
-  return `
-    <!DOCTYPE html>
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-    <head>
-      <meta charset="utf-8">
-      <meta name="ProgId" content="Word.Document">
-      <meta name="Generator" content="Microsoft Word 15">
-      <meta name="Originator" content="Microsoft Word 15">
-      <title>${data.name} - Resume</title>
-      <style>
-        @page {
-          margin-top: 17.78mm !important; /* ~0.7 inch */
-          margin-bottom: 17.78mm !important; /* ~0.7 inch */
-          margin-left: 17.78mm !important; /* ~0.7 inch */
-          margin-right: 17.78mm !important; /* ~0.7 inch */
-        }
-
-        body {
-          font-family: "Calibri", sans-serif !important;
-          font-size: 10pt !important;
-          line-height: 1.25 !important;
-          color: #000 !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          background: white !important;
-        }
-
-        a, a:link, a:visited, a:active {
-          color: #2563eb !important;
-          text-decoration: underline !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-          font-weight: inherit !important;
-          font-size: inherit !important;
-        }
-
-        a:hover {
-          color: #1d4ed8 !important;
-          text-decoration: underline !important;
-        }
-
-        b, strong {
-          font-weight: bold !important;
-          color: #000 !important;
-        }
-
-        .header {
-          text-align: center !important;
-          margin-bottom: 6mm !important;
-        }
-        .name {
-          font-size: 18pt !important;
-          font-weight: bold !important;
-          letter-spacing: 1pt !important;
-          margin-bottom: 4pt !important;
-          text-transform: uppercase !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .contact {
-          font-size: 9pt !important;
-          margin-bottom: 6pt !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .header-line {
-          border: none !important;
-          border-top: 0.5pt solid #404040 !important;
-          margin: 0 0 !important; /* Remove horizontal margin */
-          height: 1px !important;
-          width: 100% !important; /* Ensure line spans full content width */
-        }
-        .section-title {
-          font-size: 10pt !important;
-          font-weight: bold !important;
-          margin-top: 10pt !important;
-          margin-bottom: 4pt !important;
-          text-transform: uppercase !important;
-          letter-spacing: 0.5pt !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .section-underline {
-          border-bottom: 0.5pt solid #808080 !important;
-          margin-bottom: 4pt !important;
-          height: 1px !important;
-        }
-        /* Removed .job-header, .edu-header flex styles as they are replaced by table */
-        .job-title, .degree {
-          font-size: 9.5pt !important;
-          font-weight: bold !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .company, .school {
-          font-size: 9.5pt !important;
-          font-weight: normal !important; /* Changed to normal */
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .year {
-          font-size: 9.5pt !important;
-          font-weight: bold !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .bullets {
-          margin-left: 5mm !important; /* Changed from 4mm to 5mm */
-          margin-bottom: 4pt !important;
-          margin-top: 2pt !important;
-        }
-        .bullet {
-          font-size: 9.5pt !important;
-          line-height: 1.25 !important; /* Changed from 1.4 to 1.25 */
-          margin: 0 0 1pt 0 !important; /* Changed from 2pt to 1pt */
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .skills-item {
-          font-size: 9.5pt !important;
-          margin: 1.5pt 0 !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .skill-category {
-          font-weight: bold !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-        .project-title {
-          font-size: 9.5pt !important;
-          font-weight: bold !important;
-          margin-bottom: 2pt !important;
-          font-family: Calibri, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-        }
-
-        @media print {
-          body { margin: 0 !important; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="name">${data.name.toUpperCase()}</div>
-        ${contactInfo ? `<div class="contact">${contactInfo}</div>` : ''}
-        
-      </div>
-
-      ${sectionOrderHtml}
-
-    </body>
-    </html>
-  `;
 };

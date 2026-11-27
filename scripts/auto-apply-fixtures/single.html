@@ -62,6 +62,15 @@
       byId('problems').innerHTML = problems.map((problem) => `<div role="alert">${problem}</div>`).join('');
       return;
     }
+    // ?code=1: the first Submit asks for a code sent by email, one box a letter,
+    // the way Greenhouse does.
+    if (new URLSearchParams(location.search).has('code')) {
+      if (!byId('codes')) {
+        byId('problems').innerHTML = '<p>Enter the security code we emailed you.</p><div id="codes">' + '<input type="text" maxlength="1">'.repeat(6) + '</div>';
+        return;
+      }
+      if ([...document.querySelectorAll('#codes input')].map((el) => el.value).join('') !== '482913') return;
+    }
     window.__sent = sent;
     // ?silent=1: the application is received but the page says nothing, like a
     // site whose confirmation never loads.

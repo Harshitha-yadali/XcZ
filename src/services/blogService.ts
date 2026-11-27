@@ -107,7 +107,7 @@ export const blogService = {
       const categories = await this.getPostCategories(post.id);
       const tags = await this.getPostTags(post.id);
 
-      await this.incrementViewCount(post.id);
+      void this.incrementViewCount(post.id);
 
       return { ...post, categories, tags };
     } catch (error) {
@@ -283,14 +283,8 @@ export const blogService = {
 
   async incrementViewCount(postId: string): Promise<void> {
     try {
-      const { error } = await supabase.rpc('increment_blog_view_count', { post_id: postId }).maybeSingle();
-
-      if (error) {
-        await supabase
-          .from('blog_posts')
-          .update({ view_count: supabase.sql`view_count + 1` })
-          .eq('id', postId);
-      }
+      const { error } = await supabase.rpc('increment_blog_view_count', { post_id: postId });
+      if (error) throw error;
     } catch (error) {
       console.error('Error incrementing view count:', error);
     }
@@ -314,8 +308,6 @@ export const blogService = {
   async getBlogStatistics(): Promise<{
     totalPosts: number;
     totalCategories: number;
-    featuredPosts: number;
-    averageReadingTime: number;
   }> {
     try {
       const { count: totalPosts } = await supabase
@@ -327,34 +319,15 @@ export const blogService = {
         .from('blog_categories')
         .select('*', { count: 'exact', head: true });
 
-      const { count: featuredPosts } = await supabase
-        .from('blog_posts')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'published')
-        .eq('is_featured', true);
-
-      const { data: posts } = await supabase
-        .from('blog_posts')
-        .select('estimated_reading_time')
-        .eq('status', 'published');
-
-      const averageReadingTime = posts && posts.length > 0
-        ? Math.round(posts.reduce((sum, p) => sum + (p.estimated_reading_time || 5), 0) / posts.length)
-        : 5;
-
       return {
         totalPosts: totalPosts || 0,
-        totalCategories: totalCategories || 0,
-        featuredPosts: featuredPosts || 0,
-        averageReadingTime
+        totalCategories: totalCategories || 0
       };
     } catch (error) {
       console.error('Error fetching blog statistics:', error);
       return {
         totalPosts: 0,
-        totalCategories: 0,
-        featuredPosts: 0,
-        averageReadingTime: 5
+        totalCategories: 0
       };
     }
   },
@@ -366,11 +339,7 @@ export const blogService = {
       search?: string;
       category_id?: string;
       tag_id?: string;
-      reading_difficulty?: string;
-      reading_time_min?: number;
-      reading_time_max?: number;
-      is_featured?: boolean;
-      sort_by?: 'newest' | 'oldest' | 'most_viewed' | 'trending';
+      sort_by?: 'newest' | 'oldest' | 'most_viewed';
     }
   ): Promise<BlogPostsResponse> {
     try {
@@ -381,22 +350,6 @@ export const blogService = {
 
       if (filters?.search) {
         query = query.or(`title.ilike.%${filters.search}%,body_content.ilike.%${filters.search}%`);
-      }
-
-      if (filters?.reading_difficulty) {
-        query = query.eq('reading_difficulty', filters.reading_difficulty);
-      }
-
-      if (filters?.reading_time_min) {
-        query = query.gte('estimated_reading_time', filters.reading_time_min);
-      }
-
-      if (filters?.reading_time_max) {
-        query = query.lte('estimated_reading_time', filters.reading_time_max);
-      }
-
-      if (filters?.is_featured !== undefined) {
-        query = query.eq('is_featured', filters.is_featured);
       }
 
       if (filters?.category_id) {
@@ -443,9 +396,6 @@ export const blogService = {
           break;
         case 'most_viewed':
           query = query.order('view_count', { ascending: false });
-          break;
-        case 'trending':
-          query = query.order('trending_score', { ascending: false });
           break;
         case 'newest':
         default:

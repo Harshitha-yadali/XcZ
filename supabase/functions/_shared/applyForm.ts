@@ -6,6 +6,7 @@ import type { Page } from './cdp.ts';
 // website can take the list on its own without the whole apply engine.
 export { isProviderLoginHost, providerName } from './providerHosts.ts';
 import { isProviderLoginHost, providerName } from './providerHosts.ts';
+import { topicAnswer } from './applyTopics.ts';
 
 export type Platform = 'greenhouse' | 'lever' | 'linkedin' | 'naukri' | 'indeed' | 'workday' | 'other';
 
@@ -21,6 +22,32 @@ export interface ApplicantProfile {
   degree?: string;
   graduationYear?: string;
   skills?: string;
+  // The latest job on the resume, for a form's employment section.
+  company?: string;
+  title?: string;
+  startMonth?: string;
+  startYear?: string;
+  endMonth?: string;
+  endYear?: string;
+  /** '0' when every job on the resume is an internship; empty when unsure. */
+  yearsExperience?: string;
+  /** 'Fresher' or 'Student', matched against a form's career-stage options. */
+  careerStage?: string;
+  country?: string;
+  // Scores as the resume states them ("8.13", "92%"), and the degree's subject.
+  tenthScore?: string;
+  twelfthScore?: string;
+  degreeScore?: string;
+  specialization?: string;
+}
+
+/** A score for a question, only when its kind fits: a CGPA is never given where a percentage is asked. */
+function scoreFor(key: string, score = ''): string {
+  const value = Number.parseFloat(score);
+  if (!score || Number.isNaN(value)) return '';
+  if (/percent|%/.test(key)) return value > 10 ? score : '';
+  if (/c?gpa|out of 10/.test(key)) return value <= 10 ? score : '';
+  return score;
 }
 
 export interface FormField {
@@ -80,14 +107,49 @@ export function detectPlatform(url: string): Platform {
   return found ? found[0] : 'other';
 }
 
+/**
+ * Sites where the runner applies start to finish. Anywhere else the user gets
+ * the tailored resume and finishes on the site ("Smart Apply"): sign-ins,
+ * captchas and bot walls there would otherwise fail after the user has waited.
+ */
+export const AUTO_APPLY_PLATFORMS: readonly Platform[] = ['greenhouse', 'lever'];
+export const canAutoApply = (url: string) => AUTO_APPLY_PLATFORMS.includes(detectPlatform(url));
+
 /** A label reduced to a stable key, so a saved answer is found again on the next form. */
 export const answerKey = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120);
+
+/**
+ * Questions never put to the model, whatever it would say: personal facts, legal
+ * statements, consent, and what a resume does not hold. Wider than it has to be
+ * on purpose. A question asked needlessly costs the user a click; a wrong answer
+ * goes to an employer under their name.
+ */
+export const USER_ONLY = new RegExp([
+  // Who they are.
+  'gender|pronoun|\\bsex|birth|\\bdob\\b|\\bage\\b|race|ethnic|national|religio|caste|categor|reservation|marital|disab|\\bpwb?d\\b|veteran|serviceman',
+  // Their family and their documents.
+  'father|mother|parent|guardian|spouse|husband|wife|relative|\\bpan\\b|aadha?ar|passport|\\bssn\\b|licen[cs]e',
+  // Their money.
+  'salary|\\bctc\\b|\\blpa\\b|stipend|package|compensation',
+  // When they can start, and what they will agree to.
+  'notice|serving|immediate|how soon|\\bjoin|available|availability|start date|relocat|willing|comfortable|open to|ready to|shift|bond|commut|travel|work from|\\bwfo\\b|hybrid|on.?site|remote',
+  // Facts a resume does not hold.
+  'backlog|arrear|\\bgap\\b|laptop|wheeler|vehicle|\\bbike\\b|applied|previously|worked (here|at|for|with us)',
+  // Legal statements and consent.
+  'visa|sponsor|authori[sz]|citizen|consent|agree|declar|criminal|convict|arrest|felony|background|drug',
+  'hear about|source',
+].join('|'), 'i');
+
+// A short label can still ask for somebody else's details, or for a wish rather
+// than a fact, or for a place other than where they live now: "Father's name",
+// "Reference email", "Preferred location", "Home city".
+const NOT_THE_APPLICANT = /father|mother|parent|guardian|spouse|husband|wife|emergency|refer|manager|supervisor|recruiter|alternate|secondary|preferred|desired|home|native|permanent/;
 
 function profileAnswer(label: string, profile: ApplicantProfile): string {
   const key = answerKey(label);
   // Contact fields have short labels. A long one is a question that merely
   // mentions "location" or "name", and must be asked rather than guessed.
-  if (key.split(' ').length > 6) return '';
+  if (key.split(' ').length > 6 || NOT_THE_APPLICANT.test(key)) return '';
   const [first, ...rest] = profile.fullName.trim().split(/\s+/);
   if (/first name|given name/.test(key)) return first;
   if (/last name|surname|family name/.test(key)) return rest.join(' ');
@@ -97,17 +159,37 @@ function profileAnswer(label: string, profile: ApplicantProfile): string {
   if (/linkedin/.test(key)) return profile.linkedin;
   if (/github/.test(key)) return profile.github;
   if (/\b(city|location)\b/.test(key)) return profile.location;
+  // Scores and subject, by level; a master's question is not the bachelor's.
+  if (/c?gpa|percent|marks|score|grade/.test(key) && !/m ?tech|master|post ?grad|\bpg\b|if applicable/.test(key)) {
+    if (/\b(12th|xii|hsc|intermediate|senior secondary|higher secondary|puc)\b/.test(key)) return scoreFor(key, profile.twelfthScore);
+    if (/\b(10th|ssc|sslc|matric\w*|class x|secondary)\b/.test(key)) return scoreFor(key, profile.tenthScore);
+    if (/\b(b ?tech|b ?e|bachelor\w*|degree|graduation|ug|undergrad\w*|college|cgpa)\b/.test(key)) return scoreFor(key, profile.degreeScore);
+  }
+  if (/speciali[sz]ation|branch|stream|major|discipline/.test(key) && !/m ?tech|master|12th|intermediate/.test(key)) return profile.specialization || '';
   if (/(graduat\w*|passing|pass ?out) year|year of (graduation|passing)/.test(key)) return profile.graduationYear || '';
   if (/college|university|institute/.test(key)) return profile.college || '';
   if (/degree|qualification/.test(key)) return profile.degree || '';
   if (/\bskills\b/.test(key)) return profile.skills || '';
+  // The employment section. Only these exact labels: a bare "Start date" is
+  // usually "when can you join", which is the user's to answer.
+  if (/^(current )?(company|employer)( name)?$/.test(key)) return profile.company || '';
+  if (/^(current |job )?title$/.test(key)) return profile.title || '';
+  const date = key.match(/^(start|end) date (month|year)$/);
+  if (date) return (profile as any)[`${date[1]}${date[2] === 'month' ? 'Month' : 'Year'}`] || '';
+  if (/^(total )?years of experience$|^(total )?experience in years$/.test(key)) return profile.yearsExperience || '';
+  if (/career stage|candidate type|experience level/.test(key)) return profile.careerStage || '';
+  if (/^country( of residence)?$/.test(key)) return profile.country || '';
   return '';
 }
 
 function pickOption(options: string[], answer: string): string {
   const wanted = answerKey(answer);
   if (!wanted) return '';
+  // Exact, then whole words, then any substring: "India" must find "India +91"
+  // before "British Indian Ocean Territory", which a substring match reaches first.
+  const words = new RegExp(`(^| )${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( |$)`);
   return options.find((option) => answerKey(option) === wanted)
+    ?? options.find((option) => words.test(answerKey(option)))
     ?? options.find((option) => answerKey(option).includes(wanted))
     ?? '';
 }
@@ -122,7 +204,7 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
   for (const field of fields) {
     const key = answerKey(field.label);
     if (field.type === 'file' || !key || field.filled) continue;
-    let value = saved[key] || profileAnswer(field.label, profile) || '';
+    let value = saved[key] || profileAnswer(field.label, profile) || topicAnswer(key, saved) || '';
     if (field.type === 'checks') value = value.split('|').map((part) => pickOption(field.options, part)).filter(Boolean).join(' | ');
     else if (value && field.options.length) value = pickOption(field.options, value);
     // A box is ticked only where the user authorised that exact acknowledgement.
@@ -137,6 +219,19 @@ export function planFill(fields: FormField[], profile: ApplicantProfile, saved: 
     if (value) fills.push({ id: field.id, type: field.type, label: field.label, value });
     else if (field.required && !missing.some((question) => question.key === key)) {
       missing.push({ key, label: field.label, type: field.type, options: field.options });
+    }
+  }
+  // A separate country picker ("India +91") already carries the dial code, so
+  // the phone box wants the number without it; Greenhouse refuses
+  // "+918143601428" there as too long.
+  // When the list was not loaded yet the answer is the bare name ("India"),
+  // chosen later from the suggestions; its code is known all the same.
+  const country = fills.find((fill) => /country/i.test(fill.label))?.value || '';
+  const dial = country.match(/\+(\d{1,4})/)?.[1] || (/^india$/i.test(country.trim()) ? '91' : undefined);
+  if (dial) {
+    for (const fill of fills) {
+      const digits = fill.value.replace(/\D/g, '');
+      if (/phone|mobile/i.test(fill.label) && digits.startsWith(dial) && digits.length > 10) fill.value = digits.slice(dial.length);
     }
   }
   return { fills, missing };
@@ -197,6 +292,14 @@ export function scanForm(): any {
   const firstLine = (el: any) => String(el?.innerText || '').trim().split('\n')[0];
   const namedBy = (el: any) => String(el?.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean)
     .map((id) => (document.getElementById(id) as any)?.innerText).filter(Boolean).join(' ');
+  // Some dropdowns keep their choice beside the input, not in it (Greenhouse's
+  // does), so an empty input there says nothing. An arrow or "Select..." is not a choice.
+  const choiceShown = (el: any) => {
+    const box: any = el.closest('[class*="control" i]') || el.closest('[role="combobox"]');
+    const shown = clean(box?.innerText).replace(/[^\p{L}\p{N} ]/gu, '').trim();
+    return Boolean(shown) && shown !== clean(el.placeholder).replace(/[^\p{L}\p{N} ]/gu, '').trim()
+      && !/^(select|choose|search|please select)\b/i.test(shown);
+  };
   const labelOf = (el: any) => {
     const named = namedBy(el);
     const wrapper = el.closest('[role="combobox"]');
@@ -264,7 +367,7 @@ export function scanForm(): any {
       // Whether this field already holds something. Some forms mark nothing
       // required and only say what is missing once Submit has been pressed, so
       // after a refusal the blank fields are the ones worth asking about.
-      answered: kind === 'checkbox' ? el.checked === true : Boolean(clean(el.value)),
+      answered: kind === 'checkbox' ? el.checked === true : Boolean(clean(el.value)) || (kind === 'combobox' && choiceShown(el)),
       options: kind === 'select' ? [...el.options].filter((option: any) => option.value).map((option: any) => clean(option.text)) : [],
     });
   }
@@ -471,6 +574,35 @@ export function asksForCode(): any {
     .test(document.body?.innerText || '');
 }
 
+/** Types a one-time code into the page's code box, or its row of one-character boxes, and goes on. */
+export function enterCode(code: string): any {
+  const inputs: any[] = [...document.querySelectorAll('input')].filter((el: any) =>
+    el.getClientRects().length > 0 && !el.disabled && !el.readOnly && /^(text|tel|number|password|)$/.test(el.getAttribute('type') || ''));
+  const named = (el: any) => [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.labels?.[0]?.innerText]
+    .filter(Boolean).join(' ');
+  // "Postal code" and "country code" are not this.
+  const isCode = (el: any) => /one-time-code|verif|security.?code|passcode|\botp\b|\bcode\b/i.test(named(el))
+    && !/postal|zip|pin ?code|country|dial|promo|coupon|referral/i.test(named(el));
+  const set = (el: any, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const single = inputs.filter((el) => el.maxLength === 1);
+  const box = inputs.find((el) => el.maxLength !== 1 && isCode(el));
+  if (box) set(box, code);
+  else if (single.length === code.length) single.forEach((el, index) => set(el, code[index]));
+  else return false;
+  const form = (box || single[0]).closest('form') || document;
+  const buttons: any[] = [...form.querySelectorAll('button, input[type=submit], [role=button]')]
+    .filter((el: any) => el.getClientRects().length > 0 && !el.disabled);
+  const label = (el: any) => String(el.innerText || el.value || '').trim();
+  const button = buttons.find((el) => /^(verify|confirm|continue|submit|next|sign in|log in)/i.test(label(el)) && !/resend|with /i.test(label(el)));
+  if (!button) return false;
+  button.click();
+  return true;
+}
+
 /**
  * A sign-in page that offers a choice of providers before any password box:
  * Workday opens with "Sign in with Apple / Google / LinkedIn / email". Only
@@ -612,8 +744,21 @@ export function hasCaptchaWall(): any {
  */
 export function blockedWall(): any {
   const text = (document.body?.innerText || '').slice(0, 800);
-  return /access denied|you don'?t have permission to access|request (was )?blocked|unusual traffic|automated (access|traffic)|bot detected|forbidden/i.test(text)
-    && !document.querySelector('input:not([type=hidden]), textarea, select');
+  if (document.querySelector('input:not([type=hidden]), textarea, select')) return false;
+  // A page left with nothing at all on it is how SmartRecruiters refuses a
+  // visit. A form inside a frame looks the same from here, so that is let be.
+  if (!text.trim() && !document.querySelector('iframe')) return true;
+  return /access denied|you don'?t have permission to access|request (was )?blocked|unusual traffic|automated (access|traffic)|bot detected|forbidden|just a moment|performing security verification|checking your browser|verify you are (a |not a )?human|enable javascript and cookies to continue|attention required|please complete the security check|\bray id\b/i.test(text);
+}
+
+/**
+ * True when the page says this job is over. Asked only once no form has turned
+ * up: a live posting can say "until the position has been filled", and that must
+ * never stop a real application.
+ */
+export function closedNotice(): any {
+  return /job (is )?no longer (available|open)|this (job|role|position) (is )?no longer|no longer accepting applications|\b(job|position|role|posting|opening|vacancy)\b.{0,60}has been filled|(job|posting) has expired|this (job|role|position)( listing)? is closed\b(?!-)|job (listing )?not found|applications? (have |are |is )?closed/i
+    .test(document.body?.innerText || '');
 }
 
 /**
@@ -690,6 +835,22 @@ export function sameSite(host: string, jobUrl: string): boolean {
 }
 
 /**
+ * True when the job link's own site has moved the browser off the job: its
+ * number was in the link and is gone from the address now. A closed job often
+ * lands on the careers home page, and a form found there is not this job's.
+ * Another site is a hiring system with numbers of its own, so it does not count.
+ */
+export function leftTheJob(jobUrl: string, nowUrl: string): boolean {
+  try {
+    const ids = new URL(jobUrl).pathname.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{5,}/gi);
+    if (!ids) return false;
+    return sameSite(new URL(nowUrl).hostname, jobUrl) && !nowUrl.toLowerCase().includes(ids[ids.length - 1].toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether a saved login may be typed on a sign-in page: only over a secure
  * connection, and only on the job link's own site. Where a page sends the
  * browser is its choice; where a password goes is not.
@@ -752,6 +913,13 @@ export async function runApplication(page: Page, options: {
    * so the caller should record that a submission was attempted.
    */
   onSubmitting?: () => Promise<void>;
+  /** Says what the run is doing, for the user to follow. */
+  onStage?: (stage: 'logging_in' | 'filling_form') => Promise<void>;
+  /**
+   * The code a site has just emailed to the applicant's PrimoBoost address, or
+   * '' when none arrived there. A code sent anywhere else is the user's to enter.
+   */
+  codeFor?: (host: string) => Promise<string>;
   /**
    * Optional: answers questions the profile cannot, from the resume. Returns
    * answers by question key; anything it leaves out is asked of the user.
@@ -762,7 +930,14 @@ export async function runApplication(page: Page, options: {
   // leaves an application in no state at all. Stopping ourselves first turns
   // that into an answer the user can act on.
   const startedAt = Date.now();
-  const outOfTime = () => Date.now() - startedAt > 110_000;
+  let waited = 0; // for an emailed code, which is not time the run is stuck
+  const outOfTime = () => Date.now() - startedAt - waited > 110_000;
+  const codeFor = async (host: string) => {
+    const from = Date.now();
+    const code = await options.codeFor!(host).catch(() => '');
+    waited += Date.now() - from;
+    return code;
+  };
 
   await page.send('Page.navigate', { url: applyUrl(options.url) });
 
@@ -790,6 +965,17 @@ export async function runApplication(page: Page, options: {
   const QUESTIONNAIRE_FIELDS = 5;
   const takesResume = (found: FormField[]) => found.some((field) => field.type === 'file');
   let fields = await settle();
+
+  // Checked before anything is typed. A sign-in page does not count: it comes
+  // back to the job afterwards.
+  const landedOn: string = await page.evaluate(() => location.href).catch(() => '');
+  if (leftTheJob(options.url, landedOn) && !(await page.evaluate(loginStage).catch(() => ''))) {
+    return failed('This job link now opens a different page, so the job has probably closed. Nothing was filled in or sent.');
+  }
+  const noForm = async () => (await page.evaluate(closedNotice).catch(() => false))
+    ? 'This job has closed, so nothing was sent.'
+    : 'No application form was found at the job link. The job may be closed.';
+
   // A page is an application form if it takes a resume, or if it is an early
   // page of a longer form (a few fields and a Next button). In the second
   // case nothing is submitted unless a later page did take the resume.
@@ -880,6 +1066,7 @@ export async function runApplication(page: Page, options: {
           return failed(`This job is behind a ${named} sign-in. We never use your ${named} account on your behalf, so please apply from the job link yourself. Your tailored resume is ready.`);
         }
         // One attempt per run: a sign-in page that comes back means it was refused.
+        await options.onStage?.('logging_in');
         const login = signedIn ? null : await options.loginFor?.(page1.host);
         if (!login) {
           // Nothing saved for this address. Where what stands in front of us is
@@ -957,6 +1144,20 @@ export async function runApplication(page: Page, options: {
       }
       fields = await settle();
     }
+    // One code per run: a second request means the first was refused.
+    if (!(await isForm()) && signedIn && options.codeFor && await page.evaluate(asksForCode).catch(() => false)) {
+      const page2 = await whereNow();
+      const code = ownSite(page2.protocol, page2.host) && !isProviderLoginHost(page2.host) ? await codeFor(page2.host) : '';
+      if (code && await page.evaluate(enterCode, code)) {
+        await sleep(4000);
+        fields = await settle();
+        if (!(await isForm())) {
+          const next = await page.evaluate(followApplyLink).catch(() => null);
+          if (next && next !== 'clicked') await page.send('Page.navigate', { url: next });
+          if (next) fields = await settle();
+        }
+      }
+    }
     if (!(await isForm()) && await stageOf()) return askForLogin((await whereNow()).host, signedIn);
     if (!(await isForm()) && signedIn && await page.evaluate(asksForCode).catch(() => false)) {
       return failed('The site asked for a verification code after sign-in. Only you can enter that, so please finish this application on the site.');
@@ -964,7 +1165,11 @@ export async function runApplication(page: Page, options: {
     if (!(await isForm()) && await page.evaluate(hasCaptchaWall).catch(() => false)) {
       return failed('This site puts a captcha in front of its application form, so we cannot fill it for you.');
     }
-    if (!(await isForm()) && await page.evaluate(blockedWall).catch(() => false)) {
+    // Workday answers an automated visit with a security check or a blank page,
+    // which says nothing about whether the job is open.
+    const turnedAway = async () => (await page.evaluate(blockedWall).catch(() => false))
+      || (/(^|\.)myworkdayjobs\.com$/.test((await whereNow()).host) && !(await page.evaluate(closedNotice).catch(() => false)));
+    if (!(await isForm()) && await turnedAway()) {
       return failed(`${(await whereNow()).host || 'This site'} refuses visits it thinks are automated, so this application has to be made by you. Your tailored resume is ready.`);
     }
     if (!(await isForm())) {
@@ -974,10 +1179,10 @@ export async function runApplication(page: Page, options: {
       if (provider) {
         return failed(`${(await whereNow()).host || 'This site'} only lets you sign in with ${provider}, and we never use your ${provider} account on your behalf. Please apply from the job link yourself. Your tailored resume is ready.`);
       }
-      return failed('No application form was found at the job link.');
+      return failed(await noForm());
     }
   }
-  if (fields.length < 2) return failed('No application form was found at the job link. The job may be closed.');
+  if (fields.length < 2) return failed(await noForm());
 
   // Fills the given fields, or returns the questions that block it. Nothing is
   // typed into the form while any required answer is missing.
@@ -1002,12 +1207,14 @@ export async function runApplication(page: Page, options: {
     for (const fill of plan.fills.filter((candidate) => candidate.type === 'combobox')) {
       await openDropdown(page, fill.id);
       if (await page.evaluate(pickOpenOption, { id: fill.id, value: fill.value })) continue;
-      // ponytail: an autocomplete (city search) lists nothing until typed into,
-      // so type and take its first suggestion. Match the suggestion text if
-      // wrong cities show up.
+      // An autocomplete (city search), or a list still loading when it was read,
+      // shows nothing until typed into. Type, then choose among the suggestions
+      // as planFill would: the first one is not safe, since "India" lists
+      // "British Indian Ocean Territory" above "India +91".
       await page.send('Input.insertText', { text: fill.value });
       await sleep(1500);
-      await press(page, 'Enter', 13);
+      const best = pickOption(await page.evaluate(openOptions, fill.id), fill.value);
+      if (!best || !(await page.evaluate(pickOpenOption, { id: fill.id, value: best }))) await press(page, 'Enter', 13);
       await sleep(300);
     }
     return { ...plan, resumeAttached };
@@ -1017,7 +1224,6 @@ export async function runApplication(page: Page, options: {
   let resumeAttached = false;
   let scan = fields;
   let action = { kind: '', disabled: false };
-  const signature = (found: FormField[]) => found.map((field) => field.type + ' ' + field.label).join('|');
   const filledSoFar = () => Object.fromEntries(allFills.map((fill) => [fill.label, fill.value]));
   // A form may keep its button off until a consent box is ticked. Consent is
   // the user's to give, so the unticked boxes are asked, never ticked for them.
@@ -1033,22 +1239,30 @@ export async function runApplication(page: Page, options: {
     return { status: 'needs_input', questions: boxes, fields: scan };
   };
 
+  await options.onStage?.('filling_form');
   // A form may run over several pages: fill each, press Next, and stop at the
   // page that has Submit.
   for (let pageNumber = 1; ; pageNumber++) {
     const first = await fillIn(fields, resumeAttached ? null : options.resume);
     if (first.missing.length) return { status: 'needs_input', questions: first.missing, fields };
+    allFills.push(...first.fills);
 
-    // Some forms add fields once earlier ones are answered (pick a degree, get
-    // a college list): look once more and handle only what is new.
-    await sleep(600);
+    // Some forms add fields once earlier ones are answered (pick a country, get
+    // its states, pick a state, get its cities): keep looking until nothing new
+    // comes, and handle only what is new.
     // A text box that turned into a dropdown counts as new, so the kind is part of the key.
-    const seen = new Set(fields.map((field) => field.type + ' ' + answerKey(field.label)));
-    scan = await page.evaluate(scanForm).catch(() => fields);
-    const added = scan.filter((field) => field.type !== 'file' && !seen.has(field.type + ' ' + answerKey(field.label)));
-    const second = await fillIn(added, null);
-    if (second.missing.length) return { status: 'needs_input', questions: second.missing, fields: scan };
-    allFills.push(...first.fills, ...second.fills);
+    const fieldKey = (field: FormField) => field.type + ' ' + answerKey(field.label);
+    const seen = new Set(fields.map(fieldKey));
+    for (let look = 0; look < 4; look++) {
+      await sleep(600);
+      scan = await page.evaluate(scanForm).catch(() => fields);
+      const added = scan.filter((field) => field.type !== 'file' && !seen.has(fieldKey(field)));
+      if (!added.length) break;
+      const next = await fillIn(added, null);
+      if (next.missing.length) return { status: 'needs_input', questions: next.missing, fields: scan };
+      allFills.push(...next.fills);
+      added.forEach((field) => seen.add(fieldKey(field)));
+    }
 
     if (!resumeAttached && takesResume(fields)) {
       if (first.resumeAttached) resumeAttached = true;
@@ -1059,8 +1273,24 @@ export async function runApplication(page: Page, options: {
     // posting often redirects to the employer's job board, whose own search box
     // and filter dropdowns scan as fields and would otherwise reach review with
     // an empty application.
-    if (!allFills.length && !resumeAttached) {
-      return failed('No application form was found at the job link. The job may be closed.');
+    if (!allFills.length && !resumeAttached) return failed(await noForm());
+
+    // Read the page back before going on, off the form rather than off what we
+    // meant to type: a site can drop a value, or start requiring a field once
+    // another is answered, and pressing Submit to find out is too late. A value
+    // it would not keep is no use asking for again.
+    const typed = new Set(allFills.map((fill) => answerKey(fill.label)));
+    const blanks = scan.filter((field) => field.required && !field.answered && !field.filled && field.label && field.type !== 'file');
+    const dropped = blanks.find((field) => typed.has(answerKey(field.label)));
+    if (dropped) {
+      return failed(`The form would not keep the answer for "${dropped.label}", so nothing was sent. Your tailored resume is ready: finish it on the employer's page.`);
+    }
+    if (blanks.length) {
+      return {
+        status: 'needs_input',
+        fields: scan,
+        questions: blanks.map(({ label, type, options: choices }) => ({ key: answerKey(label), label, type, options: choices })),
+      };
     }
 
     action = await page.evaluate(findAction).catch(() => ({ kind: '', disabled: false }));
@@ -1126,6 +1356,7 @@ export async function runApplication(page: Page, options: {
 
   // A refusal is answered from the resume once before the user is troubled.
   let workedItOut = false;
+  let codeEntered = false;
   for (let attempt = 0; attempt < 40; attempt++) {
     await sleep(750);
     // Evaluation fails while the page is navigating to its confirmation.
@@ -1133,7 +1364,14 @@ export async function runApplication(page: Page, options: {
     if (!outcome) continue;
     if (outcome.formGone && outcome.confirmed) return { status: 'submitted', filled, resumeAttached };
     if (outcome.captcha) return failed('The site asked for a captcha, so the application was not sent. Please apply from the job link.');
-    if (!outcome.formGone && outcome.needsCode) return failed('The site emailed you a verification code, so the application was not sent. Please finish it from the job link.');
+    if (!outcome.formGone && outcome.needsCode && options.codeFor && !codeEntered) {
+      codeEntered = true;
+      const host: string = await page.evaluate(() => location.hostname).catch(() => '');
+      const code = await codeFor(host);
+      if (code && await page.evaluate(enterCode, code)) { attempt = 0; await sleep(3000); continue; }
+    }
+    // Entered and still asked for: wait for the confirmation like any submit.
+    if (!outcome.formGone && outcome.needsCode && !codeEntered) return failed('The site emailed you a verification code, so the application was not sent. Please finish it from the job link.');
     const fresh = outcome.errors.filter((message: string) => !before.includes(message));
     if (!outcome.formGone && fresh.length && attempt > 5) {
       // Microsoft Forms marks nothing required in its markup - no asterisk, no
@@ -1157,7 +1395,7 @@ export async function runApplication(page: Page, options: {
         // difference between an agent and a form the user fills in twice.
         if (!workedItOut && options.infer) {
           workedItOut = true;
-          const inferred = await options.infer(questions).catch(() => ({}));
+          const inferred = await options.infer(questions).catch(() => ({} as Record<string, string>));
           const fills: Fill[] = blanks
             .map((field) => ({
               id: field.id,

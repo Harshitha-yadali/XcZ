@@ -28,6 +28,10 @@ export interface JobListing {
   expires_at?: string | null;
   source_api: string;
   is_active: boolean;
+  /** Set by the runner's test-fill: only 'works' jobs get Auto Apply. Null until tested. */
+  apply_check?: 'works' | 'blocked' | null;
+  apply_check_reason?: string | null;
+  apply_checked_at?: string | null;
   created_at: string;
   updated_at: string;
 

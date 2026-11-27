@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: a Google Form</title>
+<!--
+  Only the part the extension reads: the script Google writes into every form.
+  Real forms are tried too, with scripts/auto-apply-extension-test.mjs live <url>.
+  One question's words are markup, to prove the extension shows them as text.
+  Like a real signed-in form, it wipes its address as it loads, and asks for the
+  box beside the user's email to be ticked.
+-->
+<script>var FB_PUBLIC_LOAD_DATA_ = [null,[null,[
+  [1,"Full Name",null,0,[[101,null,1]]],
+  [2,"College Name",null,0,[[102,null,1]]],
+  [3,"Graduation Year",null,3,[[103,[["2027"],["2028"]],1]]],
+  [4,"<img src=x onerror=window.__hacked=1>",null,2,[[104,[["Yes"],["No"]],1]]],
+  [5,"Resume",null,13,[[105,null,1]]]
+],null,null,null,null,null,null,null,null,[null,null,null,2,null,null,2]]];</script>
+<script>history.replaceState(null, '', location.pathname);</script>
+<h1>Software Engineer application</h1>
+<form onsubmit="window.__sent = true; return false"><button type="submit">Submit</button></form>

@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
     let sentCount = 0;
     let failedCount = 0;
 
-    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+    const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboostai.in';
     const blogPostUrl = `${siteUrl}/blog/${emailData.slug}`;
 
     for (const user of users.users.filter(u => userIds.includes(u.id))) {

@@ -47,7 +47,9 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
   // Handed to the worker, which carries on whether or not this tab stays open.
   // Nothing has gone wrong, so it must not be dressed as a failure.
   const isQueued = !isSuccess && result.error === 'QUEUED';
-  const tone = isSuccess ? 'green' : isUncertain ? 'amber' : isManual || isQueued ? 'blue' : 'red';
+  // The employer's doing, and nothing the user could finish by hand.
+  const isClosed = !isSuccess && result.error === 'JOB_CLOSED';
+  const tone = isSuccess ? 'green' : isUncertain || isClosed ? 'amber' : isManual || isQueued ? 'blue' : 'red';
   const tones = {
     green: {
       header: 'bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20',
@@ -110,7 +112,9 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
                     ? 'Applying now'
                     : isUncertain
                       ? 'Submission uncertain'
-                      : 'Needs manual completion'}
+                      : isClosed
+                        ? 'This job has closed'
+                        : 'Needs manual completion'}
               </h1>
               
               <p className={`text-lg ${tones.text}`}>
@@ -230,7 +234,7 @@ export const ApplicationConfirmationModal: React.FC<ApplicationConfirmationModal
               </div>
             )}
 
-            {!isSuccess && !isManual && !isUncertain && !isQueued && result.error && (
+            {!isSuccess && !isManual && !isUncertain && !isQueued && !isClosed && result.error && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 dark:bg-red-900/20 dark:border-red-500/50">
                 <h3 className="font-semibold text-red-900 dark:text-red-300 mb-2">Error Details</h3>
                 <p className="text-red-700 dark:text-red-400 text-sm">{result.error}</p>

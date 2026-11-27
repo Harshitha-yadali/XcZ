@@ -62,7 +62,7 @@ export const ATSExportValidationModal: React.FC<ATSExportValidationModalProps> =
       });
     }
 
-    const atsFriendlyFonts = ['Calibri', 'Arial', 'Times New Roman', 'Verdana'];
+    const atsFriendlyFonts = ['Helvetica', 'Calibri', 'Arial', 'Times New Roman', 'Verdana'];
     if (atsFriendlyFonts.includes(exportOptions.fontFamily)) {
       items.push({
         category: 'Font Family',

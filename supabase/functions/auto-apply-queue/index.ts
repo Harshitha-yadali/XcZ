@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { denied, getCaller } from "../_shared/auth.ts";
-import { detectPlatform } from "../_shared/applyForm.ts";
+import { canAutoApply, detectPlatform } from "../_shared/applyForm.ts";
+
+/** Marks a Smart Apply row: the page shows its resume, the job link and "I've applied". */
+const SMART_APPLY_MESSAGE = 'Smart Apply: your tailored resume is ready. Open the job, apply there with it, then press "I\'ve applied".';
+import { findTwin } from "../_shared/jobCheck.ts";
 
 // Puts an application on the queue and returns. A worker does the rest, so the
 // user can close the site the moment they have pressed Auto Apply. Nothing here
@@ -35,9 +39,12 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
+    const { data: agent } = await supabase.from('apply_agents').select('active').eq('user_id', user.id).maybeSingle();
+    if (!agent?.active) return json({ success: false, error: 'AGENT_OFF' }, 403);
+
     const { data: job } = await supabase
       .from('job_listings')
-      .select('id, application_link, is_active')
+      .select('id, application_link, role_title, is_active, apply_check')
       .eq('id', jobId)
       .maybeSingle();
     if (!job) return json({ success: false, error: 'That job was not found.' }, 404);
@@ -56,6 +63,10 @@ Deno.serve(async (req: Request) => {
       .limit(1)
       .maybeSingle();
     if (live) return json({ success: true, applicationId: live.id, status: live.status, queued: false });
+
+    // The same job can sit on two listings, and the database only knows listings.
+    const twin = await findTwin(supabase, user.id, job);
+    if (twin) return json({ success: true, applicationId: twin.id, status: twin.status, queued: false });
 
     // A resume belongs to whoever asked for it; one named here is only used
     // when it is this user's own.
@@ -79,7 +90,12 @@ Deno.serve(async (req: Request) => {
         resume_version_id: resumeId,
         platform: detectPlatform(job.application_link),
         application_url: job.application_link,
-        status: 'queued',
+        // Only sites the runner finishes go on its queue; the rest are handed
+        // to the user now rather than failing at a sign-in or captcha later.
+        // and only jobs the runner has test-filled successfully ('works').
+        ...(canAutoApply(job.application_link) && job.apply_check === 'works'
+          ? { status: 'queued' }
+          : { status: 'needs_manual_action', error_message: SMART_APPLY_MESSAGE }),
       })
       .select('id, status')
       .single();

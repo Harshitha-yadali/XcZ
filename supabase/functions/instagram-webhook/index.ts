@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const base = Deno.env.get("INSTAGRAM_GRAPH_BASE") || "https://graph.instagram.com";
-  const siteUrl = Deno.env.get("SITE_URL") || "https://primoboost.ai";
+  const siteUrl = Deno.env.get("SITE_URL") || "https://primoboostai.in";
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   const send = async (path: string, body: unknown) => {

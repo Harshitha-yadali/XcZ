@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { ResumeData, UserType } from '../types/resume';
-import { ExportOptions, defaultExportOptions, layoutConfigs } from '../types/export';
+import { ExportOptions, defaultExportOptions, layoutConfigs, pdfFontFamily, gradeLabel } from '../types/export';
 import { LiveResumePreviewControls } from './LiveResumePreviewControls';
 import { getCertificationDisplayParts } from '../utils/certificationFormatting';
 
@@ -40,7 +40,6 @@ const createPDFConfigForPreview = (options: ExportOptions) => {
       body: { size: options.bodyTextSize, weight: 'normal' as const },
     },
     spacing: {
-      nameFromTop: 10, // Changed from 13 to 10
       afterName: 0,
       afterContact: 2, // Changed from 1 to 2
       sectionSpacingBefore: options.sectionSpacing,
@@ -56,7 +55,7 @@ const createPDFConfigForPreview = (options: ExportOptions) => {
       secondary: [80, 80, 80] as [number, number, number],
       accent: [37, 99, 235] as [number, number, number],
     },
-    fontFamily: options.fontFamily,
+    fontFamily: { helvetica: 'Helvetica, Arial', times: '"Times New Roman", Times', courier: '"Courier New", Courier' }[pdfFontFamily(options.fontFamily)],
   };
 };
 
@@ -195,7 +194,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     marginBottom: mmToPx(PDF_CONFIG.spacing.sectionSpacingAfter),
     fontFamily: `${PDF_CONFIG.fontFamily}, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif`,
     letterSpacing: '0.5pt',
-    textTransform: 'none',
+    textTransform: 'uppercase',
     color: '#000000',
   } as const;
 
@@ -203,10 +202,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     borderBottomWidth: '0.5pt',
     borderColor: '#404040',
     height: '1px',
-    marginBottom: mmToPx(PDF_CONFIG.spacing.sectionSpacingAfter),
     width: '100%',
     maxWidth: `${mmToPx(PDF_CONFIG.contentWidth)}px`,
-    margin: '0 auto',
+    margin: `0 auto ${mmToPx(PDF_CONFIG.spacing.sectionSpacingAfter)}px`,
     boxSizing: 'border-box',
   };
 
@@ -220,33 +218,11 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
   const listItemStyle: React.CSSProperties = {
     ...bodyTextStyle,
     marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 0.25),
-    display: 'flex',
-    alignItems: 'flex-start',
   };
 
   // Helper to get short display text from URLs
-  const getShortLinkText = (url: string, type: 'linkedin' | 'github'): string => {
-    if (!url) return '';
-    const cleanUrl = url.trim().toLowerCase();
-
-    if (type === 'linkedin') {
-      const linkedinMatch = cleanUrl.match(/linkedin\.com\/in\/([^\/\?]+)/i);
-      if (linkedinMatch) {
-        return `linkedin/${linkedinMatch[1]}`;
-      }
-      return 'LinkedIn';
-    }
-
-    if (type === 'github') {
-      const githubMatch = cleanUrl.match(/github\.com\/([^\/\?]+)/i);
-      if (githubMatch) {
-        return `github/${githubMatch[1]}`;
-      }
-      return 'GitHub';
-    }
-
-    return url;
-  };
+  const getLinkText = (url: string): string =>
+    url.trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
 
   // Build contact information - two lines for better structure
   const buildContactInfo = () => {
@@ -295,6 +271,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     const line1Parts: React.ReactNode[] = [];
     const line2Parts: React.ReactNode[] = [];
 
+    if (isValidField(resumeData.location)) {
+      line1Parts.push(<span key="location" style={contactStyle}>{resumeData.location}</span>);
+    }
     if (isValidField(resumeData.phone, 'phone')) {
       line1Parts.push(
         <a key="phone" href={`tel:${resumeData.phone}`} style={linkStyle} target="_blank" rel="noopener noreferrer">
@@ -304,7 +283,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
     }
     if (isValidField(resumeData.email, 'email')) {
       line1Parts.push(
-        <a key="email" href={`mailto:${resumeData.email}`} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+        <a key="email" href={`mailto:${resumeData.email}`} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {resumeData.email}
         </a>
       );
@@ -314,9 +293,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
       if (!linkedinUrl.startsWith('http')) {
         linkedinUrl = `https://${linkedinUrl}`;
       }
-      const shortText = getShortLinkText(resumeData.linkedin!, 'linkedin');
-      line1Parts.push(
-        <a key="linkedin" href={linkedinUrl} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+      const shortText = getLinkText(resumeData.linkedin!);
+      line2Parts.push(
+        <a key="linkedin" href={linkedinUrl} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {shortText}
         </a>
       );
@@ -326,9 +305,9 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
       if (!githubUrl.startsWith('http')) {
         githubUrl = `https://${githubUrl}`;
       }
-      const shortText = getShortLinkText(resumeData.github!, 'github');
-      line1Parts.push(
-        <a key="github" href={githubUrl} style={{...linkStyle, maxWidth: '200px'}} target="_blank" rel="noopener noreferrer">
+      const shortText = getLinkText(resumeData.github!);
+      line2Parts.push(
+        <a key="github" href={githubUrl} style={linkStyle} target="_blank" rel="noopener noreferrer">
           {shortText}
         </a>
       );
@@ -438,7 +417,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
             </h2>
             <div style={sectionUnderlineStyle}></div>
             {resumeData.workExperience.map((job, index) => (
-              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 2) }}>
+              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing) }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 0.5) }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: ptToPx(PDF_CONFIG.fonts.jobTitle.size), fontWeight: 'bold', fontFamily: `${PDF_CONFIG.fontFamily}, sans-serif` }}>
@@ -479,7 +458,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
             <h2 style={sectionTitleStyle}>Education</h2>
             <div style={sectionUnderlineStyle}></div>
             {resumeData.education.map((edu, index) => (
-              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 2) }}>
+              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing) }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: ptToPx(PDF_CONFIG.fonts.jobTitle.size), fontWeight: 'bold', fontFamily: `${PDF_CONFIG.fontFamily}, sans-serif` }}>
@@ -490,7 +469,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
                     </div>
                     {edu.cgpa && (
                       <div style={{ fontSize: ptToPx(PDF_CONFIG.fonts.body.size), fontFamily: `${PDF_CONFIG.fontFamily}, sans-serif`, color: '#4B5563' }}>
-                        CGPA: {edu.cgpa}
+                        {gradeLabel(edu.cgpa)}: {edu.cgpa}
                       </div>
                     )}
                   </div>
@@ -512,7 +491,7 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
             </h2>
             <div style={sectionUnderlineStyle}></div>
             {resumeData.projects.map((project, index) => (
-              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 2) }}>
+              <div key={index} style={{ marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing) }}>
                 <div style={{ fontSize: ptToPx(PDF_CONFIG.fonts.jobTitle.size), fontWeight: 'bold', fontFamily: `${PDF_CONFIG.fontFamily}, sans-serif`, marginBottom: mmToPx(PDF_CONFIG.spacing.entrySpacing * 0.5) }}> {/* Already bold */}
                   {project.title}
                 </div>
@@ -582,15 +561,13 @@ export const ResumePreview: React.FC<ResumePreviewProps> = ({
               <li key={index} style={listItemStyle}>
                 <div>
                   {titleEff && (
-                    <div style={{ fontWeight: 'bold', marginBottom: descEff ? mmToPx(1) : 0 }}>
+                    <div style={{ fontWeight: descEff && descEff !== titleEff ? 'bold' : 'normal', marginBottom: descEff ? mmToPx(1) : 0 }}>
                       {titleEff}
                     </div>
                   )}
                   {descEff && descEff !== titleEff && (
                     <div style={{
-                      fontSize: '10px',
                       fontWeight: 'normal',
-                      lineHeight: '1.4',
                       color: '#000000',
                       marginLeft: titleEff ? mmToPx(2) : 0
                     }}>

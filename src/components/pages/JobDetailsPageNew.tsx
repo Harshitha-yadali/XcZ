@@ -98,7 +98,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
         },
       },
       employmentType: 'FULL_TIME',
-      url: `https://primoboost.ai/jobs/${job.id}`,
+      url: `https://primoboostai.in/jobs/${job.id}`,
     };
     if (job.package_amount) {
       jsonLd.baseSalary = {

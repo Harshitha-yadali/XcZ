@@ -599,7 +599,7 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route path="/spatial-reasoning" element={<SpatialReasoningDemoPage />} />
           <Route path="/profile" element={<UserProfileManagement />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/test-email-digest" element={<TestEmailDigest />} />
+          <Route path="/test-email-digest" element={<AdminRoute><TestEmailDigest /></AdminRoute>} />
           <Route path="/session" element={<SessionLandingPage onShowAuth={handleShowAuth} />} />
           <Route path="/session/book" element={<SessionBookingFlow />} />
           <Route path="/my-bookings" element={<MyBookingsPage />} />

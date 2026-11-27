@@ -45,6 +45,7 @@ if (!chrome) throw new Error('Chrome not found; set the CHROME environment varia
 
 const deno = process.env.DENO || (spawnSync('deno', ['--version']).status === 0 ? 'deno' : '');
 
+const APPLY_MAIL = process.env.APPLY_MAIL === '1'; // run this twice, with and without
 const SERVICE_KEY = 'stand-in-service-key';
 // 32 bytes of zeroes in base64: the format vault.ts expects, and worth nothing.
 const CREDENTIALS_KEY = Buffer.alloc(32).toString('base64');
@@ -73,6 +74,8 @@ const db = {
   ],
   job_listings: [],
   user_credentials_vault: [],
+  apply_agents: [{ user_id: USER.id, address: 'apply-test@apply.primoboostai.in', active: true, agreed_at: '2026-11-26T00:00:00Z' }],
+  apply_mail: [],
   auto_apply_applications: [],
   auto_apply_analytics: [],
 };
@@ -215,6 +218,10 @@ function rpc(response, name, body) {
     return respond(response, 200, taken);
   }
   if (name === 'requeue_stalled_auto_apply') return respond(response, 200, 0);
+  if (name === 'set_apply_agent') {
+    db.apply_agents[0].active = body.p_active;
+    return respond(response, 200, db.apply_agents[0]);
+  }
   return respond(response, 200, null); // the app's own bookkeeping, which this flow does not read
 }
 
@@ -336,7 +343,7 @@ function startWorker() {
     cwd: root,
     env: {
       PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT, TEMP: process.env.TEMP, TMP: process.env.TMP,
-      SUPABASE_URL: base, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, CREDENTIALS_KEY, AUTO_REGISTER: '1',
+      SUPABASE_URL: base, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, CREDENTIALS_KEY, AUTO_REGISTER: '1', APPLY_MAIL: APPLY_MAIL ? '1' : '0',
       POLL_MS: '100', ...(process.env.CHROME ? { CHROME: process.env.CHROME } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -466,6 +473,7 @@ let browser;
 try {
   browser = await startBrowser();
   if (deno) {
+    await startFunction('auto-apply-check', await freePort(), browser.endpoint);
     await startFunction('auto-apply-queue', await freePort(), browser.endpoint);
     await startFunction('auto-apply-submit', await freePort(), browser.endpoint);
     await startFunction('save-site-credentials', await freePort(), browser.endpoint);
@@ -585,6 +593,39 @@ try {
     db.user_credentials_vault.length = 0;
   });
 
+  await check('worker: uses the agent address, and the code a site emails to it', async () => {
+    Object.assign(db.user_profiles[0], { apply_answers: { gender: 'Female' } });
+    const row = queue(`http://careers.example.localhost:${port}/single.html?code=1`, { given_answers: { [consent]: 'yes' } });
+    // From a stranger, and then from the site itself.
+    const later = new Date(Date.now() + 60_000).toISOString();
+    const mail = (from_address, code) => ({ id: randomUUID(), user_id: USER.id, kind: 'code', from_address, subject: 'Your security code', body: `Your security code is ${code}`, received_at: later });
+    db.apply_mail.push(mail('x@evil.example', '999999'), mail('no-reply@example.com', '482913'));
+    await settled(row);
+    db.apply_mail.length = 0;
+    if (!APPLY_MAIL) return assert.match(row.error_message, /verification code/);
+    assert.equal(row.status, 'submitted', row.error_message);
+  });
+
+  await check('worker: gives the company the address replies will reach', async () => {
+    Object.assign(db.user_profiles[0], { apply_answers: { gender: 'Female' } });
+    const row = queue(form('single.html?reply=1'), { given_answers: { [consent]: 'yes' } });
+    await settled(row);
+    assert.equal(row.status, 'submitted', row.error_message);
+    const given = Object.values(row.form_data_captured);
+    const [wanted, other] = APPLY_MAIL ? [db.apply_agents[0].address, USER.email] : [USER.email, db.apply_agents[0].address];
+    assert.ok(given.includes(wanted) && !given.includes(other));
+  });
+
+  await check('worker: sends nothing once the agent is turned off', async () => {
+    db.apply_agents[0].active = false;
+    const row = queue(form('single.html?off=1'), { given_answers: { [consent]: 'yes' } });
+    await settled(row);
+    db.apply_agents[0].active = true;
+    assert.equal(row.status, 'failed');
+    assert.match(row.error_message, /agent is off/);
+    assert.equal(receivedFor(row), 0);
+  });
+
   await check('worker: calls a silent form uncertain, and never takes it back', async () => {
     Object.assign(db.user_profiles[0], { apply_answers: { gender: 'Female' } });
     const row = queue(form('single.html?silent=1'), { given_answers: { [consent]: 'yes' } });
@@ -630,9 +671,35 @@ try {
   });
 
   if (!deno) {
-    skipped = 8;
+    skipped = 10;
     console.log('\nskipped the edge function checks: set DENO to run them');
   } else {
+    await check('check and queue: one job on two listings is one application', async () => {
+      const link = `${form('board.html')}?twin=1`;
+      const row = queue(link, { status: 'submitted' });
+      const copy = addJob(`${link}&utm_source=newsletter`);
+      const seen = await edge('auto-apply-check', { jobId: copy.id });
+      assert.equal(seen.twin?.id, row.id, JSON.stringify(seen));
+      assert.equal(seen.closed, false);
+      const before = db.auto_apply_applications.length;
+      const again = await edge('auto-apply-queue', { jobId: copy.id, resumeVersionId: RESUME });
+      assert.equal(again.applicationId, row.id, JSON.stringify(again));
+      assert.equal(again.queued, false);
+      assert.equal(db.auto_apply_applications.length, before);
+    });
+
+    await check('check: another role on the same link is another job, and a closed listing says so', async () => {
+      const link = `${form('board.html')}?shared=1`;
+      queue(link, { status: 'submitted' });
+      const other = addJob(link, 'Data Analyst');
+      assert.deepEqual(await edge('auto-apply-check', { jobId: other.id }), { status: 200, twin: null, closed: false });
+      const closed = addJob(`${form('board.html')}?gone=1`);
+      closed.is_active = false;
+      assert.equal((await edge('auto-apply-check', { jobId: closed.id })).closed, true);
+      const stranger = await fetch(`${base}/functions/v1/auto-apply-check`, { method: 'POST', body: JSON.stringify({ jobId: other.id }) });
+      assert.equal(stranger.status, 401);
+    });
+
     await check('queue: a second press returns the same application', async () => {
       const job = addJob(form('board.html'));
       const first = await edge('auto-apply-queue', { jobId: job.id, resumeVersionId: RESUME });

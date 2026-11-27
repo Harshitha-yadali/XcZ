@@ -1,0 +1,9 @@
+# npx wrangler deploy --config cloudflare/wrangler.toml
+# APPLY_MAIL_SECRET is set with: npx wrangler secret put APPLY_MAIL_SECRET --config cloudflare/wrangler.toml
+name = "primoboost-apply-mail"
+main = "apply-mail.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+[vars]
+INBOUND_URL = "https://rixmudvtbfkjpwjoefon.supabase.co/functions/v1/apply-mail-inbound"

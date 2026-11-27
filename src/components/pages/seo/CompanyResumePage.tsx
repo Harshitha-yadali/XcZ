@@ -16,8 +16,8 @@ export function CompanyResumePage() {
   }
 
   const path = `/resume-for-company/${company.slug}`;
-  const title = `Resume for ${company.name} — Format, Tips & Free ATS Check`;
-  const description = `How to format and tailor your resume for ${company.name}: what recruiters and their applicant tracking system look for, common interview rounds, and a free ATS score check.`;
+  const title = `Resume for ${company.name} — Format, Tips & ATS Check`;
+  const description = `How to format and tailor your resume for ${company.name}: what recruiters and their applicant tracking system look for, common interview rounds, and an ATS score check.`;
   const relatedCompanies = getRelatedCompanies(company);
 
   const faqs = [
@@ -53,14 +53,14 @@ export function CompanyResumePage() {
             <h1 className="text-3xl sm:text-4xl font-bold">Resume for {company.name}</h1>
             <p className="text-lg text-ink-muted leading-relaxed">
               {company.name} commonly hires for {company.hiringFocus.slice(0, 3).join(', ')} and more. Here's how to
-              format and tailor your resume so it clears their screening process — plus a free way to check your score.
+              format and tailor your resume so it clears their screening process — plus a ₹9 way to check your score.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <Link to="/optimizer" className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-brand-500 to-cyan-500 text-surface-deep font-semibold hover:opacity-90 transition-opacity">
                 Tailor My Resume for {company.name}
               </Link>
               <Link to="/score-checker" className="px-5 py-2.5 rounded-lg border border-surface hover:border-brand-500/50 transition-colors font-medium">
-                Check My ATS Score Free
+                Check My ATS Score — ₹9
               </Link>
             </div>
           </header>

@@ -67,11 +67,7 @@ export interface BlogPostFilters {
   category_id?: string;
   tag_id?: string;
   search?: string;
-  reading_difficulty?: 'beginner' | 'intermediate' | 'advanced';
-  reading_time_min?: number;
-  reading_time_max?: number;
-  is_featured?: boolean;
-  sort_by?: 'newest' | 'oldest' | 'most_viewed' | 'trending';
+  sort_by?: 'newest' | 'oldest' | 'most_viewed';
   limit?: number;
   offset?: number;
 }
@@ -79,8 +75,6 @@ export interface BlogPostFilters {
 export interface BlogStatistics {
   totalPosts: number;
   totalCategories: number;
-  featuredPosts: number;
-  averageReadingTime: number;
 }
 
 export interface BlogPostsResponse {

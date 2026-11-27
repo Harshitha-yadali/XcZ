@@ -348,6 +348,19 @@ export const AdminJobsPage: React.FC = () => {
                         }`}>
                           {displayStatus === 'active' ? 'Active' : displayStatus === 'expired' ? 'Expired' : 'Inactive'}
                         </span>
+                        {/* The runner's test-fill of this job: what users get on the site. */}
+                        <span
+                          title={job.apply_check_reason || (job.apply_checked_at ? `Tested ${new Date(job.apply_checked_at).toLocaleString('en-IN')}` : 'Tested within minutes of upload')}
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            job.apply_check === 'works'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                              : job.apply_check === 'blocked'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                                : 'bg-gray-100 text-gray-600 dark:bg-dark-200 dark:text-gray-400'
+                          }`}
+                        >
+                          {job.apply_check === 'works' ? 'Auto Apply ✓' : job.apply_check === 'blocked' ? 'Smart Apply' : 'Testing…'}
+                        </span>
                       </div>
                     </div>
 

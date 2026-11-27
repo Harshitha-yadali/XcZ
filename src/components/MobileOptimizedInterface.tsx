@@ -41,6 +41,7 @@ interface MobileOptimizedInterfaceProps {
   editorMode?: 'preview' | 'edit';
   onEditorModeChange?: (mode: 'preview' | 'edit') => void;
   resumeEditor?: React.ReactNode;
+  evidenceReport?: React.ReactNode;
   optimizationTier?: JdOptimizationTierId;
 }
 
@@ -58,6 +59,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   editorMode = 'preview',
   onEditorModeChange,
   resumeEditor,
+  evidenceReport,
   optimizationTier = 'smart',
 }) => {
   const hasScores = !!(jdOptimizationResult || parameter16Scores);
@@ -204,6 +206,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                 />
               ) : null}
             </div>
+            {evidenceReport}
           </div>
         ) : activeTab === 'preview' ? (
           <div className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-lg border border-slate-700/50 p-3">

@@ -25,15 +25,15 @@ export function RoleResumePage() {
   }
 
   const path = `/resume-for/${role.slug}`;
-  const title = `Resume for ${role.title} — Free ATS Score Check`;
-  const description = `Build an ATS-friendly resume for a ${role.title} role in India. See the exact skills, keywords and resume structure recruiters and ATS software look for, then check your score for free.`;
+  const title = `Resume for ${role.title} — ATS Score Check`;
+  const description = `Build an ATS-friendly resume for a ${role.title} role in India. See the exact skills, keywords and resume structure recruiters and ATS software look for, then check your score.`;
   const sampleBullets = buildSampleBullets(role.skills, role.title);
   const relatedRoles = getRelatedRoles(role);
 
   const faqs = [
     { question: `What skills should a ${role.title} resume highlight?`, answer: `Focus on ${role.skills.slice(0, 4).join(', ')}, backed by real projects or work you can speak to in an interview — a skills list alone won't pass a recruiter's second look.` },
     ...role.faqs,
-    { question: `Is this resume format free to check?`, answer: `Yes — PrimoBoost AI's Resume Score Checker gives a free ATS compatibility score, and the JD Resume Optimizer tailors your resume to a specific ${role.title} job description.` },
+    { question: `How much does it cost to check this resume format?`, answer: `PrimoBoost AI's Resume Score Checker gives an ATS compatibility score for ₹9, and the JD Resume Optimizer tailors your resume to a specific ${role.title} job description.` },
   ];
 
   const jsonLd = [
@@ -63,11 +63,11 @@ export function RoleResumePage() {
             <h1 className="text-3xl sm:text-4xl font-bold">Resume for {role.title}</h1>
             <p className="text-lg text-ink-muted leading-relaxed">
               Here's exactly what recruiters and ATS software scan for on a {role.title} resume in the Indian job
-              market ({role.experienceLevels}), plus a free way to check where yours currently stands.
+              market ({role.experienceLevels}), plus a ₹9 way to check where yours currently stands.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <Link to="/score-checker" className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-brand-500 to-cyan-500 text-surface-deep font-semibold hover:opacity-90 transition-opacity">
-                Check My Resume Score Free
+                Check My Resume Score — ₹9
               </Link>
               <Link to="/optimizer" className="px-5 py-2.5 rounded-lg border border-surface hover:border-brand-500/50 transition-colors font-medium">
                 Tailor My Resume to a {role.title} JD

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "PrimoBoost Auto Apply Helper",
+  "version": "1.0.0",
+  "description": "Fills Google Form job applications from your PrimoBoost profile, in your own browser. You check it and press Submit.",
+  "permissions": ["storage"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://primoboostai.in/*", "https://www.primoboostai.in/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["site.js"]
+    },
+    {
+      "matches": ["https://docs.google.com/forms/*"],
+      "js": ["form.js"]
+    }
+  ]
+}

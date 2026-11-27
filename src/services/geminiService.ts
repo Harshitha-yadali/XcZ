@@ -247,37 +247,21 @@ SECTION ORDER FOR FRESHERS:
 ${modeInstructions[optimizationMode]}
 
 CRITICAL REQUIREMENTS FOR BULLET POINTS:
-1. Each bullet point MUST be concise, containing maximum 10 words only.
+1. Each bullet point should be one clear sentence of about 12-22 words; keep a short bullet short rather than padding it.
 2. Include relevant keywords from the job description across all bullet points.
 3. Use STRONG ACTION VERBS only (no weak verbs like "helped", "assisted", "worked on", "was responsible for", "participated in", "involved in", "contributed to")
 4. Start each bullet with powerful verbs like: Developed, Implemented, Architected, Optimized, Engineered, Designed, Led, Managed, Created, Built, Delivered, Achieved, Increased, Reduced, Streamlined, Automated, Transformed, Executed, Spearheaded, Established
 5. Ensure no word is repeated more than twice across all bullet points within a section.
 
-METRIC RULES - REALISTIC AND SPARSE (CRITICAL):
-6. NOT every bullet needs a metric. Use metrics SPARINGLY and REALISTICALLY:
-   - Maximum 1-2 bullets with metrics PER work experience entry (out of 3 bullets)
-   - Maximum 1 bullet with a metric PER project entry (out of 2-3 bullets)
-   - The remaining bullets should describe WHAT was built/done with SPECIFIC technical details
-7. If original resume has metrics, PRESERVE them exactly (40%, $1M, 10,000+ users).
-8. NEVER generate exaggerated or unrealistic metrics:
-   - NEVER claim "99.9% uptime" unless the person was a lead/principal engineer on infra
-   - NEVER claim "10,000+ users" for intern or junior-level projects
-   - NEVER use vague filler phrases like "enhancing overall outcomes" or "optimizing overall performance"
-   - Interns: max "500 users", "15% improvement", "3 team members"
-   - Junior devs: max "2,000 users", "25% improvement", "5 team members"
-   - Mid-level: max "10,000 users", "40% improvement"
-   - Senior: use realistic enterprise-scale numbers
-9. Metrics should be SPECIFIC, not generic. NEVER use these patterns:
-   - "successfully enhancing overall outcomes" (too vague)
-   - "effectively optimizing overall performance" (too vague)
-   - "significantly reducing overall costs" (too vague)
-   - Any phrase with "overall" + generic noun is BANNED
-10. GOOD metric bullets: "Reduced API latency from 800ms to 200ms" or "Processed 500 daily orders using Kafka"
-11. GOOD non-metric bullets: "Built authentication module using JWT and OAuth2" or "Designed normalized database schema with 15 tables"
+METRIC RULES (CRITICAL):
+6. Use ONLY numbers that appear in the original resume, exactly as written (40%, Rs. 2,00,000, 10,000+ users).
+7. NEVER add, estimate, round or imply a number, and never claim "zero" or "no" incidents, bugs or downtime.
+8. A bullet without a number in the original stays without one: describe WHAT was done, with which technology, and for whom.
+9. Never pad a bullet with vague results such as "enhancing overall outcomes".
 
 12. Focus on SPECIFIC technical details, not generic impact claims.
-13. MANDATORY: Each work experience entry MUST have EXACTLY 3 bullet points.
-14. MANDATORY: Each project entry MUST have EXACTLY 2-3 bullet points.
+13. MANDATORY: Keep every work experience and project entry, in the original order, with the SAME number of bullets in the SAME order. Rewrite bullet 1 from bullet 1, bullet 2 from bullet 2, and so on.
+14. NEVER merge, split, drop or add bullets or entries.
 15. All section titles MUST be in ALL CAPS.
 16. Dates should use the exact format "Jan 2023 - Mar 2024".
 17. Integrate keywords naturally and contextually, avoiding keyword stuffing.
@@ -323,8 +307,7 @@ HALLUCINATION PREVENTION:
 
 PROJECT STRUCTURING REQUIREMENTS:
 1. Project Title (e.g., "E-commerce Platform")
-2. 2-3 impact bullets with VERB + TECH + specific detail pattern
-3. Only 1 bullet per project should have a metric; others describe technical specifics
+2. Bullets with VERB + TECH + specific detail, one per original bullet
 
 CERTIFICATION EXPANSION REQUIREMENTS:
 1. Expand ALL abbreviated certification names to full official titles
@@ -341,13 +324,13 @@ KEYWORD FREQUENCY REQUIREMENTS:
 
 WORD COUNT REQUIREMENTS (STRICT):
 1. Professional Summary: 40-60 words
-2. Each bullet point: maximum 10 words
+2. Each bullet point: about 12-22 words, never padded
 3. Total resume target: 400-650 words
 4. DO NOT exceed these limits
 
 SKILLS REQUIREMENTS:
-1. Include 4-6 distinct TECHNICAL skill categories only
-2. Each category should contain 5-8 specific, relevant skills
+1. Group ONLY the skills in the original resume into clear technical categories
+2. Put the skills this job asks for first; never add a skill to fill a category
 3. NEVER include version numbers (Python, not Python 3.11; React, not React 18)
 4. DO NOT include a "Soft Skills" category - only technical skills
 5. Match skills to job requirements and industry standards

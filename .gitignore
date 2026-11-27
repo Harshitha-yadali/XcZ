@@ -9,3 +9,4 @@ supabase/.temp/
 
 # Built from src/utils/exportUtils.ts by `npm run worker:build`.
 worker/resume-pdf.mjs
+extension/form.js

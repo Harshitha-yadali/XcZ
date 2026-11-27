@@ -182,4 +182,42 @@ describe('targetedParameterOptimizer', () => {
     expect(techStack).not.toContain('Redis');
     expect(techStack).not.toContain('Kafka');
   });
+
+  it('never rewords, pads or cuts a line, whatever the gaps', async () => {
+    chatWithSystemMock.mockRejectedValue(new Error('offline'));
+    const bullets = [
+      'Verified login forms across browsers.',
+      'Persisted tasks through a server that was deployed by the platform team for every internal customer group.',
+      'Verified payments.',
+      'Verified refunds.',
+    ];
+    const resume: ResumeData = {
+      name: 'A', phone: '', email: '', linkedin: '', github: '', education: [], projects: [], certifications: [],
+      skills: [{ category: 'Languages', count: 1, list: ['Java'] }],
+      workExperience: [{ role: 'Intern', company: 'Acme', year: '2024', bullets }],
+    };
+    const gaps = Array.from({ length: 30 }, (_, index) => ({
+      parameterId: index + 1, parameterName: 'x', category: 'x', currentScore: 0, maxScore: 5, percentage: 0,
+      fixType: 'ai' as const, suggestions: [], priority: 'critical' as const,
+    }));
+    const result = await optimizeByParameter(resume, 'Java developer.', gaps);
+    expect(result.optimizedResume.workExperience[0].bullets).toEqual(bullets);
+  });
+
+  it('keeps skill names as written and groups them without AI', async () => {
+    chatWithSystemMock.mockRejectedValue(new Error('busy'));
+    const list = ['JavaScript', 'Java', 'MongoDB', 'MySQL', 'REST APIs', 'CI/CD', 'JUnit', 'OAuth', 'HTML/CSS', 'AWS EC2'];
+    const { optimizedResume } = await optimizeByParameter({
+      name: 'A', phone: '', email: '', linkedin: '', github: '', education: [], projects: [], certifications: [],
+      skills: [{ category: 'Technologies', count: list.length, list }],
+      workExperience: [],
+    }, `Developer with ${list.join(', ')}, HTML5 and CSS3.`, []);
+    const groups = Object.fromEntries(optimizedResume.skills.map((group) => [group.category, group.list]));
+    expect(groups.Languages).toEqual(['JavaScript', 'Java']);
+    expect(groups.Databases).toEqual(['MongoDB', 'MySQL']);
+    expect(groups.Backend).toContain('REST APIs');
+    expect(groups['Cloud/DevOps']).toEqual(['CI/CD', 'AWS EC2']);
+    expect(groups.Tools).toEqual(expect.arrayContaining(['JUnit', 'OAuth']));
+    expect(groups.Frontend).toEqual(['HTML5', 'CSS3']);
+  });
 });

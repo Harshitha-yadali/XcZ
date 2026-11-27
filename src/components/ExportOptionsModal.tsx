@@ -41,7 +41,7 @@ export const ExportOptionsModal: React.FC<ExportOptionsModalProps> = ({
   const defaultModalExportOptions = {
     layoutType: 'standard',
     paperSize: 'a4',
-    fontFamily: 'Calibri',
+    fontFamily: 'Helvetica',
     nameSize: 26,
     sectionHeaderSize: 11,
     subHeaderSize: 10.5,

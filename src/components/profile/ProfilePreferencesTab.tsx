@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { userPreferencesService, UserJobPreferences } from '../../services/userPreferencesService';
 import { ALL_TECH_KEYWORDS } from '../../data/techKeywords';
+import { autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
 
 const ROLE_TYPES = [
   { value: 'internship', label: 'Internship' },
@@ -47,6 +48,7 @@ export const ProfilePreferencesTab: React.FC = () => {
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
   const [frequency, setFrequency] = useState<'daily' | 'immediate' | 'weekly'>('daily');
   const [stats, setStats] = useState({ totalNotifications: 0, lastNotificationDate: null as string | null });
+  const [jobMailTo, setJobMailTo] = useState('');
 
   useEffect(() => {
     if (user) loadAll();
@@ -56,12 +58,14 @@ export const ProfilePreferencesTab: React.FC = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [prefs, sub, domains, notifStats] = await Promise.all([
+      const [prefs, sub, domains, notifStats, mailTo] = await Promise.all([
         userPreferencesService.getUserPreferences(user.id),
         userPreferencesService.getNotificationSubscription(user.id),
         userPreferencesService.getAvailableDomains(),
         userPreferencesService.getNotificationStats(user.id),
+        autoApplyOrchestratorService.getJobMailTo(),
       ]);
+      setJobMailTo(mailTo);
       if (prefs) {
         setPreferences({
           role_type: prefs.role_type || 'both',
@@ -102,9 +106,10 @@ export const ProfilePreferencesTab: React.FC = () => {
         isSubscribed,
         frequency
       );
+      await autoApplyOrchestratorService.setJobMailTo(jobMailTo);
       setMessage({ type: 'success', text: 'Preferences saved successfully' });
     } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to save preferences' });
+      setMessage({ type: 'error', text: err instanceof Error && err.message.includes('email') ? err.message : 'Failed to save preferences' });
     } finally {
       setSaving(false);
       setTimeout(() => setMessage(null), 3000);
@@ -326,6 +331,24 @@ export const ProfilePreferencesTab: React.FC = () => {
             </div>
           </>
         )}
+      </div>
+
+      <div className="bg-surface-sunken rounded-xl border border-surface p-5 space-y-2">
+        <div className="flex items-center gap-2">
+          <Mail className="w-4 h-4 text-brand-500" />
+          <h3 className="text-sm font-semibold text-slate-200">Job Mail Forwarding</h3>
+        </div>
+        <label htmlFor="job-mail-to" className="block text-xs text-slate-400">
+          Replies from employers to your PrimoBoost job address are sent to this email. Leave it empty to use your account email.
+        </label>
+        <input
+          id="job-mail-to"
+          type="email"
+          value={jobMailTo}
+          onChange={e => setJobMailTo(e.target.value)}
+          placeholder={user?.email || 'you@example.com'}
+          className="w-full bg-surface-deep border border-surface text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition-colors"
+        />
       </div>
 
       <div className="flex justify-end">

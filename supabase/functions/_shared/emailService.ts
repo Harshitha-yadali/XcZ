@@ -14,6 +14,7 @@ export interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  replyTo?: string;
 }
 
 interface EmailServiceOptions {
@@ -34,7 +35,7 @@ export class EmailService {
       secure: Deno.env.get('SMTP_PORT') === '465',
       user: Deno.env.get('SMTP_USER') || '',
       pass: Deno.env.get('SMTP_PASS') || '',
-      from: Deno.env.get('SMTP_FROM') || Deno.env.get('SMTP_USER') || 'noreply@primoboost.ai'
+      from: Deno.env.get('SMTP_FROM') || Deno.env.get('SMTP_USER') || 'noreply@primoboostai.in'
     };
 
     this.adminBypass = !!options?.adminBypass;
@@ -69,11 +70,12 @@ export class EmailService {
         };
       }
 
-      const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboost.ai';
+      const siteUrl = Deno.env.get('SITE_URL') || 'https://primoboostai.in';
 
       const info = await this.transporter.sendMail({
         from: `"PrimoBoost AI" <${this.config.from}>`,
         to: options.to,
+        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
         subject: options.subject,
         html: options.html,
         text: options.text || this.stripHtml(options.html),

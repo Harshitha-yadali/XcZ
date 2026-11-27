@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const siteUrl = Deno.env.get("SITE_URL") || "https://primoboost.ai";
+    const siteUrl = Deno.env.get("SITE_URL") || "https://primoboostai.in";
 
     const { data: job, error: jobError } = await supabase
       .from("job_listings")

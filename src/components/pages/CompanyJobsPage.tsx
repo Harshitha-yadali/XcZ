@@ -94,7 +94,7 @@ export const CompanyJobsPage: React.FC<CompanyJobsPageProps> = ({
               },
             },
             employmentType: 'FULL_TIME',
-            url: `https://primoboost.ai/jobs/${j.id}`,
+            url: `https://primoboostai.in/jobs/${j.id}`,
           }));
 
           setCompanyJobsJsonLd({

@@ -12,22 +12,65 @@ import {
   Loader2,
   ArrowLeft,
   FileText,
+  Bot,
+  Mail,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { ApplyQuestion, autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
+import { APPLY_MAIL, ApplyAgent, ApplyMail, ApplyQuestion, autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
 import { AutoApplyQuestionsModal } from '../modals/AutoApplyQuestionsModal';
 import { AutoApplyLoginModal } from '../modals/AutoApplyLoginModal';
+import { ApplyAgentModal } from '../modals/ApplyAgentModal';
 // The same list the worker refuses on, so the two can never disagree.
-import { isProviderLoginHost, providerName } from '../../../supabase/functions/_shared/providerHosts';
+import { isProviderLoginHost } from '../../../supabase/functions/_shared/providerHosts';
 import { AnimatedCard, GradientButton, FloatingParticles, ChristmasSnow } from '../ui';
 
 /** Statuses a worker is moving through, so the row will change without the user. */
 const IN_FLIGHT = ['queued', 'optimizing_resume', 'logging_in', 'filling_form', 'submitting'];
 const POLL_MS = 4000;
 
+const STEPS = [
+  ['queued', 'Waiting'], ['optimizing_resume', 'Opening the job'], ['logging_in', 'Signing in'],
+  ['filling_form', 'Filling the form'], ['submitting', 'Sending'],
+] as const;
+
+const MAIL_KINDS: Record<string, [string, string]> = {
+  confirmed: ['Received', 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'],
+  interview: ['Interview', 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'],
+  rejected: ['Not selected', 'bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-300'],
+  other: ['Message', 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'],
+};
+
+/** What the agent is doing on one application, as it does it. */
+const LiveSteps: React.FC<{ status: string }> = ({ status }) => {
+  const now = STEPS.findIndex(([name]) => name === status);
+  return (
+    <ol aria-label="What your agent is doing" aria-live="polite" className="mb-4 flex flex-wrap gap-2">
+      {STEPS.map(([name, label], index) => (
+        <li
+          key={name}
+          aria-current={index === now ? 'step' : undefined}
+          className={`rounded-full px-3 py-1 text-xs font-medium ${
+            index === now
+              ? 'bg-blue-600 text-white'
+              : index < now
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-dark-200 dark:text-gray-400'
+          }`}
+        >
+          {label}
+        </li>
+      ))}
+    </ol>
+  );
+};
+
 interface Application {
   id: string;
+  user_id: string;
+  resume_version_id?: string | null;
+  given_answers?: Record<string, string> | null;
   status: string;
   submission_time: string;
   created_at: string;
@@ -51,6 +94,21 @@ interface Application {
   };
 }
 
+/**
+ * Stopped at a Google, Microsoft or similar sign-in, which only the user can get
+ * past. Applications saved before the engine refused these say so by their
+ * sign-in address; newer ones are handed to the user with that message.
+ */
+const behindProvider = (application: Application) =>
+  (application.status === 'needs_login' && isProviderLoginHost(application.login_site || ''))
+  || (application.status === 'needs_manual_action' && /never use your|^Smart Apply/i.test(application.error_message || ''));
+
+/** A job on a site the runner does not finish: the user applies with the tailored resume. */
+const smartApply = (application: Application) => /^Smart Apply/i.test(application.error_message || '');
+
+/** Set by our browser extension, on this site only. */
+const hasExtension = () => document.documentElement.dataset.primoboostExtension === '1';
+
 export const AutoAppliedJobsPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -61,18 +119,23 @@ export const AutoAppliedJobsPage: React.FC = () => {
   // The application whose question or sign-in is being answered right now.
   const [answering, setAnswering] = useState<Application | null>(null);
   const [signingIn, setSigningIn] = useState<Application | null>(null);
+  const [agent, setAgent] = useState<ApplyAgent | null>(null);
+  const [mail, setMail] = useState<ApplyMail[]>([]);
+  const [agreeing, setAgreeing] = useState(false);
   // Why the last answer could not be taken.
   const [problem, setProblem] = useState('');
 
   // Applications held until the user supplies something. They keep their place
   // in the queue, so answering one sends it straight back to a worker.
   const waiting = applications.filter(
-    (application) => application.status === 'needs_input' || application.status === 'needs_login',
+    (application) => application.status === 'needs_input' || application.status === 'needs_login' || behindProvider(application),
   );
   const running = applications.some((application) => IN_FLIGHT.includes(application.status));
 
   useEffect(() => {
-    if (user) loadApplications();
+    if (!user) return;
+    loadApplications();
+    loadAgent();
   }, [user]);
 
   // A run carries on without this page, so follow it rather than showing
@@ -98,12 +161,52 @@ export const AutoAppliedJobsPage: React.FC = () => {
     }
   };
 
+  const loadAgent = async () => {
+    try {
+      const [row, messages] = await Promise.all([autoApplyOrchestratorService.getAgent(), autoApplyOrchestratorService.getMail()]);
+      setAgent(row);
+      setMail(messages);
+    } catch (error) {
+      console.error('Error loading the apply agent:', error);
+    }
+  };
+
+  const turnOff = async () => {
+    setProblem('');
+    try {
+      await autoApplyOrchestratorService.setAgent(false);
+    } catch (error: any) {
+      setProblem(error.message);
+    }
+    await loadAgent();
+  };
+
+  const removeMail = async (id: string) => {
+    setProblem('');
+    try {
+      await autoApplyOrchestratorService.deleteMail(id);
+      setMail((current) => current.filter((message) => message.id !== id));
+    } catch (error: any) {
+      setProblem(error.message);
+    }
+  };
+
   const sendBack = async (application: Application, answers: Record<string, string>) => {
     setProblem('');
     try {
       await autoApplyOrchestratorService.resumeWithAnswers(
         application.id, answers, application.pending_questions || [],
       );
+    } catch (error: any) {
+      setProblem(error.message);
+    }
+    await loadApplications();
+  };
+
+  const appliedMyself = async (application: Application) => {
+    setProblem('');
+    try {
+      await autoApplyOrchestratorService.markApplied(application.id);
     } catch (error: any) {
       setProblem(error.message);
     }
@@ -225,6 +328,59 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </div>
         )}
 
+        <section aria-label="Your apply agent" className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <Bot className={`mt-0.5 w-6 h-6 flex-shrink-0 ${agent?.active ? 'text-emerald-500' : 'text-gray-400'}`} aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{agent?.active ? 'Your agent is on' : 'Your agent is off'}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 break-words">
+                {agent?.active ? (APPLY_MAIL ? <>Companies are given <strong>{agent.address}</strong>. Their replies come to you too.</> : 'Companies reply to your own email, so watch your inbox.') : 'Turn it on to apply from any job with one press.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {agent?.active && (
+              <button
+                onClick={() => setAgreeing(true)}
+                className="min-h-[44px] rounded-lg border border-emerald-600 px-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
+              >
+                Edit my answers
+              </button>
+            )}
+            <button
+              onClick={() => (agent?.active ? turnOff() : setAgreeing(true))}
+              className={`min-h-[44px] rounded-lg px-4 text-sm font-semibold ${agent?.active ? 'border border-gray-300 dark:border-dark-300 text-gray-700 dark:text-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+            >
+              {agent?.active ? 'Turn off' : 'Turn on'}
+            </button>
+          </div>
+        </section>
+
+        {mail.length > 0 && (
+          <section aria-label="Replies from companies" className="mb-8 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-5">
+            <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
+              <Mail className="w-5 h-5 text-blue-500" aria-hidden="true" /> Replies from companies
+            </h2>
+            <ul className="max-h-96 divide-y divide-gray-200 dark:divide-dark-300 overflow-y-auto">
+              {mail.map((message) => (
+                <li key={message.id} className="flex items-start gap-3 py-3">
+                  <details className="min-w-0 flex-1">
+                    <summary className="cursor-pointer text-sm text-gray-900 dark:text-gray-100 break-words">
+                      <span className={`mr-2 rounded-full px-2 py-0.5 text-xs font-semibold ${MAIL_KINDS[message.kind][1]}`}>{MAIL_KINDS[message.kind][0]}</span>
+                      {message.subject || 'No subject'}
+                      <span className="block text-xs text-gray-500 dark:text-gray-400">{message.from_address} · {new Date(message.received_at).toLocaleString()}</span>
+                    </summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-700 dark:text-gray-300">{message.body}</p>
+                  </details>
+                  <button onClick={() => removeMail(message.id)} aria-label={`Delete message: ${message.subject || 'No subject'}`} className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-500 hover:text-red-600">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* Applications held until the user supplies something. These keep their
             place: answering one sends it straight back to a worker. */}
         {waiting.length > 0 && (
@@ -254,15 +410,48 @@ export const AutoAppliedJobsPage: React.FC = () => {
                           : ''}
                     </p>
                   </div>
-                  {application.status === 'needs_login' && isProviderLoginHost(application.login_site || '') ? (
+                  {behindProvider(application) ? (
                     // An application saved before the engine learned to refuse
                     // these still asks for a login here. Offering the button
                     // would invite the user to hand over the account holding
-                    // their mail and everything else, to reach one job.
-                    <p className="text-sm text-amber-800 dark:text-amber-300 max-w-xs text-right">
-                      This job sits behind a {providerName(application.login_site || '')} sign-in.
-                      We never use that account for you, so please apply from the job link yourself.
-                    </p>
+                    // their mail and everything else, to reach one job. Their
+                    // own browser is already signed in, so the form opens there.
+                    <div className="max-w-sm text-right">
+                      <p className="text-sm text-amber-800 dark:text-amber-300">
+                        {smartApply(application)
+                          ? 'Your tailored resume is ready. Open the job, apply with it, then press "I\'ve applied".'
+                          : hasExtension()
+                            ? 'This job needs your own sign-in. Open the form and our extension will fill it for you.'
+                            : 'This job needs your own sign-in, and we never use that account for you. Open the form and apply in your own browser.'}
+                      </p>
+                      <div className="mt-2 flex flex-wrap justify-end gap-2">
+                        {application.optimized_resumes?.pdf_url && (
+                          <a
+                            href={application.optimized_resumes.pdf_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 rounded-lg border border-amber-600 text-amber-800 dark:text-amber-300 text-sm font-semibold transition-colors"
+                          >
+                            Download Resume
+                          </a>
+                        )}
+                        <a
+                          href={application.application_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => { autoApplyOrchestratorService.prepareInBrowser(application).catch(() => {}); }}
+                          className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
+                        >
+                          Open the form
+                        </a>
+                        <button
+                          onClick={() => appliedMyself(application)}
+                          className="px-4 py-2 rounded-lg border border-amber-600 text-amber-800 dark:text-amber-300 text-sm font-semibold transition-colors"
+                        >
+                          I've applied
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <button
                       onClick={() =>
@@ -444,7 +633,9 @@ export const AutoAppliedJobsPage: React.FC = () => {
                   {getStatusBadge(app.status)}
                 </div>
 
-                {app.error_message && (
+                {IN_FLIGHT.includes(app.status) && <LiveSteps status={app.status} />}
+
+                {app.error_message && !behindProvider(app) && (
                   <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4">
                     <p className="text-sm text-red-800 dark:text-red-300">{app.error_message}</p>
                   </div>
@@ -496,6 +687,13 @@ export const AutoAppliedJobsPage: React.FC = () => {
           if (application) await sendBack(application, answers);
         }}
         onClose={() => setAnswering(null)}
+      />
+
+      <ApplyAgentModal
+        isOpen={agreeing}
+        editOnly={!!agent?.active}
+        onClose={() => setAgreeing(false)}
+        onAgreed={() => { setAgreeing(false); loadAgent(); }}
       />
 
       <AutoApplyLoginModal

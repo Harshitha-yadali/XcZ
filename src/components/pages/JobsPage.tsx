@@ -34,29 +34,15 @@ import { userPreferencesService } from '../../services/userPreferencesService';
 import { aiJobMatchingService } from '../../services/aiJobMatchingService';
 import { useAutoApply } from '../../hooks/useAutoApply';
 import { Seo } from '../../seo/Seo';
+import { ApplyAgentModal } from '../modals/ApplyAgentModal';
+import { autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
+import { buildSearchParamsFromFilters, readFiltersFromSearchParams } from '../../utils/jobSearchParams';
 
 interface JobsPageProps {
   isAuthenticated: boolean;
   onShowAuth: () => void;
   onShowProfile?: (mode?: 'profile' | 'wallet') => void; // NEW: Function to open profile management
 }
-
-const buildSearchParamsFromFilters = (filters: JobFilters, page: number): URLSearchParams => {
-  const params = new URLSearchParams({ page: page.toString() });
-
-  if (filters.search) params.set('search', filters.search);
-  if (filters.domain) params.set('domain', filters.domain);
-  if (filters.location_type) params.set('location_type', filters.location_type);
-  if (filters.job_category) params.set('job_category', filters.job_category);
-  if (filters.experience_required) params.set('experience_required', filters.experience_required);
-  if (filters.eligible_year) params.set('eligible_year', filters.eligible_year);
-  if (typeof filters.package_min === 'number') params.set('package_min', filters.package_min.toString());
-  if (typeof filters.package_max === 'number') params.set('package_max', filters.package_max.toString());
-  if (filters.sort_by) params.set('sort_by', filters.sort_by);
-  if (filters.sort_order) params.set('sort_order', filters.sort_order);
-
-  return params;
-};
 
 export const JobsPage: React.FC<JobsPageProps> = ({
   isAuthenticated,
@@ -71,7 +57,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
 
   const [jobs, setJobs] = useState<JobListing[]>([]);
   const [jobsJsonLd, setJobsJsonLd] = useState<Record<string, unknown> | null>(null);
-  const [filters, setFilters] = useState<JobFilters>({});
+  const [filters, setFilters] = useState<JobFilters>(() => readFiltersFromSearchParams(searchParams));
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -240,7 +226,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
           },
         } : {}),
         ...(j.skills && j.skills.length > 0 ? { skills: j.skills.join(', ') } : {}),
-        url: `https://primoboost.ai/jobs/${j.id}`,
+        url: `https://primoboostai.in/jobs/${j.id}`,
       }));
       setJobsJsonLd({
         '@context': 'https://schema.org',
@@ -275,6 +261,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
     setShowResumePreview(true);
   };
 
+  const [agreeingFor, setAgreeingFor] = useState<JobListing | null>(null);
+
   const handleAutoApply = async (job: JobListing) => {
     // Check if user has a resume uploaded
     if (!user?.id) {
@@ -290,12 +278,19 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         return;
       }
 
-      // Start auto-apply process
-      await startAutoApply(job);
+      // Nothing is sent in the user's name until they have agreed to it, once.
+      if (!(await autoApplyOrchestratorService.getAgent())?.active) {
+        setAgreeingFor(job);
+        return;
+      }
+
+      // Runs in the background; true tells the card to show "Applied".
+      return (await startAutoApply(job))?.error === 'QUEUED';
     } catch (error) {
       console.error('Error starting auto-apply:', error);
       alert('Failed to start auto-apply. Please try again.');
     }
+    return false;
   };
 
   const handleResumePreviewConfirm = () => {
@@ -660,6 +655,8 @@ const stats = [
             // gone wrong, so it must read as neither.
             : autoApplyResult.error === 'QUEUED'
               ? 'We are applying for you. You can close this page.'
+            : autoApplyResult.error === 'JOB_CLOSED'
+              ? 'Nothing was sent. We stopped before tailoring your resume.'
             : autoApplyResult.error === 'SUBMISSION_UNCERTAIN'
               ? autoApplyResult.uncertainMessage
                 || 'Submit was pressed for this job, but no confirmation was seen. The employer may already have your application.'
@@ -673,8 +670,9 @@ const stats = [
           uncertain: autoApplyResult.error === 'SUBMISSION_UNCERTAIN',
           error: ['MANUAL_APPLY', 'SUBMISSION_UNCERTAIN'].includes(autoApplyResult.error || '') ? undefined : autoApplyResult.error,
           // Offered only when nothing was sent. After an uncertain submit the
-          // employer's link would invite a second application.
-          fallbackUrl: autoApplyResult.success || autoApplyResult.error === 'SUBMISSION_UNCERTAIN'
+          // employer's link would invite a second application, and a closed
+          // job's goes nowhere.
+          fallbackUrl: autoApplyResult.success || ['SUBMISSION_UNCERTAIN', 'JOB_CLOSED'].includes(autoApplyResult.error || '')
             ? undefined
             : selectedJob?.application_link,
         } : null}
@@ -716,6 +714,16 @@ const stats = [
         isOpen={showOnboarding}
         onClose={() => setShowOnboarding(false)}
         onComplete={handleOnboardingComplete}
+      />
+
+      <ApplyAgentModal
+        isOpen={agreeingFor !== null}
+        onClose={() => setAgreeingFor(null)}
+        onAgreed={() => {
+          const job = agreeingFor;
+          setAgreeingFor(null);
+          if (job) handleAutoApply(job);
+        }}
       />
     </div>
     </>

@@ -600,9 +600,21 @@ export const UserProfileManagement: React.FC = () => {
     console.log('Submitting profile data:', data); // Debug log
 
     try {
+      // The login email changes only once the link sent to the new address is
+      // clicked; a trigger then copies it into user_profiles.email_address.
+      // user.email is the profile email, which can differ from the login, so
+      // compare against the login itself.
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const loginEmail = (authUser?.email || '').toLowerCase();
+      const newEmail = (data.email_address || '').trim().toLowerCase();
+      const emailChanged = !!newEmail && newEmail !== loginEmail;
+      if (emailChanged) {
+        const { error } = await supabase.auth.updateUser({ email: newEmail });
+        if (error) throw new Error(error.message);
+      }
       await authService.updateUserProfile(user.id, {
         full_name: data.full_name,
-        email_address: data.email_address,
+        email_address: loginEmail || newEmail,
         phone: data.phone,
         linkedin_profile: data.linkedin_profile,
         github_profile: data.github_profile,
@@ -617,7 +629,13 @@ export const UserProfileManagement: React.FC = () => {
       await revalidateUserSession(); // Refresh user context
       await markProfilePromptSeen(); // Mark prompt as seen after saving profile
       setSubmitSuccess(true);
-      setAlertContent({ title: 'Profile Updated!', message: 'Your profile has been saved successfully.', type: 'success' });
+      setAlertContent({
+        title: 'Profile Updated!',
+        message: emailChanged
+          ? `Your profile is saved. We sent a confirmation link to ${newEmail}. Your login email changes after you click it.`
+          : 'Your profile has been saved successfully.',
+        type: 'success',
+      });
       setShowAlert(true);
       if (user.hasSeenProfilePrompt === false) {
         navigate('/');
@@ -936,10 +954,10 @@ export const UserProfileManagement: React.FC = () => {
                     <label className="block text-sm font-medium text-slate-300 mb-2">
                       Email Address <span className="text-red-400">*</span>
                     </label>
-                    <input type="email" {...register('email_address')} className="input-base bg-slate-700/50 cursor-not-allowed" disabled />
+                    <input type="email" {...register('email_address')} className="input-base" />
                     <p className="text-xs text-slate-500 mt-1 flex items-center">
                       <Info className="w-3 h-3 mr-1" />
-                      Email is linked to your account and cannot be changed here
+                      This is your login email. A new one is used after you click the link we send to it.
                     </p>
                     {errors.email_address && <p className="text-red-400 text-xs mt-1">{errors.email_address.message}</p>}
                   </div>

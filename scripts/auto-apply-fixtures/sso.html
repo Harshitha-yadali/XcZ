@@ -150,5 +150,10 @@
   if (view === 'code') {
     document.title = 'ExampleID - Verify it is you';
     root.innerHTML = '<p>Enter the verification code we sent to your email.</p><input name="otp" type="text"><button type="button">Verify</button>';
+    root.querySelector('button').addEventListener('click', async () => {
+      const otp = root.querySelector('input').value;
+      await record({ step: 'code', value: otp });
+      if (otp === '482913') location.href = `http://${home}/single.html`;
+    });
   }
 </script>

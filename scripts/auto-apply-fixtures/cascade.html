@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fixture: a form that grows as it is answered</title>
+<!--
+  Picking a country brings up its states, and picking a state brings up its
+  cities, so a look at the form after the first fill does not reach the end.
+
+  ?drops=1: the college box throws away what it is given, the way a framework
+  field can look filled to a script and hold nothing.
+  ?late=1: Portfolio turns required once a city is picked, on a field that was
+  already on the page.
+-->
+<form id="application" novalidate>
+  <label>Upload Resume*<input id="resume" type="file" required></label>
+  <label>Full Name*<input id="name" required></label>
+  <label>College*<input id="college" required></label>
+  <label>Portfolio<input id="portfolio"></label>
+  <label for="country">Country*</label>
+  <select id="country" required><option value="">Select</option><option>India</option></select>
+  <div id="more"></div>
+  <button type="submit">Submit</button>
+</form>
+<script>
+  const byId = (id) => document.getElementById(id);
+  const query = new URLSearchParams(location.search);
+  const dropdown = (name, id, choice) => byId('more').insertAdjacentHTML('beforeend',
+    `<label for="${id}">${name}*</label><select id="${id}" required><option value="">Select</option><option>${choice}</option></select>`);
+
+  byId('country').addEventListener('change', () => {
+    dropdown('State', 'state', 'Telangana');
+    byId('state').addEventListener('change', () => {
+      dropdown('City', 'city', 'Hyderabad');
+      byId('city').addEventListener('change', () => { byId('portfolio').required = query.has('late'); });
+    });
+  });
+  if (query.has('drops')) byId('college').addEventListener('change', () => { byId('college').value = ''; });
+
+  byId('application').addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__sent = {
+      name: byId('name').value, college: byId('college').value, country: byId('country').value,
+      state: byId('state')?.value || '', city: byId('city')?.value || '',
+    };
+    document.body.innerHTML = '<h1>Thank you for applying</h1>';
+  });
+</script>

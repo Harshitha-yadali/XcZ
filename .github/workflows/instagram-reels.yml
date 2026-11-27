@@ -25,7 +25,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Tesseract's Linux bundle has no GPU or H.264 encoder of its own: it
       # renders through Vulkan (Mesa lavapipe on a runner) and encodes with a

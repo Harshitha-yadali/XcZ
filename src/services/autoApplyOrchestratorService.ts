@@ -5,10 +5,18 @@ import {
   ProjectSuggestion,
 } from './aiProjectSuggestionService';
 import { optimizeResume } from './geminiService';
-import { QUICK_OPTIMIZATION_MODEL } from './openrouterModelConfig';
+import { GEMINI_3_5_FLASH_LITE_MODEL } from './openrouterModelConfig';
+import { runOptimizationLoop } from './optimizationLoopController';
+import { paymentService } from './paymentService';
+import { JD_OPTIMIZATION_TIERS } from '../config/jdOptimizationTiers';
+
+// Auto Apply tailors with the Quick Scan plan: its model for the rewrite, then
+// its scored refinement pass, which also gives the real match score.
+const QUICK_TIER = JD_OPTIMIZATION_TIERS.find((tier) => tier.id === 'quick')!;
 import { exportToPDFBlob } from '../utils/exportUtils';
 import { findUnsupportedClaims } from '../utils/resumeFactCheck';
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
+import { applicantFrom } from '../../supabase/functions/_shared/applicant';
 
 // Private bucket that already holds users' uploaded resumes.
 const RESUME_BUCKET = 'user-resumes';
@@ -18,6 +26,75 @@ export interface AutoApplyStatus {
   progress: number;
   message: string;
   currentAction?: string;
+}
+
+/** On once mail to the agents' own addresses is delivered. Set with APPLY_MAIL on the worker. */
+export const APPLY_MAIL = import.meta.env.VITE_APPLY_MAIL === 'true';
+
+/**
+ * The profile as a resume, untouched: the "before" of the score and the
+ * evidence the rewrite is checked against, as on the optimizer page.
+ * Null when the profile has no experience, projects or skills.
+ */
+export function profileResumeData(profile: any): ResumeData | null {
+  if (!profileResumeText(profile)) return null;
+  const list = (value: any): any[] => {
+    if (Array.isArray(value)) return value;
+    try { const parsed = JSON.parse(value || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+  };
+  return {
+    name: profile.full_name || '', email: profile.email_address || '', phone: profile.phone || '',
+    linkedin: profile.linkedin_profile_url || '', github: profile.github_profile_url || '', location: profile.current_location || '',
+    summary: profile.resume_headline || '', careerObjective: profile.resume_headline || '',
+    workExperience: list(profile.experience_details).map((e) => ({ role: e.role || '', company: e.company || '', year: e.year || '', bullets: e.bullets || [] })),
+    projects: list(profile.projects_details).map((p) => ({ title: p.title || '', bullets: p.bullets || [] })),
+    skills: list(profile.skills_details).map((s) => ({ category: s.category || '', count: (s.list || []).length, list: s.list || [] })),
+    education: list(profile.education_details).map((e) => ({ degree: e.degree || '', school: e.school || '', year: e.year || '', cgpa: e.cgpa || '', location: e.location || '' })),
+    certifications: list(profile.certifications_details).map((c) => ({ title: c.title || '', description: c.description || '' })),
+  } as unknown as ResumeData;
+}
+
+/** The profile's own resume sections as plain text; '' when it has no experience, projects or skills. */
+export function profileResumeText(profile: any): string {
+  if (!profile) return '';
+  const list = (value: any): any[] => {
+    if (Array.isArray(value)) return value;
+    try { const parsed = JSON.parse(value || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+  };
+  const lines = (items: string[]) => items.map((item) => `• ${String(item).trim()}`).join('\n');
+  const experience = list(profile.experience_details).filter((e) => e?.role || e?.company);
+  const projects = list(profile.projects_details).filter((p) => p?.title);
+  const skills = list(profile.skills_details).filter((s) => (s?.list || []).length);
+  if (!experience.length && !projects.length && !skills.length) return '';
+
+  const sections = [
+    [profile.full_name, [profile.email_address, profile.phone, profile.current_location].filter(Boolean).join(' | '),
+      [profile.linkedin_profile_url, profile.github_profile_url].filter(Boolean).join(' | ')].filter(Boolean).join('\n'),
+    profile.resume_headline && `SUMMARY\n${profile.resume_headline}`,
+    experience.length && `WORK EXPERIENCE\n${experience.map((e) =>
+      `${[e.role, e.company].filter(Boolean).join(' | ')}${e.year ? ` (${e.year})` : ''}\n${lines(e.bullets || [])}`).join('\n\n')}`,
+    projects.length && `PROJECTS\n${projects.map((p) => `${p.title}\n${lines(p.bullets || [])}`).join('\n\n')}`,
+    skills.length && `SKILLS\n${skills.map((s) => `${s.category ? `${s.category}: ` : ''}${s.list.join(', ')}`).join('\n')}`,
+    list(profile.education_details).length && `EDUCATION\n${list(profile.education_details).map((e) =>
+      [e.degree, e.school, e.year, e.cgpa && `CGPA ${e.cgpa}`, e.location].filter(Boolean).join(' | ')).join('\n')}`,
+    list(profile.certifications_details).length && `CERTIFICATIONS\n${lines(list(profile.certifications_details).map((c) =>
+      [c.title, c.description].filter(Boolean).join(': ')))}`,
+  ];
+  return sections.filter(Boolean).join('\n\n');
+}
+
+/** The user's agreement to be applied for, and the address companies are given. */
+export interface ApplyAgent { address: string; active: boolean; agreed_at: string }
+
+/** A message a company sent to that address. */
+export interface ApplyMail {
+  id: string;
+  application_id: string | null;
+  from_address: string;
+  subject: string;
+  body: string;
+  kind: 'code' | 'confirmed' | 'interview' | 'rejected' | 'other';
+  received_at: string;
 }
 
 /** A form field the employer requires that the profile could not answer. */
@@ -104,6 +181,17 @@ class AutoApplyOrchestratorService {
       const live = await this.findLiveApplication(userId, jobId);
       if (live) return this.resumeLiveApplication(live);
 
+      // Before the tailoring, which is the part that costs.
+      this.updateStatus(jobId, {
+        step: 'analyzing',
+        progress: 20,
+        message: 'Checking the job is still open...',
+        currentAction: 'Looking at the job',
+      });
+      const check = await this.checkJob(jobId);
+      if (check.twin) return this.resumeLiveApplication(check.twin);
+      if (check.closed) return { success: false, error: 'JOB_CLOSED' };
+
       // ponytail: no match-score gate or project suggestions before applying.
       // That step called a scoring method that never existed; wire it to the
       // real JD scorer if the "add a project first" prompt is wanted back.
@@ -141,8 +229,18 @@ class AutoApplyOrchestratorService {
     selectedProject: ProjectSuggestion | null,
     jobDescription = ''
   ): Promise<AutoApplyResult> {
+    // One Quick Scan credit per application: reserved before the paid rewrite,
+    // kept once the application is queued, given back if anything fails first.
+    let reservationId: string | null = null;
+    let charged = false;
     try {
       const applicant = await this.getApplicant(userId);
+      const runId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `auto-apply-${jobId}-${Date.now()}`;
+      const reservation = await paymentService.reserveOptimization(userId, 'quick', runId);
+      if (!reservation.success || !reservation.reservationId) {
+        throw new Error(reservation.error || 'No Quick Scan credits left. Buy a Quick Scan pack to keep auto applying.');
+      }
+      reservationId = reservation.reservationId;
       // The project-selection step does not carry the resume text along.
       resumeText = resumeText || applicant.resume_text;
       if (!resumeText) {
@@ -172,12 +270,11 @@ class AutoApplyOrchestratorService {
         currentAction: 'Creating PDF document',
       });
 
-      // ponytail: single-pass optimizer and a fixed 'fresher' layout. Use the
-      // optimizer page's multi-pass pipeline and the user's own type once
-      // auto-apply is tied to plan credits.
-      const resumeData = await optimizeResume(
+      // ponytail: fixed 'fresher' layout; use the user's own type when known.
+      const jd = jobDescription || `${roleTitle} at ${companyName}`;
+      const firstPass = (model: string) => optimizeResume(
         finalResumeText,
-        jobDescription || `${roleTitle} at ${companyName}`,
+        jd,
         'fresher',
         applicant.full_name || undefined,
         undefined,
@@ -190,15 +287,33 @@ class AutoApplyOrchestratorService {
         roleTitle,
         undefined,
         undefined,
-        // The default free model often returns nothing for a prompt this size.
-        QUICK_OPTIMIZATION_MODEL
+        model,
+        QUICK_TIER.mode
       );
+      // Same fallback as the optimizer page's Quick: one retry on Flash Lite.
+      let resumeData = await firstPass(QUICK_TIER.modelId).catch((error) => {
+        console.warn('Quick first pass failed, retrying on Flash Lite:', error);
+        return firstPass(GEMINI_3_5_FLASH_LITE_MODEL);
+      });
+      try {
+        const loop = await runOptimizationLoop(resumeData, jd, undefined, profileResumeData(applicant) ?? undefined, {
+          maxLoops: Math.max(0, QUICK_TIER.aiPasses - 1),
+          modelSequence: QUICK_TIER.refinementModels,
+          candidateType: 'fresher',
+          optimizationTier: 'quick',
+        });
+        resumeData = loop.optimizedResume;
+        matchScore = Math.round(loop.afterScore.overallScore || 0);
+      } catch (error) {
+        // The rewrite is already usable; only the refinement and score are lost.
+        console.warn('Quick refinement pass failed, using the first pass:', error);
+      }
       // Tailoring may reword, never invent: anything the original does not
       // state is shown to the user on the review screen before it is sent.
       const resumeFlags = findUnsupportedClaims(resumeText, resumeData);
       const pdfBlob = await exportToPDFBlob(resumeData, 'fresher');
       const pdfPath = await this.uploadResumePDF(userId, jobId, pdfBlob);
-      const resumeId = await this.saveOptimizedResume(userId, jobId, resumeData, pdfPath);
+      const resumeId = await this.saveOptimizedResume(userId, jobId, resumeData, pdfPath, matchScore);
       // The bucket is private, so the "view resume" link is a short-lived signed URL.
       const { data: signed } = await supabase.storage.from(RESUME_BUCKET).createSignedUrl(pdfPath, 3600);
       const pdfUrl = signed?.signedUrl;
@@ -218,7 +333,25 @@ class AutoApplyOrchestratorService {
       // pages takes longer than this page is likely to stay open, and longer
       // than an edge function is allowed to run, so it is queued and the user
       // is free to leave. My Auto Applications follows it from here.
-      const { applicationId } = await this.queueApplication(jobId, resumeId);
+      const { applicationId, status: queuedAs } = await this.queueApplication(jobId, resumeId);
+      const finalized = await paymentService.finalizeCreditReservation(reservationId);
+      if (!finalized.success) console.error('Quick credit could not be finalized:', finalized.error);
+      charged = true;
+
+      // Smart Apply: a site the runner does not finish. The tailored resume is
+      // the product here; the user applies with it on the site.
+      if (queuedAs === 'needs_manual_action') {
+        return {
+          success: false,
+          error: 'MANUAL_APPLY',
+          manualReason: `${companyName || 'This company'}'s site needs you to submit the application yourself (it uses a sign-in, captcha or its own portal).`,
+          applicationId,
+          resumeId,
+          matchScore,
+          pdfUrl,
+          resumeFlags,
+        };
+      }
 
       this.updateStatus(jobId, {
         step: 'submitting',
@@ -243,6 +376,10 @@ class AutoApplyOrchestratorService {
       };
     } catch (error: any) {
       console.error('Error continuing auto-apply:', error);
+      if (reservationId && !charged) {
+        const refund = await paymentService.refundCreditReservation(reservationId);
+        if (!refund.success) console.error('Quick credit could not be given back:', refund.error);
+      }
       this.updateStatus(jobId, {
         step: 'failed',
         progress: 0,
@@ -365,6 +502,25 @@ class AutoApplyOrchestratorService {
   }
 
   /**
+   * Asks whether this job is closed, or already in hand under another listing.
+   * A check that fails stops nothing: the job goes on to the form, as it would
+   * have anyway, and the queue makes the duplicate check again.
+   */
+  private async checkJob(jobId: string): Promise<{ closed?: boolean; twin?: { id: string; status: string } | null }> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('auto-apply-check'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ jobId }),
+      });
+      return response.ok ? await response.json() : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
    * Says how far the application already held for this job has got. Nothing is
    * started from here: it belongs to a worker or is waiting on the user, and
    * running it from this page as well is how one job reached an employer twice.
@@ -402,23 +558,36 @@ class AutoApplyOrchestratorService {
   private async getApplicant(userId: string) {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('full_name, email_address, phone, linkedin_profile_url, github_profile_url')
+      .select('full_name, email_address, phone, linkedin_profile_url, github_profile_url, current_location, resume_headline, education_details, experience_details, projects_details, skills_details, certifications_details')
       .eq('id', userId)
       .maybeSingle();
     if (error) throw error;
 
-    // The uploaded resume's text is saved with the job preferences, not the profile.
-    const { data: preferences, error: preferencesError } = await supabase
-      .from('user_job_preferences')
-      .select('resume_text')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (preferencesError) throw preferencesError;
+    // The profile is what the user keeps up to date, so the resume is built
+    // from it. The older uploaded text (saved with the job preferences) is only
+    // a fallback, and only when it carries the user's own name: one account
+    // held someone else's resume there, and applications went out with that
+    // person's history under the user's name.
+    let resumeText = profileResumeText(data);
+    if (!resumeText) {
+      const { data: preferences, error: preferencesError } = await supabase
+        .from('user_job_preferences')
+        .select('resume_text')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (preferencesError) throw preferencesError;
+      const uploaded = preferences?.resume_text || '';
+      const firstName = (data?.full_name || '').trim().split(/\s+/)[0]?.toLowerCase();
+      if (uploaded && firstName && !uploaded.toLowerCase().includes(firstName)) {
+        throw new Error('Your saved resume has a different name on it. Please fill in your profile or upload your own resume again.');
+      }
+      resumeText = uploaded;
+    }
 
     return {
       full_name: '', email_address: '', phone: '', linkedin_profile_url: '', github_profile_url: '',
       ...data,
-      resume_text: preferences?.resume_text || '',
+      resume_text: resumeText,
     };
   }
 
@@ -443,7 +612,8 @@ class AutoApplyOrchestratorService {
     userId: string,
     jobListingId: string,
     resumeData: ResumeData,
-    pdfPath: string
+    pdfPath: string,
+    matchScore = 0
   ): Promise<string> {
     const { data, error } = await supabase
       .from('optimized_resumes')
@@ -452,6 +622,7 @@ class AutoApplyOrchestratorService {
         job_listing_id: jobListingId,
         resume_content: resumeData,
         pdf_url: pdfPath,
+        optimization_score: matchScore || null,
       })
       .select('id')
       .single();
@@ -550,6 +721,129 @@ class AutoApplyOrchestratorService {
       .in('status', ['needs_input', 'needs_login'])
       .select('id');
     if (error) throw new Error('This application could not be restarted. Please try again.');
+    if (!data?.length) throw new Error('This application has already moved on, so nothing was changed.');
+  }
+
+  /**
+   * Gives the browser extension what it needs to fill one form in the user's own
+   * Chrome: their details for this application, and nothing that signs them in.
+   * Google lets no server sign in for a user, so a form behind a Google sign-in
+   * can only be filled there. Without the extension this message goes nowhere,
+   * and the form simply opens for them to fill in.
+   */
+  async prepareInBrowser(application: {
+    user_id: string;
+    resume_version_id?: string | null;
+    given_answers?: Record<string, string> | null;
+    job_listings: { company_name: string; role_title: string };
+    optimized_resumes?: { pdf_url: string } | null;
+  }): Promise<void> {
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('full_name, email_address, phone, linkedin_profile_url, github_profile_url, current_location, apply_answers')
+      .eq('id', application.user_id)
+      .maybeSingle();
+    const { data: resume } = await supabase
+      .from('optimized_resumes')
+      .select('resume_content')
+      .eq('id', application.resume_version_id ?? '')
+      .maybeSingle();
+    window.postMessage({
+      source: 'primoboost-site',
+      type: 'prepare',
+      prepared: {
+        role: application.job_listings.role_title,
+        company: application.job_listings.company_name,
+        profile: applicantFrom(profile, resume?.resume_content),
+        saved: { ...(profile?.apply_answers || {}), ...(application.given_answers || {}) },
+        resumeUrl: application.optimized_resumes?.pdf_url,
+      },
+    }, window.location.origin);
+  }
+
+  /** Every remembered answer, including the "@" ones given at turn-on. */
+  async getApplyAnswers(): Promise<Record<string, string>> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Authentication required');
+    const { data } = await supabase.from('user_profiles').select('apply_answers').eq('id', user.id).maybeSingle();
+    return data?.apply_answers || {};
+  }
+
+  /**
+   * Saves the answers to the common questions. Only "@" keys are touched: a
+   * blank one is removed, so the next form asks rather than reusing it. Answers
+   * remembered from real forms are kept as they are.
+   */
+  async saveApplyTopics(values: Record<string, string>): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Authentication required');
+    const next = { ...(await this.getApplyAnswers()) };
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith('@')) continue;
+      const clean = value.trim().slice(0, 200);
+      if (clean) next[key] = clean;
+      else delete next[key];
+    }
+    const { error } = await supabase.from('user_profiles').update({ apply_answers: next }).eq('id', user.id);
+    if (error) throw new Error('Your answers could not be saved. Please try again.');
+  }
+
+  /** Where employer mail to the job address is forwarded; '' means the account email. */
+  async getJobMailTo(): Promise<string> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return '';
+    const { data } = await supabase.from('user_profiles').select('job_mail_to').eq('id', user.id).maybeSingle();
+    return data?.job_mail_to || '';
+  }
+
+  async setJobMailTo(email: string): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Authentication required');
+    const clean = email.trim().toLowerCase();
+    if (clean && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(clean)) throw new Error('Please enter a valid email address.');
+    const { error } = await supabase.from('user_profiles').update({ job_mail_to: clean || null }).eq('id', user.id);
+    if (error) throw new Error('Your forwarding email could not be saved. Please try again.');
+  }
+
+  async getAgent(): Promise<ApplyAgent | null> {
+    const { data, error } = await supabase.from('apply_agents').select('address, active, agreed_at').maybeSingle();
+    if (error) throw new Error('Your apply agent could not be checked. Please try again.');
+    return data;
+  }
+
+  async setAgent(active: boolean): Promise<void> {
+    const { error } = await supabase.rpc('set_apply_agent', { p_active: active });
+    if (error) throw new Error('This could not be saved. Please try again.');
+  }
+
+  async getMail(): Promise<ApplyMail[]> {
+    const { data, error } = await supabase
+      .from('apply_mail')
+      .select('id, application_id, from_address, subject, body, kind, received_at')
+      .neq('kind', 'code')
+      .order('received_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []) as ApplyMail[];
+  }
+
+  async deleteMail(id: string): Promise<void> {
+    const { error } = await supabase.from('apply_mail').delete().eq('id', id);
+    if (error) throw new Error('This message could not be deleted. Please try again.');
+  }
+
+  /** The user finished an application on the employer's own page, which we cannot see. */
+  async markApplied(applicationId: string): Promise<void> {
+    const { data, error } = await supabase
+      .from('auto_apply_applications')
+      .update({
+        status: 'submitted', submission_time: new Date().toISOString(),
+        error_message: null, login_site: null, pending_questions: [],
+      })
+      .eq('id', applicationId)
+      .in('status', ['needs_login', 'needs_manual_action'])
+      .select('id');
+    if (error) throw new Error('This application could not be updated. Please try again.');
     if (!data?.length) throw new Error('This application has already moved on, so nothing was changed.');
   }
 

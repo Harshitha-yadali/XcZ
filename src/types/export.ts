@@ -17,7 +17,7 @@ export interface ExportOptions {
 export const defaultExportOptions: ExportOptions = {
   layoutType: 'standard',
   paperSize: 'a4',
-  fontFamily: 'Calibri',
+  fontFamily: 'Helvetica',
   nameSize: 22,
   sectionHeaderSize: 13,
   subHeaderSize: 11,
@@ -25,6 +25,15 @@ export const defaultExportOptions: ExportOptions = {
   sectionSpacing: 4,
   entrySpacing: 2.5,
 };
+
+// The PDF has three built-in fonts. Any other name is drawn in the nearest one,
+// and the preview shows that same font.
+export const PDF_FONT_FAMILIES = ['Helvetica', 'Times New Roman', 'Courier New'];
+export const pdfFontFamily = (name: string): 'helvetica' | 'times' | 'courier' =>
+  /times|georgia/i.test(name) ? 'times' : /courier/i.test(name) ? 'courier' : 'helvetica';
+
+// "96%" is a percentage, not a CGPA. Shared by the preview and the PDF.
+export const gradeLabel = (grade: string): string => (/%/.test(grade) ? 'Percentage' : 'CGPA');
 
 // Layout configurations
 export const layoutConfigs = {
