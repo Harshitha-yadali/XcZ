@@ -302,22 +302,22 @@ export const AutoAppliedJobsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-dark-50 dark:to-dark-200 lg:pl-16 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-dark-50 dark:to-dark-200 lg:pl-16 pt-5 pb-24 px-3 sm:py-8 sm:px-4">
       <div className="container mx-auto max-w-6xl">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-5 sm:mb-8">
           <button
             onClick={() => navigate('/jobs')}
-            className="lg:hidden flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 mb-4"
+            className="lg:hidden flex items-center space-x-2 min-h-[44px] text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 mb-1 sm:mb-4"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back to Jobs</span>
           </button>
 
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+          <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 dark:text-gray-100 mb-1 sm:mb-2">
             My Auto Applications
           </h1>
-          <p className="text-gray-600 dark:text-gray-400">
+          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
             Track all your AI-powered job applications
           </p>
         </div>
@@ -328,7 +328,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </div>
         )}
 
-        <section aria-label="Your apply agent" className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-5">
+        <section aria-label="Your apply agent" className="mb-6 flex flex-wrap items-center justify-between gap-3 sm:gap-4 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-4 sm:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <Bot className={`mt-0.5 w-6 h-6 flex-shrink-0 ${agent?.active ? 'text-emerald-500' : 'text-gray-400'}`} aria-hidden="true" />
             <div className="min-w-0">
@@ -338,18 +338,18 @@ export const AutoAppliedJobsPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap">
             {agent?.active && (
               <button
                 onClick={() => setAgreeing(true)}
-                className="min-h-[44px] rounded-lg border border-emerald-600 px-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
+                className="min-h-[44px] flex-1 sm:flex-none rounded-lg border border-emerald-600 px-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300"
               >
                 Edit my answers
               </button>
             )}
             <button
               onClick={() => (agent?.active ? turnOff() : setAgreeing(true))}
-              className={`min-h-[44px] rounded-lg px-4 text-sm font-semibold ${agent?.active ? 'border border-gray-300 dark:border-dark-300 text-gray-700 dark:text-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+              className={`min-h-[44px] flex-1 sm:flex-none rounded-lg px-4 text-sm font-semibold ${agent?.active ? 'border border-gray-300 dark:border-dark-300 text-gray-700 dark:text-gray-300' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
             >
               {agent?.active ? 'Turn off' : 'Turn on'}
             </button>
@@ -357,7 +357,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
         </section>
 
         {mail.length > 0 && (
-          <section aria-label="Replies from companies" className="mb-8 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-5">
+          <section aria-label="Replies from companies" className="mb-6 sm:mb-8 rounded-xl border border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-100 p-4 sm:p-5">
             <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-gray-100">
               <Mail className="w-5 h-5 text-blue-500" aria-hidden="true" /> Replies from companies
             </h2>
@@ -479,59 +479,59 @@ export const AutoAppliedJobsPage: React.FC = () => {
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div className="bg-white dark:bg-dark-100 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total applications</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">Total applications</p>
+                <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100">
                   {stats.total}
                 </p>
               </div>
-              <Briefcase className="w-10 h-10 text-blue-500" />
+              <Briefcase className="w-7 h-7 sm:w-10 sm:h-10 flex-shrink-0 text-blue-500" />
             </div>
           </div>
 
-          <div className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
+          <div className="bg-white dark:bg-dark-100 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Submitted</p>
-                <p className="text-3xl font-bold text-green-600 dark:text-green-400">
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">Submitted</p>
+                <p className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400">
                   {stats.submitted}
                 </p>
               </div>
-              <CheckCircle className="w-10 h-10 text-green-500" />
+              <CheckCircle className="w-7 h-7 sm:w-10 sm:h-10 flex-shrink-0 text-green-500" />
             </div>
           </div>
 
-          <div className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
+          <div className="bg-white dark:bg-dark-100 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Failed</p>
-                <p className="text-3xl font-bold text-red-600 dark:text-red-400">{stats.failed}</p>
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">Failed</p>
+                <p className="text-2xl sm:text-3xl font-bold text-red-600 dark:text-red-400">{stats.failed}</p>
               </div>
-              <XCircle className="w-10 h-10 text-red-500" />
+              <XCircle className="w-7 h-7 sm:w-10 sm:h-10 flex-shrink-0 text-red-500" />
             </div>
           </div>
 
-          <div className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
+          <div className="bg-white dark:bg-dark-100 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-dark-300 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Match Score</p>
-                <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Match Score</p>
+                <p className="text-2xl sm:text-3xl font-bold text-purple-600 dark:text-purple-400">
                   {stats.avgMatchScore}%
                 </p>
               </div>
-              <TrendingUp className="w-10 h-10 text-purple-500" />
+              <TrendingUp className="w-7 h-7 sm:w-10 sm:h-10 flex-shrink-0 text-purple-500" />
             </div>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center space-x-4 mb-6">
+        <div className="flex items-center gap-2 sm:gap-4 mb-5 sm:mb-6 overflow-x-auto">
           <button
             onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`min-h-[44px] whitespace-nowrap px-3 sm:px-4 py-2 text-sm sm:text-base rounded-lg font-medium transition-colors ${
               filter === 'all'
                 ? 'bg-blue-600 text-white'
                 : 'bg-white dark:bg-dark-100 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-dark-300'
@@ -541,7 +541,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </button>
           <button
             onClick={() => setFilter('submitted')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`min-h-[44px] whitespace-nowrap px-3 sm:px-4 py-2 text-sm sm:text-base rounded-lg font-medium transition-colors ${
               filter === 'submitted'
                 ? 'bg-green-600 text-white'
                 : 'bg-white dark:bg-dark-100 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-dark-300'
@@ -551,7 +551,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
           </button>
           <button
             onClick={() => setFilter('failed')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`min-h-[44px] whitespace-nowrap px-3 sm:px-4 py-2 text-sm sm:text-base rounded-lg font-medium transition-colors ${
               filter === 'failed'
                 ? 'bg-red-600 text-white'
                 : 'bg-white dark:bg-dark-100 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-dark-300'
@@ -567,7 +567,7 @@ export const AutoAppliedJobsPage: React.FC = () => {
             <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
           </div>
         ) : filteredApplications.length === 0 ? (
-          <div className="bg-white dark:bg-dark-100 rounded-xl p-12 text-center border border-gray-200 dark:border-dark-300">
+          <div className="bg-white dark:bg-dark-100 rounded-xl p-6 sm:p-12 text-center border border-gray-200 dark:border-dark-300">
             <Briefcase className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
               No Applications Yet
@@ -587,29 +587,29 @@ export const AutoAppliedJobsPage: React.FC = () => {
             {filteredApplications.map((app) => (
               <div
                 key={app.id}
-                className="bg-white dark:bg-dark-100 rounded-xl p-6 border border-gray-200 dark:border-dark-300 hover:shadow-lg transition-all duration-300"
+                className="bg-white dark:bg-dark-100 rounded-xl p-4 sm:p-6 border border-gray-200 dark:border-dark-300 hover:shadow-lg transition-all duration-300"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start space-x-4 flex-1">
+                <div className="flex flex-col-reverse items-start gap-2 sm:flex-row sm:justify-between mb-4">
+                  <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0 w-full">
                     {app.job_listings.company_logo_url ? (
                       <img
                         src={app.job_listings.company_logo_url}
                         alt={app.job_listings.company_name}
-                        className="w-16 h-16 rounded-lg object-contain bg-gray-50 dark:bg-dark-200 p-2"
+                        className="w-12 h-12 sm:w-16 sm:h-16 flex-shrink-0 rounded-lg object-contain bg-gray-50 dark:bg-dark-200 p-2"
                       />
                     ) : (
-                      <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-2xl">
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 flex-shrink-0 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl sm:text-2xl">
                         {app.job_listings.company_name.charAt(0)}
                       </div>
                     )}
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base sm:text-xl font-bold text-gray-900 dark:text-gray-100 mb-1 break-words">
                         {app.job_listings.role_title}
                       </h3>
-                      <p className="text-gray-600 dark:text-gray-400 mb-2">
+                      <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-2">
                         {app.job_listings.company_name}
                       </p>
-                      <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                         <div className="flex items-center space-x-1">
                           <Calendar className="w-4 h-4" />
                           <span>{new Date(app.created_at).toLocaleDateString()}</span>
@@ -641,13 +641,13 @@ export const AutoAppliedJobsPage: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-3">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
                   {app.optimized_resumes?.pdf_url && (
                     <a
                       href={app.optimized_resumes.pdf_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center space-x-2 px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm font-medium"
+                      className="flex items-center justify-center space-x-2 min-h-[44px] px-3 sm:px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm font-medium"
                     >
                       <Download className="w-4 h-4" />
                       <span>Download Resume</span>
@@ -657,14 +657,14 @@ export const AutoAppliedJobsPage: React.FC = () => {
                     href={app.application_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm font-medium"
+                    className="flex items-center justify-center space-x-2 min-h-[44px] px-3 sm:px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm font-medium"
                   >
                     <ExternalLink className="w-4 h-4" />
                     <span>View Application</span>
                   </a>
                   <button
                     onClick={() => navigate(`/jobs/${app.job_listings.id}`)}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-dark-200 text-gray-800 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-300 transition-colors text-sm font-medium"
+                    className="flex items-center justify-center space-x-2 min-h-[44px] px-3 sm:px-4 py-2 bg-gray-100 dark:bg-dark-200 text-gray-800 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-300 transition-colors text-sm font-medium"
                   >
                     <FileText className="w-4 h-4" />
                     <span>Job Details</span>

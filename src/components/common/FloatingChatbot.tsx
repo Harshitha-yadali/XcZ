@@ -105,7 +105,7 @@ export const FloatingChatbot: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="absolute bottom-16 right-0 mb-2 w-[340px] sm:w-[380px] overflow-hidden rounded-2xl border border-gray-700/50 bg-gray-900 shadow-2xl shadow-black/40"
+            className="absolute bottom-14 sm:bottom-16 right-0 mb-2 w-[340px] max-w-[calc(100vw-2rem)] sm:w-[380px] overflow-hidden rounded-2xl border border-gray-700/50 bg-gray-900 shadow-2xl shadow-black/40"
           >
             <div className="flex items-center gap-3 border-b border-gray-700/50 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 px-4 py-3">
               <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/15 ring-1 ring-emerald-500/30">
@@ -232,7 +232,7 @@ export const FloatingChatbot: React.FC = () => {
         onClick={toggleOpen}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 transition-shadow hover:shadow-xl hover:shadow-emerald-500/30"
+        className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 transition-shadow hover:shadow-xl hover:shadow-emerald-500/30"
         aria-label={isOpen ? "Close chat" : "Open chat"}
       >
         <AnimatePresence mode="wait">

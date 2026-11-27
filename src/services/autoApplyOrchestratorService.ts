@@ -17,6 +17,7 @@ import { exportToPDFBlob } from '../utils/exportUtils';
 import { findUnsupportedClaims } from '../utils/resumeFactCheck';
 import { SUPABASE_ANON_KEY, fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import { applicantFrom } from '../../supabase/functions/_shared/applicant';
+import { missingProfileFields } from './profileCompleteness';
 
 // Private bucket that already holds users' uploaded resumes.
 const RESUME_BUCKET = 'user-resumes';
@@ -231,6 +232,7 @@ class AutoApplyOrchestratorService {
   ): Promise<AutoApplyResult> {
     // One Quick Scan credit per application: reserved before the paid rewrite,
     // kept once the application is queued, given back if anything fails first.
+    // After that the worker gives it back if the employer's side fails the run.
     let reservationId: string | null = null;
     let charged = false;
     try {
@@ -335,7 +337,7 @@ class AutoApplyOrchestratorService {
       // pages takes longer than this page is likely to stay open, and longer
       // than an edge function is allowed to run, so it is queued and the user
       // is free to leave. My Auto Applications follows it from here.
-      const { applicationId, status: queuedAs } = await this.queueApplication(jobId, resumeId);
+      const { applicationId, status: queuedAs } = await this.queueApplication(jobId, resumeId, reservationId);
       const finalized = await paymentService.finalizeCreditReservation(reservationId);
       if (!finalized.success) console.error('Quick credit could not be finalized:', finalized.error);
       charged = true;
@@ -654,14 +656,14 @@ class AutoApplyOrchestratorService {
    * Pressing Auto Apply again on a job already in hand returns that same
    * application rather than starting a second one.
    */
-  async queueApplication(jobId: string, resumeVersionId?: string): Promise<{ applicationId: string; status: string; queued: boolean }> {
+  async queueApplication(jobId: string, resumeVersionId?: string, reservationId?: string): Promise<{ applicationId: string; status: string; queued: boolean }> {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Authentication required');
 
     const response = await fetchWithSupabaseFallback(getSupabaseEdgeFunctionUrl('auto-apply-queue'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ jobId, resumeVersionId }),
+      body: JSON.stringify({ jobId, resumeVersionId, reservationId }),
     });
 
     const result = await response.json();
@@ -805,6 +807,17 @@ class AutoApplyOrchestratorService {
     if (clean && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(clean)) throw new Error('Please enter a valid email address.');
     const { error } = await supabase.from('user_profiles').update({ job_mail_to: clean || null }).eq('id', user.id);
     if (error) throw new Error('Your forwarding email could not be saved. Please try again.');
+  }
+
+  /** Profile fields a job form needs that the user has not filled; [] when ready. */
+  async getMissingProfileFields(userId: string): Promise<string[]> {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('full_name, email_address, phone, current_location, education_details')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return missingProfileFields(data);
   }
 
   async getAgent(): Promise<ApplyAgent | null> {

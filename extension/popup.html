@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PrimoBoost</title>
+<style>
+  body { width: 320px; margin: 0; padding: 14px; font: 13px/1.4 system-ui, sans-serif; color: #1f2937; background: #fff; }
+  h1 { margin: 0 0 4px; font-size: 15px; color: #0f766e; }
+  p { margin: 0 0 10px; color: #4b5563; }
+  label { display: block; margin-bottom: 8px; font-weight: 600; }
+  input { display: block; width: 100%; box-sizing: border-box; margin-top: 2px; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; font-weight: 400; }
+  button { border: 0; border-radius: 8px; padding: 8px 12px; background: #0f766e; color: #fff; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+  button.plain { background: #e5e7eb; color: #1f2937; }
+  #status { margin-top: 8px; min-height: 1em; }
+</style>
+</head>
+<body>
+<h1>PrimoBoost for LinkedIn</h1>
+<p>Saved only in this browser. Used to fill Easy Apply; you always press Submit yourself.</p>
+<form id="profile">
+  <label>Full name <input name="fullName" required autocomplete="name"></label>
+  <label>Email <input name="email" type="email" autocomplete="email"></label>
+  <label>Phone (10 digits) <input name="phone" type="tel" autocomplete="tel"></label>
+  <label>City <input name="location" autocomplete="address-level2"></label>
+  <label>Years of experience <input name="yearsExperience" inputmode="decimal" placeholder="e.g. 3"></label>
+  <label>Notice period <input name="noticePeriod" placeholder="e.g. 30 days, or Immediate"></label>
+  <label>Current CTC <input name="currentCtc" placeholder="e.g. 6 LPA"></label>
+  <label>Expected CTC <input name="expectedCtc" placeholder="e.g. 9 LPA"></label>
+  <label>LinkedIn URL <input name="linkedin" type="url"></label>
+  <label>Portfolio / website <input name="portfolio" type="url"></label>
+  <button type="submit">Save</button>
+  <button type="button" class="plain" id="copy">Copy from PrimoBoost</button>
+</form>
+<div id="status"></div>
+<script src="popup.js"></script>
+</body>
+</html>

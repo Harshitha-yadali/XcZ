@@ -18,6 +18,9 @@ export async function getCaller(req: Request): Promise<Caller> {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   if (!token) return { isService: false, isAdmin: false, user: null };
   if (token === serviceKey) return { isService: true, isAdmin: true, user: null };
+  // pg_cron sends its own secret (Vault 'check_jobs_secret'), never the service key.
+  const cronSecret = Deno.env.get("CHECK_JOBS_SECRET");
+  if (cronSecret && token === cronSecret) return { isService: true, isAdmin: true, user: null };
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
   const { data: { user } } = await supabase.auth.getUser(token);

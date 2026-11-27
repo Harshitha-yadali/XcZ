@@ -281,6 +281,22 @@ export const JobsPage: React.FC<JobsPageProps> = ({
         return;
       }
 
+      // Forms are filled from the profile; a gap there means a blank or wrong answer.
+      const missing = await autoApplyOrchestratorService.getMissingProfileFields(user.id);
+      if (missing.length) {
+        const complete = () => onShowProfile?.('profile');
+        if (onShowAlert) {
+          onShowAlert(
+            'Complete your profile first',
+            `Auto Apply fills job forms from your profile. Missing: ${missing.join(', ')}.`,
+            'warning',
+            'Complete profile',
+            complete
+          );
+        } else complete();
+        return false;
+      }
+
       // Nothing is sent in the user's name until they have agreed to it, once.
       if (!(await autoApplyOrchestratorService.getAgent())?.active) {
         setAgreeingFor(job);

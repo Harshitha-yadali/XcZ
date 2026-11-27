@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
     // `resumeVersionId` is the tailored resume. The browser still makes it, so
     // it comes in here; once the worker tailors the resume as well this becomes
     // optional and the worker fills it in.
-    const { jobId, resumeVersionId } = await req.json();
+    const { jobId, resumeVersionId, reservationId } = await req.json();
     if (typeof jobId !== 'string' || !jobId) return json({ success: false, error: 'Which job?' }, 400);
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -110,6 +110,26 @@ Deno.serve(async (req: Request) => {
       if (theirs) return json({ success: true, applicationId: theirs.id, status: theirs.status, queued: false });
     }
     if (error) throw error;
+
+    // The Quick credit that paid for this run, so the worker can give it back
+    // if the employer's site fails it. Only runner-bound rows: a Smart Apply
+    // row already delivered what was paid for. Never fails the queueing.
+    if (created.status === 'queued' && typeof reservationId === 'string' && reservationId) {
+      const { data: reservation } = await supabase
+        .from('credit_usage_reservations')
+        .select('id')
+        .eq('id', reservationId)
+        .eq('user_id', user.id)
+        .eq('credit_type', 'optimization')
+        .in('status', ['reserved', 'finalized'])
+        .maybeSingle();
+      if (reservation) {
+        const { error: linkError } = await supabase
+          .from('auto_apply_credit_links')
+          .insert({ application_id: created.id, reservation_id: reservation.id });
+        if (linkError) console.error('Could not link the credit to the application:', linkError);
+      }
+    }
 
     return json({ success: true, applicationId: created.id, status: created.status, queued: true });
   } catch (error: any) {

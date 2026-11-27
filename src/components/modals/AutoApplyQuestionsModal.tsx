@@ -9,6 +9,9 @@ interface AutoApplyQuestionsModalProps {
   onClose: () => void;
 }
 
+/** Past this many choices a question gets a searchable box instead of a list. */
+const LONG_LIST = 40;
+
 const inputClass =
   'w-full rounded-lg border border-gray-300 dark:border-dark-300 bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm';
 
@@ -50,10 +53,31 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {questions.map((question) => (
-            <fieldset key={question.key}>
-              <legend className="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{question.label}</legend>
-              {question.type === 'checks' ? (
+          {questions.map((question, index) => (
+            <fieldset key={`${question.key} ${index}`}>
+              {question.type !== 'checkbox' && (
+                <legend className="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{question.label}</legend>
+              )}
+              {question.type !== 'checks' && question.options.length > LONG_LIST ? (
+                // A country list of ~250, once per phone and address field, is too
+                // many to scroll or to render as a <select> each: type to search.
+                <>
+                  <input
+                    name={question.key}
+                    required
+                    list={`pb-options-${index}`}
+                    placeholder="Start typing to search..."
+                    aria-label={question.label}
+                    className={inputClass}
+                    onChange={(event) => event.currentTarget.setCustomValidity(
+                      question.options.includes(event.currentTarget.value) ? '' : 'Pick one from the list',
+                    )}
+                  />
+                  <datalist id={`pb-options-${index}`}>
+                    {[...new Set(question.options)].map((option) => <option key={option} value={option} />)}
+                  </datalist>
+                </>
+              ) : question.type === 'checks' ? (
                 <div className="grid grid-cols-2 gap-1">
                   {question.options.map((option) => (
                     <label key={option} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -68,7 +92,8 @@ export const AutoApplyQuestionsModal: React.FC<AutoApplyQuestionsModalProps> = (
                       off lists every unticked box, the mailing list among them,
                       and agreeing to that must never be the price of applying. */}
                   <input type="checkbox" name={question.key} value="yes" required={Boolean(question.required)} />
-                  Yes, I agree
+                  {/* The box's own words: "Current role" is a fact, not a consent. */}
+                  {question.label || 'Yes'}
                 </label>
               ) : question.options.length ? (
                 <select name={question.key} required defaultValue="" aria-label={question.label} className={inputClass}>

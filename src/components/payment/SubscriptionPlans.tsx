@@ -258,7 +258,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
         onClick={() => handleSelectPlan(plan.id)}
         className={`relative rounded-2xl border cursor-pointer transition-all duration-300 overflow-hidden backdrop-blur-md ${
           isSelected
-            ? 'border-emerald-400/60 bg-white/[0.08] shadow-[0_0_30px_rgba(16,185,129,0.2)] scale-[1.02]'
+            ? 'border-emerald-400/60 bg-white/[0.08] shadow-[0_0_30px_rgba(16,185,129,0.2)] sm:scale-[1.02]'
             : plan.popular
               ? 'border-emerald-400/30 bg-white/[0.06] hover:border-emerald-400/50 hover:shadow-lg'
               : 'border-white/[0.08] bg-white/[0.04] hover:border-white/[0.15] hover:bg-white/[0.06]'
@@ -321,7 +321,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
 
   return (
     <div className="fixed inset-0 lg:left-16 bg-gradient-to-b from-slate-900 via-slate-950 to-surface-deepest flex items-start justify-center z-50 overflow-y-auto">
-      <div className="w-full max-w-5xl mx-auto px-4 py-8">
+      <div className="w-full max-w-5xl mx-auto px-4 pt-6 pb-24 sm:py-8">
         <button
           onClick={onNavigateBack}
           className="fixed top-4 right-4 lg:right-8 w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors rounded-full bg-white/[0.06] hover:bg-white/[0.1] backdrop-blur-xl z-50 border border-white/[0.1]"
@@ -329,8 +329,8 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        <div className="text-center mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">
+        <div className="text-center mb-5 sm:mb-6 px-12 sm:px-0">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-2">
             Choose Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">Success Plan</span>
           </h1>
           <p className="text-slate-400 text-sm">Select a category, then pick the plan that fits your needs</p>
@@ -343,7 +343,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
               <button
                 key={cat.key}
                 onClick={() => setActiveCategory(cat.key)}
-                className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border transition-all duration-300 text-[13px] font-medium ${
+                className={`flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-xl border transition-all duration-300 text-xs font-medium leading-tight ${
                   activeCategory === cat.key
                     ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-300 shadow-[0_0_24px_rgba(16,185,129,0.2),inset_0_1px_0_rgba(255,255,255,0.1)]'
                     : 'border-slate-500/30 bg-slate-700/40 text-slate-300'
@@ -409,7 +409,7 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
             </div>
 
             {/* Mobile carousel */}
-            <div className="sm:hidden relative mb-8">
+            <div className="sm:hidden relative mb-6">
               <div
                 className="overflow-hidden touch-pan-y"
                 onTouchStart={(e) => { setDragStart(e.touches[0].clientX); setIsDragging(true); }}
@@ -432,13 +432,14 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
                 </motion.div>
               </div>
 
-              {/* Carousel nav arrows */}
+              {/* Carousel nav: prev, dots, next in one row below the card so nothing covers it */}
               {categoryPlans.length > 1 && (
-                <>
+                <div className="flex items-center justify-center mt-3">
                   <button
                     onClick={() => setMobileSlide(prev => Math.max(0, prev - 1))}
                     disabled={mobileSlide === 0}
-                    className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all z-10 ${
+                    aria-label="Previous plan"
+                    className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all ${
                       mobileSlide === 0
                         ? 'bg-white/[0.04] border-white/[0.06] text-slate-600 cursor-not-allowed'
                         : 'bg-white/[0.08] border-white/[0.12] text-white hover:bg-white/[0.15]'
@@ -446,10 +447,27 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
+                  <div className="flex items-center mx-1">
+                    {categoryPlans.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setMobileSlide(i)}
+                        aria-label={`Plan ${i + 1} of ${categoryPlans.length}`}
+                        className="w-8 h-11 flex items-center justify-center"
+                      >
+                        <span className={`block transition-all duration-300 rounded-full ${
+                          mobileSlide === i
+                            ? 'w-6 h-2 bg-gradient-to-r from-emerald-400 to-cyan-400'
+                            : 'w-2 h-2 bg-white/[0.2]'
+                        }`} />
+                      </button>
+                    ))}
+                  </div>
                   <button
                     onClick={() => setMobileSlide(prev => Math.min(categoryPlans.length - 1, prev + 1))}
                     disabled={mobileSlide === categoryPlans.length - 1}
-                    className={`absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border transition-all z-10 ${
+                    aria-label="Next plan"
+                    className={`w-11 h-11 rounded-full flex items-center justify-center border transition-all ${
                       mobileSlide === categoryPlans.length - 1
                         ? 'bg-white/[0.04] border-white/[0.06] text-slate-600 cursor-not-allowed'
                         : 'bg-white/[0.08] border-white/[0.12] text-white hover:bg-white/[0.15]'
@@ -457,24 +475,6 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
-                </>
-              )}
-
-              {/* Dots */}
-              {categoryPlans.length > 1 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  {categoryPlans.map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setMobileSlide(i)}
-                      className={`transition-all duration-300 rounded-full ${
-                        mobileSlide === i
-                          ? 'w-8 h-2 bg-gradient-to-r from-emerald-400 to-cyan-400'
-                          : 'w-2 h-2 bg-white/[0.15] hover:bg-white/[0.25]'
-                      }`}
-                    />
-                  ))}
-                  <span className="ml-2 text-xs text-slate-500">{mobileSlide + 1}/{categoryPlans.length}</span>
                 </div>
               )}
             </div>
@@ -484,23 +484,23 @@ export const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
         {/* Checkout Section */}
         {selectedPlan && selectedPlanData && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-5 max-w-2xl mx-auto">
-            <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-xl p-4 flex items-center justify-between backdrop-blur-xl">
-              <div className="flex items-center gap-3">
+            <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-xl p-3 sm:p-4 flex items-center justify-between gap-2 backdrop-blur-xl">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <CheckCircle className="w-5 h-5 text-emerald-400" />
                 <span className="text-slate-200 text-sm">
                   Selected: <span className="font-semibold text-emerald-400">{selectedPlanData.name}</span> - &#8377;{selectedPlanData.price}
                 </span>
               </div>
-              <button onClick={() => setSelectedPlan(null)} className="text-slate-400 hover:text-slate-200 text-sm">Change</button>
+              <button onClick={() => setSelectedPlan(null)} className="flex-shrink-0 px-2 text-slate-400 hover:text-slate-200 text-sm">Change</button>
             </div>
 
             <div className="bg-white/[0.04] rounded-xl border border-white/[0.08] p-5 backdrop-blur-xl">
               <h2 className="text-base font-bold text-white mb-3 flex items-center">
                 <Tag className="w-4 h-4 mr-2 text-amber-400" />Apply Coupon Code
               </h2>
-              <div className="flex gap-3">
+              <div className="flex gap-2 sm:gap-3">
                 <input type="text" placeholder="Enter coupon code" value={couponCode} onChange={(e) => setCouponCode(e.target.value)}
-                  className="flex-1 px-4 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400/50 text-sm backdrop-blur-sm"
+                  className="flex-1 min-w-0 px-3 sm:px-4 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400/50 text-sm backdrop-blur-sm"
                   disabled={!!appliedCoupon} />
                 {!appliedCoupon ? (
                   <button onClick={handleApplyCoupon} className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white rounded-lg font-medium text-sm disabled:opacity-50" disabled={!couponCode.trim()}>Apply</button>

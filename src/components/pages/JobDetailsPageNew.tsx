@@ -287,32 +287,32 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6 max-w-6xl">
+      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-6xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content */}
-          <div className="lg:col-span-2 space-y-5">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-5">
             {/* Hero Card */}
             <div className="bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-700/40 overflow-hidden">
               {/* Company Banner Strip */}
               <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500" />
 
-              <div className="p-6 sm:p-8">
-                <div className="flex items-start gap-5">
+              <div className="p-4 sm:p-8">
+                <div className="flex items-start gap-4 sm:gap-5">
                   {job.company_logo_url ? (
                     <img
                       src={job.company_logo_url}
                       alt={`${job.company_name} logo`}
-                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-contain bg-white/5 p-2 border border-slate-700/50 flex-shrink-0"
+                      className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl object-contain bg-white/5 p-2 border border-slate-700/50 flex-shrink-0"
                       loading="eager"
                     />
                   ) : (
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-white font-bold text-2xl flex-shrink-0">
+                    <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center text-white font-bold text-2xl flex-shrink-0">
                       {job.company_name.charAt(0)}
                     </div>
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1 leading-tight">
+                    <h1 className="text-xl sm:text-3xl font-bold text-white mb-1 leading-tight break-words">
                       {job.role_title}
                     </h1>
                     <button
@@ -342,7 +342,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                 </div>
 
                 {/* Tags */}
-                <div className="flex flex-wrap gap-2 mt-5">
+                <div className="flex flex-wrap gap-2 mt-4 sm:mt-5">
                   <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-lg font-medium border border-emerald-500/20">
                     {job.domain}
                   </span>
@@ -401,7 +401,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
             {/* Key Details Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {job.job_category && (
-                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="w-4 h-4 text-emerald-400" />
                     <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Who it's for</span>
@@ -409,14 +409,14 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                   <p className="text-sm font-semibold text-white">{job.job_category}</p>
                 </div>
               )}
-              <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+              <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-blue-400" />
                   <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Experience</span>
                 </div>
                 <p className="text-sm font-semibold text-white">{job.experience_required}</p>
               </div>
-              <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+              <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <GraduationCap className="w-4 h-4 text-green-400" />
                   <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Qualification</span>
@@ -424,7 +424,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                 <p className="text-sm font-semibold text-white leading-snug">{job.qualification}</p>
               </div>
               {job.package_amount && job.package_type ? (
-                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <IndianRupee className="w-4 h-4 text-amber-400" />
                     <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Package</span>
@@ -432,7 +432,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                   <p className="text-sm font-semibold text-white">{formatSalary(job.package_amount, job.package_type)}</p>
                 </div>
               ) : (
-                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+                <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <MapPin className="w-4 h-4 text-cyan-400" />
                     <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Location</span>
@@ -440,7 +440,8 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                   <p className="text-sm font-semibold text-white">{job.location_city || job.location_type}</p>
                 </div>
               )}
-              <div className="bg-slate-800/60 rounded-xl border border-slate-700/40 p-4">
+              {/* "Posted" is already in the header on phones */}
+              <div className="hidden sm:block bg-slate-800/60 rounded-xl border border-slate-700/40 p-3 sm:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="w-4 h-4 text-rose-400" />
                   <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">Posted</span>
@@ -451,7 +452,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* Skills */}
             {skillTags.length > 0 && (
-              <div className="bg-gradient-to-br from-cyan-500/8 via-slate-800/70 to-emerald-500/8 rounded-2xl border border-cyan-500/20 p-6">
+              <div className="bg-gradient-to-br from-cyan-500/8 via-slate-800/70 to-emerald-500/8 rounded-2xl border border-cyan-500/20 p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
                   <div>
                     <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -484,7 +485,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* About the Company */}
             {job.company_description && (
-              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
+              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-4 sm:p-6">
                 <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-400" />
                   About {job.company_name}
@@ -502,7 +503,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
             )}
 
             {/* Job Description */}
-            <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
+            <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-4 sm:p-6">
               <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-400" />
                 Job Description
@@ -512,7 +513,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* Selection Process */}
             {hasSelectionProcess && (
-              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
+              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-4 sm:p-6">
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                   <Target className="w-5 h-5 text-amber-400" />
                   Selection Process
@@ -566,7 +567,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
             {/* Referral Section */}
             {job.has_referral && (
-              <div className="bg-gradient-to-br from-green-500/5 to-emerald-500/5 rounded-2xl border border-green-500/20 p-6">
+              <div className="bg-gradient-to-br from-green-500/5 to-emerald-500/5 rounded-2xl border border-green-500/20 p-4 sm:p-6">
                 <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
                   <Users className="w-5 h-5 text-green-400" />
                   Employee Referral Available
@@ -585,7 +586,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
                   {job.referral_email && (
                     <div className="bg-slate-800/70 p-4 rounded-xl border border-green-500/15">
                       <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium mb-1">Email</p>
-                      <a href={`mailto:${job.referral_email}`} className="font-semibold text-green-400 hover:text-green-300 text-sm flex items-center gap-1.5 transition-colors">
+                      <a href={`mailto:${job.referral_email}`} className="font-semibold text-green-400 hover:text-green-300 text-sm flex items-center gap-1.5 transition-colors break-all">
                         <Mail className="w-3.5 h-3.5" />
                         {job.referral_email}
                       </a>
@@ -631,8 +632,8 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
           {/* Sidebar */}
           <div className="lg:col-span-1">
             <div className="sticky top-20 space-y-4">
-              {/* Apply Card */}
-              <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
+              {/* Apply Card (mobile uses the fixed bottom bar instead) */}
+              <div className="hidden lg:block bg-slate-800/60 rounded-2xl border border-slate-700/40 p-4 sm:p-6">
                 <h3 className="text-base font-bold text-white mb-3">Apply for this role</h3>
                 <p className="text-sm text-slate-400 mb-5">
                   {jobOpen
@@ -655,7 +656,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
 
               {/* Short Description */}
               {job.short_description && (
-                <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-6">
+                <div className="bg-slate-800/60 rounded-2xl border border-slate-700/40 p-4 sm:p-6">
                   <h3 className="text-base font-bold text-white mb-3">Summary</h3>
                   <RichText content={job.short_description} className="text-sm" />
                 </div>
@@ -666,7 +667,7 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
       </div>
 
       {/* Fixed Bottom Apply (Mobile) */}
-      <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-slate-900/95 backdrop-blur-xl border-t border-slate-700/40 p-3 shadow-2xl z-40">
+      <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-slate-900/95 backdrop-blur-xl border-t border-slate-700/40 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl z-40">
         <button
           onClick={handleApplyClick}
           disabled={!jobOpen}

@@ -34,6 +34,7 @@ const { runApplication, USER_ONLY } = await import(shared('applyForm.ts'));
 const { applicantFrom } = await import(shared('applicant.ts'));
 const { decryptSecret, encryptSecret } = await import(shared('vault.ts'));
 const { findCode, mailIsFrom } = await import(shared('applyMail.ts'));
+const { isRefundableFailure } = await import(shared('autoApplyRefund.ts'));
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -97,6 +98,17 @@ const one = async (pathAndQuery) => (await rest(pathAndQuery))?.[0] ?? null;
 
 const patchApplication = (id, fields) =>
   rest(`auto_apply_applications?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify(fields), headers: { Prefer: 'return=minimal' } });
+
+/** Gives back the Quick credit that paid for a run the user did not cause to fail. Once only; never throws. */
+const refundCredit = (id) =>
+  rest('rpc/refund_auto_apply_credit', { method: 'POST', body: JSON.stringify({ p_application_id: id }) })
+    .catch((error) => console.error(`[${id}] credit not given back:`, error.message));
+
+/** Marks a run failed, and refunds it when the failure is not the user's doing. */
+const fail = async (id, message) => {
+  await patchApplication(id, { status: 'failed', error_message: message });
+  if (isRefundableFailure('failed', message)) await refundCredit(id);
+};
 
 /** Claims up to `batch` queued applications, atomically, so two workers never collide. */
 const claim = (batch = 1) =>
@@ -180,7 +192,7 @@ async function runOne(application, endpoint) {
   // this was queued, and a requeue does not pass through auto-apply-queue.
   const agent = await one(`apply_agents?select=address,active&user_id=eq.${userId}`);
   if (!agent?.active) {
-    await patchApplication(application.id, { status: 'failed', error_message: 'Your apply agent is off, so nothing was sent. Turn it on and try again.' });
+    await fail(application.id, 'Your apply agent is off, so nothing was sent. Turn it on and try again.');
     return 'failed';
   }
 
@@ -193,7 +205,7 @@ async function runOne(application, endpoint) {
 
   if (!application.resume_version_id) {
     // Until the worker tailors resumes itself, one has to arrive with the job.
-    await patchApplication(application.id, { status: 'failed', error_message: 'No tailored resume was attached to this application.' });
+    await fail(application.id, 'No tailored resume was attached to this application.');
     return 'failed';
   }
   const resume = await one(`optimized_resumes?select=pdf_url,resume_content&id=eq.${application.resume_version_id}&user_id=eq.${userId}`);
@@ -201,12 +213,12 @@ async function runOne(application, endpoint) {
   // only a file inside this user's own folder.
   const resumePath = resume?.pdf_url || '';
   if (!resumePath.startsWith(`${userId}/`) || resumePath.includes('..')) {
-    await patchApplication(application.id, { status: 'failed', error_message: 'The tailored resume for this job was not found.' });
+    await fail(application.id, 'The tailored resume for this job was not found.');
     return 'failed';
   }
   const file = await fetch(`${SUPABASE_URL}/storage/v1/object/${RESUME_BUCKET}/${resumePath}`, { headers });
   if (!file.ok) {
-    await patchApplication(application.id, { status: 'failed', error_message: 'The tailored resume for this job could not be read.' });
+    await fail(application.id, 'The tailored resume for this job could not be read.');
     return 'failed';
   }
   const pdf = Buffer.from(await file.arrayBuffer()).toString('base64');
@@ -330,6 +342,7 @@ async function runOne(application, endpoint) {
     form_data_captured: result.filled || {},
     time_taken_seconds: Math.floor((Date.now() - startedAt) / 1000),
   });
+  if (isRefundableFailure(status, result.message)) await refundCredit(application.id);
 
   // Remember whether the saved login still works, so the user is told to update
   // one the site refused rather than being asked for it again silently.
@@ -462,7 +475,7 @@ try {
         console.error(`[${application.id}] failed:`, error.message);
         // Leaving it claimed would strand it; requeue_stalled_auto_apply would
         // pick it up in an hour, but a known failure can say so at once.
-        await patchApplication(application.id, { status: 'failed', error_message: 'This application could not be prepared. Please try again.' })
+        await fail(application.id, 'This application could not be prepared. Please try again.')
           .catch(() => { /* the next sweep will requeue it */ });
       }
     }
