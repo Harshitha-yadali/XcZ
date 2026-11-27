@@ -1179,8 +1179,8 @@ export const HomePage: React.FC<HomePageProps> = ({
             {[
               {
                 name: 'ATS Check',
-                price: '2-minute check',
-                note: 'See your score before you apply',
+                price: '₹9',
+                note: 'One resume score check, about 2 minutes',
                 features: ['Resume-to-JD score', 'ATS issue summary', 'Missing keyword signals', 'Clear next steps'],
                 cta: 'Check My Resume',
                 action: () => navigate('/score-checker'),
