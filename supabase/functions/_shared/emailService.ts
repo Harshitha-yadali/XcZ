@@ -15,6 +15,8 @@ export interface EmailOptions {
   html: string;
   text?: string;
   replyTo?: string;
+  /** One-click unsubscribe endpoint (POST) for the List-Unsubscribe header. */
+  unsubscribeUrl?: string;
 }
 
 interface EmailServiceOptions {
@@ -81,7 +83,7 @@ export class EmailService {
         text: options.text || this.stripHtml(options.html),
         headers: {
           'X-Entity-Ref-ID': `primoboost-${Date.now()}`,
-          'List-Unsubscribe': `<${siteUrl}/unsubscribe>`,
+          'List-Unsubscribe': `<${options.unsubscribeUrl || `${siteUrl}/unsubscribe`}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
           'Precedence': 'bulk',
           'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
