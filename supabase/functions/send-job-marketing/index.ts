@@ -1,13 +1,19 @@
 // Daily job marketing email. Called by pg_cron (job-marketing-email) every
-// 10 minutes in the morning; sends up to 20 a run and 200 a day through the
-// Hostinger mailbox, everyone in turn (see next_marketing_recipients).
+// 10 minutes from 08:30 to 14:20 IST; sends up to 30 a run and 200-1000 a day
+// (dailyCap) through the Hostinger mailbox, everyone in turn (see next_marketing_recipients).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { EmailService } from '../_shared/emailService.ts';
 import { getCaller } from '../_shared/auth.ts';
 import { marketingHtml, marketingSubject, unsubscribeToken, type MarketingJob } from '../_shared/marketingEmail.ts';
 
-const DAILY_CAP = 200; // ponytail: Hostinger mailbox limit; move to SES to raise it
-const PER_RUN = 20;
+// Hostinger allows 3,000 a day for this mailbox; marketing ramps up so the
+// rest stays free for normal mail and Gmail sees a slow, steady start.
+const START = Date.UTC(2026, 10, 28); // first send day (IST date)
+const dailyCap = (istDay: number) => {
+  const day = Math.floor((istDay - START) / 86400_000);
+  return day < 3 ? 200 : day < 10 ? 500 : 1000;
+};
+const PER_RUN = 30;
 const MIN_JOBS = 3;
 const PROXY = 'https://red-sky-a122.harshithayadali30.workers.dev';
 
@@ -26,7 +32,8 @@ Deno.serve(async (req) => {
   const { count: sentToday } = await supabase
     .from('marketing_emails').select('user_id', { count: 'exact', head: true })
     .gte('last_sent_at', istMidnight.toISOString());
-  const budget = Math.min(PER_RUN, DAILY_CAP - (sentToday ?? 0));
+  const cap = dailyCap(istMidnight.getTime() + 5.5 * 3600_000);
+  const budget = Math.min(PER_RUN, cap - (sentToday ?? 0));
   if (budget <= 0) return json({ success: true, skipped: 'daily cap reached', sentToday });
 
   // Newest open jobs of the last week, Auto Apply-ready ones first.
@@ -69,7 +76,7 @@ Deno.serve(async (req) => {
       sent_count: (row?.sent_count ?? 0) + (result.success ? 1 : 0),
     });
     // Hostinger throttles bursts; keep it gentle.
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 1000));
   }
   console.log('job_marketing', { sent, failed: failed.length, sentToday: (sentToday ?? 0) + (users?.length ?? 0) });
   return json({ success: true, sent, failed });
