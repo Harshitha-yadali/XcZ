@@ -5,6 +5,7 @@ import { Seo } from '../../seo/Seo';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
 import { paymentService } from '../../services/paymentService';
+import { track, trackOnce } from '../../services/funnel';
 import { Subscription } from '../../types/payment';
 import {
   COMPLETENESS_ITEMS,
@@ -178,6 +179,8 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
     return false;
   };
 
+  useEffect(() => { trackOnce('linkedin_view'); }, []);
+
   // site.js runs after the page's first paint; look again shortly after.
   useEffect(() => {
     if (extension) return;
@@ -252,6 +255,7 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
     if (!requireLogin()) return;
     if (missing.length) { setError(`Please add ${missing.join(', ')}.`); return; }
     setError(null); setShowResult(true);
+    try { if (profile) track('linkedin_score_done', { score: scoreLinkedInProfile(profile, options).total }); } catch { /* tracking only */ }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -296,6 +300,12 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
       if (!done.success) throw new Error(done.error || 'Unable to finalize the reserved Quick credit.');
       finalized = true;
       setRewrite(result);
+      try {
+        track('linkedin_rewrite_done', {
+          before: scoreLinkedInProfile(profile, options).total,
+          after: scoreLinkedInProfile(applyRewrite(profile, result), options).total,
+        });
+      } catch { /* tracking only */ }
       refreshUserSubscription().catch(() => undefined);
     } catch (e: any) {
       let note = '';

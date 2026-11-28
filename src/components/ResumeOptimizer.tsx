@@ -31,6 +31,7 @@ import { ExportOptions, defaultExportOptions } from '../types/export';
 import { exportToPDF, exportToWord } from '../utils/exportUtils';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Seo } from '../seo/Seo';
+import { track, trackOnce, type FunnelMeta } from '../services/funnel';
 import { ResumePreviewControls } from './ResumePreviewControls';
 import { FullScreenPreviewModal } from './FullScreenPreviewModal';
 import { jobsService } from '../services/jobsService';
@@ -145,6 +146,7 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   
   // Ref to always get latest jobDescription value in callbacks (fixes stale closure issue)
   const jobDescriptionRef = useRef(jobDescription);
+  useEffect(() => { trackOnce('optimizer_view'); }, []);
   useEffect(() => {
     jobDescriptionRef.current = jobDescription;
   }, [jobDescription]);
@@ -409,6 +411,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       : `optimization-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let creditReservationId: string | null = null;
     let creditFinalized = false;
+    const funnelMeta: FunnelMeta = { tier: qualityTier.id };
     
     try {
       setIsOptimizing(true);
@@ -504,6 +507,8 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           );
           setJdOptimizationResult(loopResult);
           finalOptimizedResume = loopResult.optimizedResume;
+          funnelMeta.before = loopResult.beforeScore.overallScore;
+          funnelMeta.after = loopResult.afterScore.overallScore;
           setParameter16Scores({
             overallBefore: loopResult.beforeScore.overallScore,
             overallAfter: loopResult.afterScore.overallScore,
@@ -680,6 +685,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       
       setSubmittedResume(resumeData);
       setOptimizedResume(finalOptimizedResume);
+      track('optimize_done', funnelMeta);
     } catch (error) {
       console.error('Error in final optimization pass:', error);
       let creditRestored = !creditReservationId;
@@ -947,6 +953,10 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   const handleBoostContinue = useCallback((boost: CandidateBoost | null) => {
     if (!parsedResumeData) return;
     const tier = pendingQualityChoice?.tierId ?? selectedOptimizationTierRef.current;
+    // boost_done = passed the Boost step (funnel step); boost_skipped = subset with nothing confirmed.
+    const answered = (boost?.skills.length ?? 0) + (boost?.metrics.length ?? 0);
+    track('boost_done', { tier, answered });
+    if (!answered) track('boost_skipped', { tier });
     boostRef.current = boost;
     boostAskedForRef.current = { resume: parsedResumeData, jd: jobDescription, tier };
     setBoostStep(null);
@@ -1094,6 +1104,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   // credit step. Once answered for this resume + JD + tier, go straight to it.
   const handleQualityPick = useCallback((tierId: JdOptimizationTierId, packageSize: JdOptimizationPackageSize) => {
     if (processingQualityTier || qualitySelectionLockRef.current) return;
+    track('tier_picked', { tier: tierId, package: packageSize });
     const asked = boostAskedForRef.current;
     if (parsedResumeData && (asked?.resume !== parsedResumeData || asked.jd !== jobDescription || asked.tier !== tierId)) {
       boostRef.current = null;

@@ -1,5 +1,6 @@
 // src/services/paymentService.ts
 import { supabase } from '../lib/supabaseClient';
+import { track } from './funnel';
 import { fetchWithSupabaseFallback, getSupabaseEdgeFunctionUrl } from '../config/env';
 import { JD_OPTIMIZATION_TIERS } from '../config/jdOptimizationTiers';
 import { LIFETIME_PLAN_END_DATE_ISO } from '../utils/subscriptionLifetime';
@@ -1230,6 +1231,7 @@ class PaymentService {
       const orderResult = await response.json();
       if (!response.ok) {
         console.error('PaymentService: Error from create-order:', orderResult.error || response.statusText);
+        track('payment_failed', { plan: paymentData.planId, reason: 'order_failed' });
         return { success: false, error: orderResult.error || 'Failed to create order.' };
       }
 
@@ -1259,6 +1261,7 @@ class PaymentService {
 
               const verifyResult = await verifyResponse.json();
               if (verifyResponse.ok && verifyResult.success) {
+                track('payment_success', { plan: paymentData.planId, amount: Math.round(amount / 100) });
                 resolve({
                   success: true,
                   suggestionMessage:
@@ -1267,10 +1270,12 @@ class PaymentService {
                 });
               } else {
                 console.error('PaymentService: Error from verify-payment:', verifyResult.error || verifyResponse.statusText);
+                track('payment_failed', { plan: paymentData.planId, reason: 'verify_failed' });
                 resolve({ success: false, error: verifyResult.error || 'Payment verification failed.' });
               }
             } catch (error: any) {
               console.error('PaymentService: Error during payment verification:', error.message);
+              track('payment_failed', { plan: paymentData.planId, reason: 'verify_error' });
               resolve({ success: false, error: 'An error occurred during payment verification.' });
             }
           },
@@ -1279,6 +1284,7 @@ class PaymentService {
           modal: {
             ondismiss: async () => {
               console.log('PaymentService: Payment modal dismissed.');
+              track('payment_failed', { plan: paymentData.planId, reason: 'cancelled' });
               await this.cancelPendingTransaction(transactionId, verifiedAccessToken);
               resolve({ success: false, error: 'Payment cancelled by user.' });
             },
@@ -1286,10 +1292,12 @@ class PaymentService {
         };
 
         const rzp = new (window as any).Razorpay(options);
+        track('payment_start', { plan: paymentData.planId, amount: Math.round(amount / 100) });
         rzp.open();
       });
     } catch (error: any) {
       console.error('PaymentService: Error in processPayment:', error.message);
+      track('payment_failed', { plan: paymentData.planId, reason: 'error' });
       return { success: false, error: error.message || 'Failed to process payment.' };
     }
   }

@@ -33,6 +33,7 @@ import { userPreferencesService } from '../../services/userPreferencesService';
 import { aiJobMatchingService } from '../../services/aiJobMatchingService';
 import { useAutoApply } from '../../hooks/useAutoApply';
 import { Seo } from '../../seo/Seo';
+import { track, trackOnce } from '../../services/funnel';
 import { ApplyAgentModal } from '../modals/ApplyAgentModal';
 import { autoApplyOrchestratorService } from '../../services/autoApplyOrchestratorService';
 import { buildSearchParamsFromFilters, readFiltersFromSearchParams } from '../../utils/jobSearchParams';
@@ -108,6 +109,8 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
 
   const pageSize = 12;
+
+  useEffect(() => { trackOnce('jobs_view'); }, []);
 
   // Check onboarding status on mount
   useEffect(() => {
@@ -267,8 +270,10 @@ export const JobsPage: React.FC<JobsPageProps> = ({
   const [agreeingFor, setAgreeingFor] = useState<JobListing | null>(null);
 
   const handleAutoApply = async (job: JobListing) => {
+    const clicked = (outcome: string) => track('auto_apply_click', { outcome });
     // Check if user has a resume uploaded
     if (!user?.id) {
+      clicked('signed_out');
       onShowAuth();
       return;
     }
@@ -277,6 +282,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
       // Auto-apply tailors the uploaded resume, so ask for one if it is missing.
       const preferences = await userPreferencesService.getUserPreferences(user.id);
       if (!preferences?.resume_text?.trim()) {
+        clicked('no_resume');
         setShowOnboarding(true);
         return;
       }
@@ -284,6 +290,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
       // Forms are filled from the profile; a gap there means a blank or wrong answer.
       const missing = await autoApplyOrchestratorService.getMissingProfileFields(user.id);
       if (missing.length) {
+        clicked('profile_incomplete');
         const complete = () => onShowProfile?.('profile');
         if (onShowAlert) {
           onShowAlert(
@@ -299,12 +306,15 @@ export const JobsPage: React.FC<JobsPageProps> = ({
 
       // Nothing is sent in the user's name until they have agreed to it, once.
       if (!(await autoApplyOrchestratorService.getAgent())?.active) {
+        clicked('needs_agreement');
         setAgreeingFor(job);
         return;
       }
 
       // Runs in the background; true tells the card to show "Applied".
       const outcome = await startAutoApply(job);
+      const code = outcome?.error || '';
+      clicked(['QUEUED', 'NO_CREDITS', 'INPUT_REQUIRED', 'LOGIN_REQUIRED', 'PROJECT_SUGGESTIONS_REQUIRED'].includes(code) ? code.toLowerCase() : outcome?.success ? 'success' : 'failed');
       if (outcome?.error === 'NO_CREDITS') {
         const buy = () => onShowSubscriptionPlans?.('optimizer', true);
         if (onShowAlert) {
@@ -321,6 +331,7 @@ export const JobsPage: React.FC<JobsPageProps> = ({
       return outcome?.error === 'QUEUED';
     } catch (error) {
       console.error('Error starting auto-apply:', error);
+      clicked('error');
       alert('Failed to start auto-apply. Please try again.');
     }
     return false;

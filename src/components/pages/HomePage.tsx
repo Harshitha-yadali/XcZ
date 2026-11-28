@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { authService } from '../../services/authService';
 import { Seo } from '../../seo/Seo';
+import { trackOnce } from '../../services/funnel';
 
 interface HomePageProps {
   isAuthenticated: boolean;
@@ -794,6 +795,8 @@ export const HomePage: React.FC<HomePageProps> = ({
   const reduceMotion = useReducedMotion();
   const [globalResumesCreated, setGlobalResumesCreated] = useState(0);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+
+  useEffect(() => { trackOnce('home_view'); }, []);
 
   useEffect(() => {
     const fetchGlobalCount = async () => {

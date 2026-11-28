@@ -23,6 +23,7 @@ import { paymentService } from '../services/paymentService';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Seo } from '../seo/Seo';
+import { track, trackOnce } from '../services/funnel';
 import type { PremiumScoreResult } from '../services/premiumScoreEngine';
 import { PremiumResultsDashboard } from './score/PremiumResultsDashboard';
 
@@ -191,6 +192,8 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
   const [analysisInterrupted, setAnalysisInterrupted] = useState(false);
   const [premiumResult, setPremiumResult] = useState<PremiumScoreResult | null>(null);
 
+  useEffect(() => { trackOnce('score_check_view'); }, []);
+
   // If we arrive from Job Details with state, prefill JD-based flow and jump to Step 1
   useEffect(() => {
     const state = (location.state || {}) as {
@@ -314,6 +317,7 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
 
       setScoreResult(result);
       setCurrentStep(2);
+      track('score_check_done', { score: result.overallScore });
     } catch (error: any) {
       console.error('_analyzeResumeInternal: Error in try block:', error);
       if (creditReservationId && !creditFinalized) {
@@ -334,6 +338,7 @@ export const ResumeScoreChecker: React.FC<ResumeScoreCheckerProps> = ({
 
   // New public function called by the button click
   const analyzeResume = useCallback(async () => {
+    track('score_check_start', { signed_in: isAuthenticated });
     if (scoringMode === null) {
       onShowAlert('Choose a Scoring Method', 'Please select "Score Against a Job" to continue.', 'warning');
       return;
@@ -574,6 +579,7 @@ if (hasScoreCheckCredits) {
   };
 
   const handleOptimizeResume = () => {
+    track('fix_resume_click', scoreResult ? { score: scoreResult.overallScore } : undefined);
     // Hand over the exact input the checker scored, so the optimizer's
     // "before" score is computed on the same resume + JD + candidate type.
     const scoreHandoff: ScoreCheckerHandoff | null = parsedResumeData && scoreResult

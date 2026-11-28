@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, AuthState, LoginCredentials, SignupCredentials, ForgotPasswordData, EmailOtpCredentials } from '../types/auth';
 import { authService } from '../services/authService';
 import { supabase } from '../lib/supabaseClient';
+import { trackOnce } from '../services/funnel';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -100,6 +101,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (event === 'SIGNED_IN' && session?.user) {
           try {
+            // New account = created within the last 5 minutes.
+            if (Date.now() - new Date(session.user.created_at).getTime() < 5 * 60 * 1000) trackOnce('signup');
             console.log('AuthContext: SIGNED_IN event. Setting basic user info and fetching full profile...');
             // Set basic user info immediately for faster UI update
             setAuthState(prev => ({

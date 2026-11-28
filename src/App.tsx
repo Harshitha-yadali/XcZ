@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy, useLayoutEffect } from 'react';
-import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent, Package } from 'lucide-react';
+import { Menu, X, Info, BookOpen, Phone, FileText, LogIn, LogOut, User, Wallet, Briefcase, Crown, Sparkles, Gamepad2, Mail, Brain, Calendar, Video, Users, MessageCircle, TicketPercent, Package, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/navigation/Navigation';
@@ -89,6 +89,7 @@ const ReferralSubmissionPage = lazy(() => import('./components/pages/ReferralSub
 const AdminReferralsPage = lazy(() => import('./components/admin/AdminReferralsPage').then(m => ({ default: m.AdminReferralsPage })));
 const SoftwareToolsPage = lazy(() => import('./components/pages/SoftwareToolsPage').then(m => ({ default: m.SoftwareToolsPage })));
 const AdminSoftwareToolsPage = lazy(() => import('./components/admin/AdminSoftwareToolsPage').then(m => ({ default: m.AdminSoftwareToolsPage })));
+const AdminFunnelPage = lazy(() => import('./components/admin/AdminFunnelPage').then(m => ({ default: m.AdminFunnelPage })));
 
 // Programmatic + content SEO pages
 const RoleHubPage = lazy(() => import('./components/pages/seo/RoleHubPage').then(m => ({ default: m.RoleHubPage })));
@@ -679,6 +680,14 @@ const handleDiwaliCTAClick = useCallback(() => {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/funnel"
+            element={
+              <AdminRoute>
+                <AdminFunnelPage />
+              </AdminRoute>
+            }
+          />
           <Route path="/software-tools" element={<SoftwareToolsPage />} />
           <Route
             path="/admin/software-tools"
@@ -828,6 +837,7 @@ const handleDiwaliCTAClick = useCallback(() => {
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/sessions', label: 'Session Schedule', icon: <Calendar className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/coupons', label: 'Plan Coupons', icon: <TicketPercent className="w-5 h-5" /> }] : []),
                       ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/software-tools', label: 'Software Tools Mgmt', icon: <Package className="w-5 h-5" /> }] : []),
+                      ...((user?.role === 'admin' || user?.email === 'primoboostai@gmail.com') ? [{ id: '/admin/funnel', label: 'Funnel', icon: <TrendingUp className="w-5 h-5" /> }] : []),
                       { id: '/tutorials', label: 'Tutorials', icon: <BookOpen className="w-5 h-5" /> },
                       { id: '/contact', label: 'Contact', icon: <Phone className="w-5 h-5" /> },
                       ...(isAuthenticated ? [{ id: 'wallet', label: 'Referral & Wallet', icon: <Wallet className="w-5 h-5" /> }] : []),
