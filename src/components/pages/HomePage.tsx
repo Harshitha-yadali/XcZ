@@ -1417,12 +1417,12 @@ export const HomePage: React.FC<HomePageProps> = ({
               </p>
               <div className="mt-5 flex gap-2">
                 {[
-                  { icon: Linkedin, label: 'LinkedIn' },
-                  { icon: Mail, label: 'Email' },
+                  { icon: Linkedin, label: 'LinkedIn', href: 'https://linkedin.com/company/primoboost-ai' },
+                  { icon: Mail, label: 'Email', href: 'mailto:primoboostai@gmail.com' },
                 ].map((social) => (
-                  <button key={social.label} type="button" aria-label={social.label} className="grid h-9 w-9 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-slate-500 transition hover:text-emerald-200">
+                  <a key={social.label} href={social.href} target={social.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" aria-label={social.label} className="grid h-9 w-9 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-slate-500 transition hover:text-emerald-200">
                     <social.icon className="h-4 w-4" />
-                  </button>
+                  </a>
                 ))}
               </div>
             </div>

@@ -23,6 +23,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
+    // A page file failed to load (stale tab after a deploy): reload once.
+    if (/dynamically imported module|Importing a module script failed|Loading chunk/i.test(error?.message ?? '')) {
+      (window as unknown as { pbReloadOnceForNewBuild?: () => void }).pbReloadOnceForNewBuild?.();
+    }
   }
 
   handleReset = () => {

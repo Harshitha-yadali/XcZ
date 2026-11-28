@@ -20,8 +20,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  // Diagnostic log to check the context value
-  console.log('useAuth hook: context value is', context);
   if (context === null) {
     throw new Error('useAuth must be used within an AuthProvider');
   }

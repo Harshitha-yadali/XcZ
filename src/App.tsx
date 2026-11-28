@@ -520,7 +520,7 @@ const handleDiwaliCTAClick = useCallback(() => {
         {/* Global Sidebar - visible on all pages except interview and reset password */}
         {/* The icon sidebar is gone: every page it held is in the top menu, with names. */}
 
-        <ErrorBoundary>
+        <ErrorBoundary key={location.pathname}>
         <Suspense fallback={<SuspenseFallback />}>
         <AnimatePresence mode="wait" initial={false}>
         <motion.div

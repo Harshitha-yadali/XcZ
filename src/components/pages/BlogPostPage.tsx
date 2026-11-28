@@ -37,9 +37,12 @@ export const BlogPostPage: React.FC = () => {
       }
 
       setPost(fetchedPost);
+      setIsLoading(false);
 
-      const related = await blogService.fetchRelatedPosts(fetchedPost.id, 3);
-      setRelatedPosts(related);
+      // Related posts load after the article is on screen.
+      blogService.fetchRelatedPosts(fetchedPost.id, 3)
+        .then(setRelatedPosts)
+        .catch((e) => console.error('Error loading related posts:', e));
     } catch (err: any) {
       console.error('Error loading post:', err);
       setError(err.message || 'Failed to load blog post');
