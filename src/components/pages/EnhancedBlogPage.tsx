@@ -17,6 +17,7 @@ import { BlogFilters } from '../blog/BlogFilters';
 import { Pagination } from '../common/Pagination';
 import { Breadcrumb } from '../common/Breadcrumb';
 import { Seo } from '../../seo/Seo';
+import { AdSlot } from '../ads/AdSlot';
 
 interface EnhancedBlogPageProps {
   isAuthenticated: boolean;
@@ -240,13 +241,16 @@ export const EnhancedBlogPage: React.FC<EnhancedBlogPageProps> = ({
         {!error && (
           <>
             <div className="space-y-4 mb-8">
-              {posts.map((post) => (
-                <EnhancedBlogPostCard
-                  key={post.id}
-                  post={post}
-                  isAuthenticated={isAuthenticated}
-                  onShowAuth={onShowAuth}
-                />
+              {posts.map((post, index) => (
+                <React.Fragment key={post.id}>
+                  <EnhancedBlogPostCard
+                    post={post}
+                    isAuthenticated={isAuthenticated}
+                    onShowAuth={onShowAuth}
+                  />
+                  {/* Ad after every 4th post, max 2 per page */}
+                  {(index + 1) % 4 === 0 && index < 8 && <AdSlot />}
+                </React.Fragment>
               ))}
             </div>
 

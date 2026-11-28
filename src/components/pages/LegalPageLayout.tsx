@@ -8,7 +8,7 @@ import { Seo } from '../../seo/Seo';
 type LegalSection = {
   title: string;
   paragraphs?: string[];
-  bullets?: string[];
+  bullets?: React.ReactNode[];
 };
 
 type LegalFaqItem = {
@@ -152,8 +152,8 @@ export const LegalPageLayout: React.FC<LegalPageLayoutProps> = ({
 
                   {section.bullets?.length ? (
                     <ul className="mt-5 space-y-3">
-                      {section.bullets.map((bullet) => (
-                        <li key={bullet} className="flex gap-3 text-sm leading-7 text-slate-300 sm:text-base">
+                      {section.bullets.map((bullet, bulletIndex) => (
+                        <li key={bulletIndex} className="flex gap-3 text-sm leading-7 text-slate-300 sm:text-base">
                           <span className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400" />
                           <span>{bullet}</span>
                         </li>

@@ -21,6 +21,7 @@ import { VideoModal } from '../VideoModal';
 import { DarkPageWrapper, ChristmasTree, GiftBox } from '../ui';
 import { Card } from '../common/Card';
 import { PageSidebar } from '../navigation/PageSidebar';
+import { AdSlot } from '../ads/AdSlot';
 
 // Animation variants
 const containerVariants = {
@@ -493,6 +494,10 @@ export const Tutorials: React.FC = () => {
           </motion.div>
         </div>
       </section>
+
+      <div className="container-responsive max-w-5xl">
+        <AdSlot />
+      </div>
 
       {/* Learning Path */}
       <section className="relative py-16 sm:py-20">

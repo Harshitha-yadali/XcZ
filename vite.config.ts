@@ -55,10 +55,27 @@ async function handleApiRequest(req: any, res: any) {
   res.end(JSON.stringify({ error: 'Not Found' }));
 }
 
+// Writes dist/ads.txt only when VITE_ADSENSE_CLIENT (ca-pub-...) is set.
+function adsTxt() {
+  let client = '';
+  return {
+    name: 'ads-txt',
+    configResolved(config: any) {
+      client = String(config.env.VITE_ADSENSE_CLIENT || '').trim();
+    },
+    generateBundle(this: any) {
+      if (!/^ca-pub-\d+$/.test(client)) return;
+      const pub = client.replace(/^ca-/, '');
+      this.emitFile({ type: 'asset', fileName: 'ads.txt', source: `google.com, ${pub}, DIRECT, f08c47fec0942fa0\n` });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     apiMiddleware(),
+    adsTxt(),
   ],
   resolve: {
     alias: {

@@ -9,6 +9,7 @@ import { Breadcrumb } from '../common/Breadcrumb';
 import { TableOfContents, processContentHeadings } from '../blog/TableOfContents';
 import { ContextualLinks } from '../seo/ContextualLinks';
 import { blogContextualLinks } from '../../seo/internalLinks';
+import { AdSlot } from '../ads/AdSlot';
 
 export const BlogPostPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -194,6 +195,8 @@ export const BlogPostPage: React.FC = () => {
               dangerouslySetInnerHTML={{ __html: processedContent }}
             />
           </div>
+
+          <AdSlot className="mb-8" />
 
           {post.tags && post.tags.length > 0 && (
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-700/50 p-6 mb-8">

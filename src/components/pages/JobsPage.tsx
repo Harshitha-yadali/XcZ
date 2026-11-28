@@ -20,6 +20,7 @@ import { AnimatedCard, GradientButton, SectionHeader, FloatingParticles, Christm
 import { JobListing, JobFilters, OptimizedResume } from '../../types/jobs';
 import { jobsService } from '../../services/jobsService';
 import { JobCard } from '../jobs/JobCard';
+import { AdSlot } from '../ads/AdSlot';
 import { JobFilters as JobFiltersComponent } from '../jobs/JobFilters';
 import { OptimizedResumePreviewModal } from '../modals/OptimizedResumePreviewModal';
 import { ApplicationConfirmationModal } from '../modals/ApplicationConfirmationModal';
@@ -572,7 +573,7 @@ const stats = [
              className="w-full max-w-full mx-auto px-0 sm:px-0 py-8 space-y-4"
            >
             <AnimatePresence initial={false} mode="sync">
-              {displayedJobs.map((job: any, index: number) => (
+              {displayedJobs.flatMap((job: any, index: number) => [
                 <JobCard
                   key={job.id}
                   job={job}
@@ -582,8 +583,10 @@ const stats = [
                   isAuthenticated={isAuthenticated}
                   onShowAuth={onShowAuth}
                   onCompleteProfile={() => onShowProfile && onShowProfile('profile')} // NEW: Pass profile completion handler
-                />
-              ))}
+                />,
+                // Ad after every 8th card, max 3 per page
+                ...((index + 1) % 8 === 0 && index < 24 ? [<AdSlot key={`ad-${index}`} />] : []),
+              ])}
             </AnimatePresence>
            </motion.div>
 

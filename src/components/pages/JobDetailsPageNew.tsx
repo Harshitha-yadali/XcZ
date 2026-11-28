@@ -34,6 +34,7 @@ import { JobListing } from '../../types/jobs';
 import { useAuth } from '../../contexts/AuthContext';
 import { ApplicationMethodModal } from '../modals/ApplicationMethodModal';
 import { RichText } from '../common/RichText';
+import { AdSlot } from '../ads/AdSlot';
 import { Seo } from '../../seo/Seo';
 import { formatJobExpiryLabel, getJobDisplayStatus, isJobOpen } from '../../utils/jobStatus';
 
@@ -510,6 +511,8 @@ export const JobDetailsPageNew: React.FC<JobDetailsPageProps> = ({ onShowAuth })
               </h2>
               <RichText content={job.full_description || job.description} />
             </div>
+
+            <AdSlot />
 
             {/* Selection Process */}
             {hasSelectionProcess && (
