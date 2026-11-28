@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, ArrowLeft, Check, Copy, FileUp, Linkedin, Loader2, RotateCcw, Sparkles, UserRound, Wand2 } from 'lucide-react';
 import { Seo } from '../../seo/Seo';
@@ -18,6 +18,7 @@ import {
   generateFullRewrite,
   generateHeadlineSample,
   parseLinkedInPdfText,
+  profileFromExtension,
   profileFromUserProfile,
   scoreLinkedInProfile,
   unsupportedClaims,
@@ -53,6 +54,54 @@ const band = (score: number) =>
     : score >= 60
       ? { label: 'Good start', text: 'text-amber-400', stroke: 'stroke-amber-400', bar: 'bg-amber-500' }
       : { label: 'Needs work', text: 'text-red-400', stroke: 'stroke-red-400', bar: 'bg-red-500' };
+
+// The PrimoBoost Chrome extension (extension/site.js) marks the page when it is installed.
+const hasExtension = () => typeof document !== 'undefined' && document.documentElement.dataset.primoboostExtension === '1';
+
+/**
+ * One ask to the extension through site.js. Resolves with the message of
+ * `finalType` that carries our id; rejects if the extension could not start
+ * or nothing came back in time.
+ */
+function askExtension(message: Record<string, unknown>, finalType: string, timeoutMs: number): Promise<any> {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve, reject) => {
+    const finish = (done: () => void) => { clearTimeout(timer); window.removeEventListener('message', onMessage); done(); };
+    const timer = setTimeout(() => finish(() => reject(new Error("LinkedIn didn't answer in time. Try again, or use the PDF upload instead."))), timeoutMs);
+    function onMessage(event: MessageEvent) {
+      const d = event.data;
+      if (event.source !== window || event.origin !== window.location.origin || d?.source !== 'primoboost-extension' || d.id !== id) return;
+      if (d.type === 'linkedin-started' && !d.ok) finish(() => reject(new Error(d.error || 'The PrimoBoost extension could not open LinkedIn.')));
+      else if (d.type === finalType) finish(() => resolve(d));
+    }
+    window.addEventListener('message', onMessage);
+    window.postMessage({ source: 'primoboost-site', id, ...message }, window.location.origin);
+  });
+}
+
+const FillOnLinkedIn: React.FC<{ field: 'headline' | 'about'; text: string }> = ({ field, text }) => {
+  const [state, setState] = useState<'idle' | 'opening' | 'opened' | 'failed'>('idle');
+  return (
+    <span className="inline-flex flex-col items-end">
+      <button
+        type="button"
+        disabled={state === 'opening'}
+        onClick={async () => {
+          setState('opening');
+          try { await askExtension({ type: 'linkedin-fill', field, text }, 'linkedin-started', 15000); setState('opened'); } catch { setState('failed'); }
+        }}
+        className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl border border-sky-400/30 bg-sky-500/10 px-3 text-sm font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+      >
+        {state === 'opening' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Linkedin className="h-4 w-4" aria-hidden="true" />}
+        Fill on LinkedIn
+      </button>
+      <span role="status" className="mt-1 text-xs text-slate-400">
+        {state === 'opened' && 'Opened in a new tab. Review it there and click Save.'}
+        {state === 'failed' && 'Could not reach the extension. Use Copy instead.'}
+      </span>
+    </span>
+  );
+};
 
 const CopyButton: React.FC<{ text: string; label?: string }> = ({ text, label = 'Copy' }) => {
   const [copied, setCopied] = useState(false);
@@ -98,7 +147,9 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
 }) => {
   const { user } = useAuth();
   const [profile, setProfile] = useState<LinkedInProfile | null>(null);
-  const [source, setSource] = useState<{ kind: 'pdf' | 'profile'; name: string } | null>(null);
+  const [source, setSource] = useState<{ kind: 'pdf' | 'profile' | 'linkedin'; name: string } | null>(null);
+  const [extension, setExtension] = useState(hasExtension);
+  const [importNote, setImportNote] = useState('');
   const [loadingSource, setLoadingSource] = useState(false);
   const [targetRole, setTargetRole] = useState('');
   const [level, setLevel] = useState<ExperienceLevel | null>(null);
@@ -127,8 +178,35 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
     return false;
   };
 
-  const loaded = (p: LinkedInProfile, kind: 'pdf' | 'profile', name: string) => {
-    setProfile(p); setSource({ kind, name }); setShowResult(false); setSample(''); setRewrite(null); setCompleteness({}); setError(null);
+  // site.js runs after the page's first paint; look again shortly after.
+  useEffect(() => {
+    if (extension) return;
+    const t = setTimeout(() => setExtension(hasExtension()), 1500);
+    return () => clearTimeout(t);
+  }, [extension]);
+
+  const loaded = (p: LinkedInProfile, kind: 'pdf' | 'profile' | 'linkedin', name: string) => {
+    setProfile(p); setSource({ kind, name }); setShowResult(false); setSample(''); setRewrite(null); setCompleteness({}); setError(null); setImportNote('');
+  };
+
+  // The extension opens the user's own LinkedIn profile in a new tab, reads
+  // what is on it and sends it back here; then it is scored like a PDF.
+  const handleLinkedInImport = async () => {
+    if (!requireLogin()) return;
+    setLoadingSource(true); setError(null);
+    try {
+      const reply = await askExtension({ type: 'linkedin-import' }, 'linkedin-profile', 120000);
+      if (!reply.ok) throw new Error(reply.error || "Couldn't read your profile. Use the PDF upload instead.");
+      const { profile: p, skillsTotal, truncated } = profileFromExtension(reply.profile);
+      if (!p.headline && !p.about && !p.experience.length) throw new Error("Couldn't read your profile. Use the PDF upload instead.");
+      loaded(p, 'linkedin', 'Your LinkedIn profile');
+      if (skillsTotal > p.skills.length) setSkillCount(String(skillsTotal));
+      if (truncated.length) setImportNote(`LinkedIn showed only part of: ${truncated.join(', ')}. We scored what was visible.`);
+    } catch (e: any) {
+      setError(e?.message || "Couldn't read your profile. Use the PDF upload instead.");
+    } finally {
+      setLoadingSource(false);
+    }
   };
 
   const handlePdf = async (file: File) => {
@@ -233,7 +311,7 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
   };
 
   const startOver = () => {
-    setProfile(null); setSource(null); setShowResult(false); setSample(''); setRewrite(null); setCompleteness({}); setSkillCount(''); setError(null);
+    setProfile(null); setSource(null); setShowResult(false); setSample(''); setRewrite(null); setCompleteness({}); setSkillCount(''); setError(null); setImportNote('');
   };
 
   const errorBox = error && (
@@ -301,6 +379,16 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
                     <UserRound className="h-4 w-4" aria-hidden="true" />
                     {source?.kind === 'profile' ? 'Loaded: your PrimoBoost profile' : 'Or use my PrimoBoost profile'}
                   </button>
+                  {extension && (
+                    <>
+                      <button type="button" onClick={handleLinkedInImport} disabled={loadingSource} className={`${secondaryButton} mt-3 w-full`}>
+                        <Linkedin className="h-4 w-4" aria-hidden="true" />
+                        {source?.kind === 'linkedin' ? 'Loaded: your LinkedIn profile' : 'Import from LinkedIn (extension)'}
+                      </button>
+                      <p className="mt-1 text-center text-xs text-slate-500">Opens your own LinkedIn profile in a new tab and reads what it shows. Nothing is changed there.</p>
+                    </>
+                  )}
+                  {importNote && <p className="mt-2 text-xs text-amber-300">{importNote}</p>}
 
                   {profile && (
                     <div className="mt-4 space-y-3 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] p-4 text-sm">
@@ -420,10 +508,10 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
                     </li>
                   ))}
                 </ul>
-                {source?.kind === 'pdf' && profile.skills.length <= 3 && (
+                {source?.kind !== 'profile' && (profile.skills.length <= 3 || !!skillCount) && (
                   <div className="mt-3">
                     <label htmlFor="lio-skill-count" className="mb-1.5 block text-sm font-medium text-slate-300">
-                      How many skills are on your LinkedIn? <span className="font-normal text-slate-500">(the PDF shows only your top 3)</span>
+                      How many skills are on your LinkedIn? <span className="font-normal text-slate-500">(the PDF and profile page show only a few)</span>
                     </label>
                     <input id="lio-skill-count" type="number" inputMode="numeric" min={0} max={100} value={skillCount} onChange={(e) => setSkillCount(e.target.value)} placeholder="e.g. 12" className={inputClass} />
                   </div>
@@ -463,6 +551,7 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
                   before={score.total}
                   after={afterScore?.total ?? score.total}
                   unsupported={unsupported}
+                  extension={extension}
                 />
               )}
 
@@ -478,19 +567,22 @@ export const LinkedInOptimizerPage: React.FC<LinkedInOptimizerPageProps> = ({
   );
 };
 
-const ResultBlock: React.FC<{ title: string; text: string; note?: string; children?: React.ReactNode }> = ({ title, text, note, children }) => (
+const ResultBlock: React.FC<{ title: string; text: string; note?: string; fill?: 'headline' | 'about'; children?: React.ReactNode }> = ({ title, text, note, fill, children }) => (
   <section className={`${cardClass} p-4 sm:p-5`}>
-    <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
       <h3 className="font-semibold text-slate-100">{title}</h3>
-      <CopyButton text={text} />
+      <div className="flex flex-wrap items-start gap-2">
+        {fill && <FillOnLinkedIn field={fill} text={text} />}
+        <CopyButton text={text} />
+      </div>
     </div>
     {children ?? <p className="whitespace-pre-line break-words text-sm leading-6 text-slate-300">{text}</p>}
     {note && <p className="mt-2 text-xs text-slate-500">{note}</p>}
   </section>
 );
 
-const RewriteResults: React.FC<{ rewrite: LinkedInRewrite; profile: LinkedInProfile; before: number; after: number; unsupported: string[] }> = ({
-  rewrite, profile, before, after, unsupported,
+const RewriteResults: React.FC<{ rewrite: LinkedInRewrite; profile: LinkedInProfile; before: number; after: number; unsupported: string[]; extension: boolean }> = ({
+  rewrite, profile, before, after, unsupported, extension,
 }) => (
   <div className="space-y-4">
     <section className={`${cardClass} flex items-center justify-center gap-4 p-6`}>
@@ -508,9 +600,9 @@ const RewriteResults: React.FC<{ rewrite: LinkedInRewrite; profile: LinkedInProf
     )}
 
     {rewrite.headlines.map((h, i) => (
-      <ResultBlock key={i} title={`Headline option ${i + 1}`} text={h} note={`${h.length}/220 characters`} />
+      <ResultBlock key={i} title={`Headline option ${i + 1}`} text={h} note={`${h.length}/220 characters`} fill={extension ? 'headline' : undefined} />
     ))}
-    {rewrite.about && <ResultBlock title="About" text={rewrite.about} note={`${rewrite.about.length}/2,600 characters`} />}
+    {rewrite.about && <ResultBlock title="About" text={rewrite.about} note={`${rewrite.about.length}/2,600 characters`} fill={extension ? 'about' : undefined} />}
     {rewrite.experience.map((e) => (
       <ResultBlock
         key={e.index}

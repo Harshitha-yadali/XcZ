@@ -208,3 +208,47 @@ describe('mentions', () => {
     expect(mentions('Used Gradle', 'Maven/Gradle')).toBe(true);
   });
 });
+
+describe('profileFromExtension', () => {
+  it('maps what the extension read into the profile shape and scores it', async () => {
+    const { profileFromExtension } = await import('./linkedinProfile');
+    const { profile, skillsTotal, truncated } = profileFromExtension({
+      name: '  Riya Test ',
+      headline: 'Aspiring Data Analyst | SQL | Python',
+      location: 'Hyderabad, Telangana, India',
+      about: 'I turn messy data into clear dashboards.\nBuilt 12 Power BI reports.',
+      experience: [
+        { title: 'Data Analyst Intern', org: 'Acme Analytics', dates: 'Jan 2024 - Jun 2024', description: 'Built 12 Power BI dashboards.' },
+        { title: '', org: '', dates: '', description: 'orphan' },
+        'not an entry',
+      ],
+      education: ['ABC Institute of Technology, B.Tech, 2019 - 2023', 42],
+      skills: ['SQL', 'sql', 'Python', ''],
+      certifications: ['Google Data Analytics'],
+      profileUrl: 'linkedin.com/in/riya-test-4b2a1c9',
+      skillsTotal: '25',
+      truncated: ['Skills'],
+      extra: '<script>',
+    });
+    expect(profile.name).toBe('Riya Test');
+    expect(profile.about).toContain('\n');
+    expect(profile.experience).toEqual([{ title: 'Data Analyst Intern', org: 'Acme Analytics', dates: 'Jan 2024 - Jun 2024', description: 'Built 12 Power BI dashboards.' }]);
+    expect(profile.education).toEqual(['ABC Institute of Technology, B.Tech, 2019 - 2023']);
+    expect(profile.skills).toEqual(['SQL', 'Python']);
+    expect(profile.languages).toEqual([]);
+    expect(profile.profileUrl).toBe('linkedin.com/in/riya-test-4b2a1c9');
+    expect(skillsTotal).toBe(25);
+    expect(truncated).toEqual(['Skills']);
+    const score = scoreLinkedInProfile(profile, { targetRole: 'Data Analyst', level: 'fresher', skillCount: skillsTotal });
+    expect(score.total).toBeGreaterThan(0);
+  });
+
+  it('survives junk input', async () => {
+    const { profileFromExtension } = await import('./linkedinProfile');
+    const { profile, skillsTotal } = profileFromExtension(null);
+    expect(profile.headline).toBe('');
+    expect(profile.experience).toEqual([]);
+    expect(skillsTotal).toBe(0);
+    expect(profileFromExtension({ profileUrl: 'https://evil.example/x', skillsTotal: -3 }).profile.profileUrl).toBe('');
+  });
+});

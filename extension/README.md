@@ -43,7 +43,40 @@ phone, city, LinkedIn/portfolio, years of experience (the total, also for
 India" = Yes, "need sponsorship" = No. Anything else is left to you. It never
 overwrites a field that already has a value, and never ticks a checkbox.
 
+## Your own LinkedIn profile (LinkedIn Profile Optimizer)
+
+Only when you press a button on primoboostai.in/linkedin-optimizer, and only
+for your own profile in your own signed-in browser.
+
+- **Import from LinkedIn (extension)**: opens `linkedin.com/in/me/` (LinkedIn
+  sends that to the signed-in person's own profile) in a new tab. On that page
+  it reads what is visible: name, headline, location, About, Experience,
+  Projects, Education, Skills, Licenses & certifications, Languages. The only
+  click is About's "see more"; it scrolls the page so lower sections load.
+  Sections with "Show all" are read as far as shown (the site says so). It
+  sends that back to the PrimoBoost tab, closes the tab it opened, and the
+  site scores it like an uploaded PDF. If the page can't be read it says
+  "Couldn't read your profile. Use the PDF upload instead."
+- **Fill on LinkedIn** (headline and About, after the paid rewrite): opens
+  your profile in a new tab, clicks the pencil for that one section to open
+  its edit form, puts the text in and outlines it green, and shows "PrimoBoost
+  filled this. Review and click Save." If it can't find the pencil or the
+  field, it shows the text with a Copy button instead.
+
+Only the tab the extension opened gets the job, once, for 3 minutes. Message
+path: site `postMessage` -> `site.js` -> `background.js` (opens the tab, keeps
+the job in session storage) -> `linkedin.js` in that tab -> `background.js` ->
+`site.js` -> site. Text helpers are in `profile.js`, checked by
+`node extension/profile.test.mjs`. LinkedIn changes its page often: the
+lookups use section anchors (`#about`, `#experience`, `#education`,
+`#skills`...), then section headings, then plain text.
+
 ## What it never does
+
+- On your profile it never clicks Save, Post, Add, Delete, Connect or anything
+  else besides About's "see more" (import) and one section's edit pencil (fill).
+- It never opens or reads anyone else's profile, and never crawls in the
+  background: it reads one page, the one it opened, when you asked.
 
 - It never presses Next, Review, Submit or Send on LinkedIn, and never ticks a
   checkbox. The only clicks are on radio buttons for answers it chose.

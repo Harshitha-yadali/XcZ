@@ -185,6 +185,39 @@ export function profileFromUserProfile(row: any): LinkedInProfile {
   };
 }
 
+/**
+ * What the PrimoBoost extension read from the user's own LinkedIn page
+ * (extension/linkedin.js) as a LinkedIn profile. The data crosses a trust
+ * boundary (window.postMessage), so every field is type-checked and clipped.
+ */
+export function profileFromExtension(data: any): { profile: LinkedInProfile; skillsTotal: number; truncated: string[] } {
+  const text = (v: any, max: number) => (typeof v === 'string' ? v.replace(/[ \t]+/g, ' ').trim().slice(0, max) : '');
+  const list = (v: any, max = 200) => (Array.isArray(v) ? v : []).map((x) => text(x, max)).filter(Boolean).slice(0, 100);
+  const unique = (items: string[]) => items.filter((s, i) => items.findIndex((x) => x.toLowerCase() === s.toLowerCase()) === i);
+  const slug = text(data?.profileUrl, 200).match(/linkedin\.com\/in\/([A-Za-z0-9\-_%]+)/i)?.[1];
+  const total = Number(data?.skillsTotal);
+  return {
+    profile: {
+      ...emptyProfile(),
+      name: text(data?.name, 100),
+      headline: text(data?.headline, 400),
+      location: text(data?.location, 120),
+      about: text(data?.about, 4000),
+      experience: (Array.isArray(data?.experience) ? data.experience : [])
+        .map((e: any) => ({ title: text(e?.title, 200), org: text(e?.org, 200), dates: text(e?.dates, 80), description: text(e?.description, 3000) }))
+        .filter((e: LinkedInEntry) => e.title || e.org)
+        .slice(0, 50),
+      education: list(data?.education, 300),
+      skills: unique(list(data?.skills)),
+      certifications: list(data?.certifications, 300),
+      languages: list(data?.languages),
+      profileUrl: slug ? `linkedin.com/in/${slug}` : '',
+    },
+    skillsTotal: Number.isFinite(total) && total > 0 ? Math.min(Math.round(total), 500) : 0,
+    truncated: list(data?.truncated, 60),
+  };
+}
+
 // ---------------------------------------------------------------- scoring
 
 const STOP_WORDS = new Set(['aspiring', 'junior', 'senior', 'intern', 'fresher', 'trainee', 'entry', 'level', 'and', 'the', 'of', 'for', 'in', 'a', 'jr', 'sr']);
