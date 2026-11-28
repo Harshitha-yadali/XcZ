@@ -60,12 +60,18 @@ Deno.serve(async (req) => {
   for (const u of users ?? []) {
     const t = await unsubscribeToken(u.user_id, serviceKey);
     const q = `u=${u.user_id}&t=${t}`;
-    const result = await mailer.sendEmail({
+    const mail = {
       to: u.email,
       subject: marketingSubject(picked, u.full_name, dayIndex),
       html: marketingHtml({ jobs: picked, name: u.full_name, unsubscribeUrl: `https://primoboostai.in/unsubscribe?${q}`, dayIndex }),
       unsubscribeUrl: `${PROXY}/functions/v1/marketing-unsubscribe?${q}`,
-    });
+    };
+    let result = await mailer.sendEmail(mail);
+    // Hostinger sometimes drops the connection mid-send; one retry fixes most.
+    if (!result.success && /close_notify|end of file|ECONNRESET|socket|timeout/i.test(result.error ?? '')) {
+      await new Promise((r) => setTimeout(r, 3000));
+      result = await mailer.sendEmail(mail);
+    }
     if (result.success) sent++;
     else failed.push(`${u.user_id}: ${result.error}`);
     // Mark failures as mailed too, so one bad address can't block the queue.
