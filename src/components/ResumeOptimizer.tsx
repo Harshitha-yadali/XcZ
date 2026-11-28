@@ -1,5 +1,5 @@
 // src/components/ResumeOptimizer.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -49,6 +49,7 @@ import ExportResumeModal from './ExportResumeModal';
 import OptimizationQualityModal from './optimizer/OptimizationQualityModal';
 import BoostQuestionsModal from './optimizer/BoostQuestionsModal';
 import { applyCandidateBoost, type CandidateBoost } from '../services/candidateBoost';
+import { buildSkillGapPlan } from '../services/scorePrediction';
 import {
   DEFAULT_JD_OPTIMIZATION_TIER,
   getJdOptimizationPackage,
@@ -252,8 +253,12 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   const selectedOptimizationTierRef = useRef<JdOptimizationTierId>(DEFAULT_JD_OPTIMIZATION_TIER);
   const qualitySelectionLockRef = useRef(false);
   // Boost step: what the candidate confirmed, and for which resume + JD + tier it was asked.
-  // 'before-run' runs after the tier is chosen; 'after-run' re-scores a finished result.
+  // 'before-run' runs after the tier is chosen and BEFORE the payment / credit step
+  // (Boost, then the predicted score); 'after-run' re-scores a finished result.
   const [boostStep, setBoostStep] = useState<'before-run' | 'after-run' | null>(null);
+  // The tier + package picked in the quality modal, waiting on Boost and the prediction.
+  const [pendingQualityChoice, setPendingQualityChoice] = useState<{ tierId: JdOptimizationTierId; packageSize: JdOptimizationPackageSize } | null>(null);
+  const qualityChoiceRef = useRef<((tierId: JdOptimizationTierId, packageSize: JdOptimizationPackageSize) => Promise<void>) | null>(null);
   const boostRef = useRef<CandidateBoost | null>(null);
   const boostAskedForRef = useRef<{ resume: ResumeData; jd: string; tier: JdOptimizationTierId } | null>(null);
   const [jobApplicationLink, setJobApplicationLink] = useState<string | null>(null);
@@ -941,13 +946,23 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   handleOptimizeRef.current = handleOptimize;
   const handleBoostContinue = useCallback((boost: CandidateBoost | null) => {
     if (!parsedResumeData) return;
-    const tier = selectedOptimizationTierRef.current;
+    const tier = pendingQualityChoice?.tierId ?? selectedOptimizationTierRef.current;
     boostRef.current = boost;
     boostAskedForRef.current = { resume: parsedResumeData, jd: jobDescription, tier };
     setBoostStep(null);
+    if (pendingQualityChoice) {
+      // Boost and the prediction are done: now the existing payment / credit step.
+      setPendingQualityChoice(null);
+      void qualityChoiceRef.current?.(pendingQualityChoice.tierId, pendingQualityChoice.packageSize);
+      return;
+    }
     void handleOptimizeRef.current(tier);
-  }, [parsedResumeData, jobDescription]);
-  const handleBoostClose = useCallback(() => setBoostStep(null), []);
+  }, [parsedResumeData, jobDescription, pendingQualityChoice]);
+  // Before a run this returns to the tier picker, which stays open underneath.
+  const handleBoostClose = useCallback(() => {
+    setBoostStep(null);
+    setPendingQualityChoice(null);
+  }, []);
 
   // After a run: what the candidate now confirms is written into the delivered
   // resume and re-scored. No AI call and no credit, so it is free to repeat.
@@ -1072,6 +1087,40 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
       setProcessingQualityTier(null);
     }
   }, [handleOptimize, processingQualityTier, refreshUserSubscription, user, userEmail, userName]);
+
+  qualityChoiceRef.current = handleOptimizationQualityChoice;
+
+  // Tier picked: ask Boost (then show the predicted score) before the payment /
+  // credit step. Once answered for this resume + JD + tier, go straight to it.
+  const handleQualityPick = useCallback((tierId: JdOptimizationTierId, packageSize: JdOptimizationPackageSize) => {
+    if (processingQualityTier || qualitySelectionLockRef.current) return;
+    const asked = boostAskedForRef.current;
+    if (parsedResumeData && (asked?.resume !== parsedResumeData || asked.jd !== jobDescription || asked.tier !== tierId)) {
+      boostRef.current = null;
+      setPendingQualityChoice({ tierId, packageSize });
+      setBoostStep('before-run');
+      return;
+    }
+    void handleOptimizationQualityChoice(tierId, packageSize);
+  }, [handleOptimizationQualityChoice, jobDescription, parsedResumeData, processingQualityTier]);
+
+  // Deep results under 90: the missing skills worth the most, each with a free
+  // way to learn it and the score once confirmed. Local scorer, no AI call.
+  const resultGapPlan = useMemo(() => {
+    if (!jdOptimizationResult || selectedOptimizationTierRef.current !== 'deep' || jdOptimizationResult.reachedTarget) return [];
+    try {
+      return buildSkillGapPlan({
+        resume: jdOptimizationResult.optimizedResume,
+        jobDescription,
+        candidateType: userType,
+        boost: boostRef.current,
+        ceiling: false,
+      });
+    } catch (gapPlanError) {
+      console.warn('Skill gap plan unavailable:', gapPlanError);
+      return [];
+    }
+  }, [jdOptimizationResult, jobDescription, userType]);
 
   useEffect(() => {
     // This useEffect should now primarily reset the flag, not re-trigger the process
@@ -1289,6 +1338,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           onEditorModeChange={setEditorMode}
           optimizationTier={selectedOptimizationTierRef.current}
           onBoostAgain={handleBoostAgain}
+          gapPlan={resultGapPlan}
           evidenceReport={submittedResume && (
             <>
               {interviewPack && <InterviewPack pack={interviewPack} name={optimizedResume.name} />}
@@ -1681,6 +1731,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                         scoreSummaryOverride={optimizationScoreSummary || undefined}
                         mode={selectedOptimizationTierRef.current === 'quick' ? 'quick' : 'comparison'}
                         onBoostAgain={handleBoostAgain}
+                        gapPlan={resultGapPlan}
                       />
                     </div>
                   )}
@@ -1954,7 +2005,8 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           resume={parsedResumeData}
           jobDescription={jobDescription}
           candidateType={userType}
-          tier={selectedOptimizationTierRef.current}
+          tier={pendingQualityChoice?.tierId ?? selectedOptimizationTierRef.current}
+          beforeRun
           onContinue={handleBoostContinue}
           onClose={handleBoostClose}
         />
@@ -1981,7 +2033,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
             setQualitySelectionError(null);
           }
         }}
-        onChoose={handleOptimizationQualityChoice}
+        onChoose={handleQualityPick}
       />
 
       <FullScreenPreviewModal

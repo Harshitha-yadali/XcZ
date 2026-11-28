@@ -93,7 +93,7 @@ export interface OptimizationLoopOptions {
   boost?: CandidateBoost | null;
 }
 
-const MAX_LOOPS = 6;
+const MAX_LOOPS = 8;
 /** A loop that gains less than this many points ends the run. */
 const MIN_LOOP_GAIN = 1;
 

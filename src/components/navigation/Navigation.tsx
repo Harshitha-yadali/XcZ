@@ -121,6 +121,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onPageChange }) => {
   const aiTools = [
     { id: "/optimizer", label: "Resume Optimizer", icon: <Target className="w-4 h-4" /> },
     { id: "/score-checker", label: "Score Checker", icon: <TrendingUp className="w-4 h-4" /> },
+    { id: "/linkedin-optimizer", label: "LinkedIn Profile Optimizer", icon: <Users className="w-4 h-4" /> },
     { id: "/linkedin-generator", label: "LinkedIn Messages", icon: <MessageCircle className="w-4 h-4" /> },
     { id: "/mock-interview", label: "AI Mock Interview", icon: <MessageCircle className="w-4 h-4" /> },
     { id: "/session", label: "Resume Session", icon: <CalendarCheck className="w-4 h-4" /> },

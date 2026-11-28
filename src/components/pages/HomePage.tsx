@@ -319,7 +319,17 @@ const serviceCards: Array<{
     cta: 'View referrals',
     icon: Users,
     accent: 'from-teal-400/20 via-teal-400/5 to-transparent',
-    span: 'lg:col-span-2',
+    span: 'lg:col-span-1',
+  },
+  {
+    title: 'LinkedIn Optimizer',
+    description: 'Free LinkedIn score and headline, then a full profile rewrite for your target role.',
+    eyebrow: 'Free score',
+    path: '/linkedin-optimizer',
+    cta: 'Score my LinkedIn',
+    icon: Linkedin,
+    accent: 'from-sky-400/20 via-sky-400/5 to-transparent',
+    span: 'lg:col-span-1',
   },
 ];
 

@@ -50,6 +50,8 @@ export interface JdOptimizationTier {
   refinementFallbackModel: string;
   refinementSections: readonly RefinementSection[];
   boostLimits: BoostLimits;
+  /** Boost cannot be skipped: the skills question must be answered ("I have none of these" counts). */
+  boostRequired: boolean;
   sectionSuggestions: boolean;
   summaryRewriting: boolean;
   experienceRewriting: boolean;
@@ -87,6 +89,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     refinementFallbackModel: SIDE_JOB_MODEL,
     refinementSections: ['summary'],
     boostLimits: { skills: 12, metrics: 4 },
+    boostRequired: false,
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,
@@ -122,6 +125,7 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     refinementFallbackModel: SIDE_JOB_MODEL,
     refinementSections: ['summary', 'bullets'],
     boostLimits: { skills: 12, metrics: 6 },
+    boostRequired: false,
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,
@@ -151,12 +155,13 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     modelLabel: 'Claude Sonnet 5.5',
     modelId: DEEP_OPTIMIZATION_MODEL,
     mode: 'aggressive',
-    maxLoops: 6,
+    maxLoops: 8,
     target: { kind: 'score', points: 90 },
     refinementModel: DEEP_OPTIMIZATION_MODEL,
     refinementFallbackModel: SIDE_JOB_MODEL,
     refinementSections: ['summary', 'bullets'],
     boostLimits: { skills: null, metrics: 8 },
+    boostRequired: true,
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,

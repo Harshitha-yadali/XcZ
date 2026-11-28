@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, Target, BarChart3, ArrowRight } from 'lucide-react';
 import type { ParameterDelta, CategoryDelta, OptimizationSessionResult } from '../services/optimizationLoopController';
 import type { UserActionCard } from '../services/gapClassificationEngine';
+import type { SkillGapCard } from '../services/scorePrediction';
+import SkillGapPlan from './optimizer/SkillGapPlan';
 
 export interface ScoreSummaryOverride {
   before: {
@@ -23,9 +25,11 @@ interface ScoreDeltaDisplayProps {
   mode?: 'comparison' | 'quick' | 'scan';
   /** Reopens Boost to confirm what the guidance asks for, then re-scores. Omit to show guidance only. */
   onBoostAgain?: () => void;
+  /** Deep results under target: what to learn next, with the score once confirmed. */
+  gapPlan?: SkillGapCard[];
 }
 
-const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison', onBoostAgain }) => {
+const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison', onBoostAgain, gapPlan = [] }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [showAllParameters, setShowAllParameters] = useState(false);
 
@@ -120,6 +124,12 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
               Add details &amp; re-score (free)
             </button>
           )}
+        </div>
+      )}
+
+      {!isScan && guidance && gapPlan.length > 0 && (
+        <div className="rounded-xl border border-slate-700/60 bg-slate-950/45 p-4">
+          <SkillGapPlan cards={gapPlan} />
         </div>
       )}
 

@@ -21,6 +21,7 @@ const ResumeOptimizer = lazy(() => import('./components/ResumeOptimizer'));
 const GuidedResumeBuilder = lazy(() => import('./components/GuidedResumeBuilder'));
 const ResumeScoreChecker = lazy(() => import('./components/ResumeScoreChecker').then(m => ({ default: m.ResumeScoreChecker })));
 const LinkedInMessageGenerator = lazy(() => import('./components/LinkedInMessageGenerator').then(m => ({ default: m.LinkedInMessageGenerator })));
+const LinkedInOptimizerPage = lazy(() => import('./components/pages/LinkedInOptimizerPage').then(m => ({ default: m.LinkedInOptimizerPage })));
 const AboutUs = lazy(() => import('./components/pages/AboutUs').then(m => ({ default: m.AboutUs })));
 const Contact = lazy(() => import('./components/pages/Contact').then(m => ({ default: m.Contact })));
 const FaqPage = lazy(() => import('./components/pages/FaqPage').then(m => ({ default: m.FaqPage })));
@@ -555,6 +556,7 @@ const handleDiwaliCTAClick = useCallback(() => {
           <Route path="/ats-16-parameter-advanced" element={<ATSScoreChecker16ParameterAdvanced onNavigateBack={() => navigate('/')} />} />
           <Route path="/guided-builder" element={<GuidedResumeBuilder {...commonPageProps} />} />
           <Route path="/linkedin-generator" element={<LinkedInMessageGenerator {...commonPageProps} />} />
+          <Route path="/linkedin-optimizer" element={<LinkedInOptimizerPage {...commonPageProps} />} />
           <Route path="/portfolio-builder" element={<PortfolioBuilderPage isAuthenticated={isAuthenticated} onShowAuth={handleShowAuth} />} />
           <Route path="/mock-interview" element={<MockInterviewPage isAuthenticated={isAuthenticated} onShowAuth={handleShowAuth} />} />
           <Route path="/resume-interview" element={<ResumeBasedInterviewPage />} />

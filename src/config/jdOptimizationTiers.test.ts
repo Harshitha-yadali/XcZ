@@ -96,7 +96,7 @@ describe('JD optimization quality tiers', () => {
     }))).toEqual([
       { id: 'quick', maxLoops: 1, target: { kind: 'gain', points: 20 }, refinementSections: ['summary'], boostLimits: { skills: 12, metrics: 4 } },
       { id: 'smart', maxLoops: 3, target: { kind: 'score', points: 80 }, refinementSections: ['summary', 'bullets'], boostLimits: { skills: 12, metrics: 6 } },
-      { id: 'deep', maxLoops: 6, target: { kind: 'score', points: 90 }, refinementSections: ['summary', 'bullets'], boostLimits: { skills: null, metrics: 8 } },
+      { id: 'deep', maxLoops: 8, target: { kind: 'score', points: 90 }, refinementSections: ['summary', 'bullets'], boostLimits: { skills: null, metrics: 8 } },
     ]);
   });
 

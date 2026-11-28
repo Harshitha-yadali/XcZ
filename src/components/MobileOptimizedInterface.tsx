@@ -4,6 +4,7 @@ import { ResumeData, UserType } from '../types/resume';
 import { ExportOptions, defaultExportOptions } from '../types/export';
 import type { OptimizationSessionResult } from '../services/optimizationLoopController';
 import ScoreDeltaDisplay, { type ScoreSummaryOverride } from './ScoreDeltaDisplay';
+import type { SkillGapCard } from '../services/scorePrediction';
 import { Parameter16ScoreDisplay } from './Parameter16ScoreDisplay';
 import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
@@ -44,6 +45,7 @@ interface MobileOptimizedInterfaceProps {
   evidenceReport?: React.ReactNode;
   optimizationTier?: JdOptimizationTierId;
   onBoostAgain?: () => void;
+  gapPlan?: SkillGapCard[];
 }
 
 export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> = ({
@@ -63,6 +65,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   evidenceReport,
   optimizationTier = 'smart',
   onBoostAgain,
+  gapPlan,
 }) => {
   const hasScores = !!(jdOptimizationResult || parameter16Scores);
   const [activeTab, setActiveTab] = useState<'preview' | 'scores' | 'export'>('preview');
@@ -196,6 +199,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                   scoreSummaryOverride={scoreSummaryOverride || undefined}
                   mode="comparison"
                   onBoostAgain={onBoostAgain}
+                  gapPlan={gapPlan}
                 />
               ) : parameter16Scores ? (
                 <Parameter16ScoreDisplay

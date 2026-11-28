@@ -7,7 +7,8 @@ import { ExtractionResult, ExtractionMode } from '../types/resume'; // Import Ex
 // Set the worker source for PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-export const parseFile = async (file: File): Promise<ExtractionResult> => {
+// keepLines: PDF text keeps its line breaks (the LinkedIn profile reader needs them).
+export const parseFile = async (file: File, options: { keepLines?: boolean } = {}): Promise<ExtractionResult> => {
   const fileName = file.name.toLowerCase();
   const MAX_CONTENT_LENGTH = 50000; // Maximum characters for token budgeting
   let extractionMode: ExtractionMode = 'TEXT';
@@ -17,7 +18,7 @@ export const parseFile = async (file: File): Promise<ExtractionResult> => {
   let charsPostTrim = 0;
 
   if (fileName.endsWith('.pdf')) {
-    const result = await parsePDF(file);
+    const result = await parsePDF(file, options.keepLines);
     text = result.text;
     extractionMode = result.extraction_mode;
     pages = result.pages || 1;
@@ -51,7 +52,7 @@ export const parseFile = async (file: File): Promise<ExtractionResult> => {
   };
 };
 
-const parsePDF = async (file: File): Promise<{ text: string; extraction_mode: ExtractionMode; pages?: number }> => {
+const parsePDF = async (file: File, keepLines = false): Promise<{ text: string; extraction_mode: ExtractionMode; pages?: number }> => {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let text = '';
@@ -62,8 +63,9 @@ const parsePDF = async (file: File): Promise<{ text: string; extraction_mode: Ex
   for (let i = 1; i <= totalPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const strings = content.items.map((item: any) => item.str);
-    text += strings.join(' ') + ' ';
+    text += keepLines
+      ? content.items.map((item: any) => item.str + (item.hasEOL ? '\n' : ' ')).join('') + '\n'
+      : content.items.map((item: any) => item.str).join(' ') + ' ';
   }
 
   const initialTextContent = text.trim();

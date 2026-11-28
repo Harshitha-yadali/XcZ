@@ -3,6 +3,7 @@ import type { UserType } from '../types/resume';
 import { CONFIRMED_DETAILS_HEADING, SKILL_ALIASES, canonicalSkillKey, parseResumeEvidence } from './resumeEvidenceExtractor';
 import { missingJdSkills, scoreResumeAgainstJD } from './jdScoringEngine';
 import { normalizeCanonicalResume } from './canonicalResumeNormalizer';
+import { getJdOptimizationTier, type JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 /** Where the candidate says they used a confirmed skill. */
 export interface ConfirmedSkill {
@@ -167,3 +168,10 @@ export function applyCandidateBoost(resume: ResumeData, boost?: CandidateBoost |
   }
   return next;
 }
+
+/**
+ * Whether Boost's Continue is allowed. Tiers with boostRequired (Deep) need the
+ * skills question answered: at least one skill ticked, or "I have none of these".
+ */
+export const boostCanContinue = (tier: JdOptimizationTierId, skillsAsked: number, skillsTicked: number, saidNone: boolean): boolean =>
+  !getJdOptimizationTier(tier).boostRequired || skillsAsked === 0 || skillsTicked > 0 || saidNone;

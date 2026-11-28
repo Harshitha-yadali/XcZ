@@ -50,6 +50,7 @@ const toolsSection: SidebarSection = {
     { id: 'optimizer', label: 'JD-Based Optimizer', icon: <Target className="w-5 h-5" />, path: '/optimizer' },
     { id: 'score-checker', label: 'Resume Score Check', icon: <TrendingUp className="w-5 h-5" />, path: '/score-checker' },
     { id: 'mock-interview', label: 'AI Mock Interview', icon: <MessageSquare className="w-5 h-5" />, path: '/mock-interview' },
+    { id: 'linkedin-optimizer', label: 'LinkedIn Profile Optimizer', icon: <Users className="w-5 h-5" />, path: '/linkedin-optimizer' },
     { id: 'linkedin-generator', label: 'Outreach Messages', icon: <MessageCircle className="w-5 h-5" />, path: '/linkedin-generator' },
     { id: 'gaming', label: 'Gaming Aptitude', icon: <Gamepad2 className="w-5 h-5" />, path: '/gaming' },
     { id: 'session', label: 'Resume Session', icon: <Calendar className="w-5 h-5" />, path: '/session' },
