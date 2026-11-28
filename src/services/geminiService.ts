@@ -304,6 +304,7 @@ HALLUCINATION PREVENTION:
 2. A technology mentioned only in the job description is missing evidence and MUST NOT be added.
 3. DO NOT invent project names, projects, company names, credentials, dates, metrics, achievements, or technical terms.
 4. Stick to facts from the original resume - enhance presentation, not content.
+5. A "CANDIDATE-CONFIRMED DETAILS" block at the end of the resume holds skills and numbers the candidate personally confirmed; they ARE resume evidence. List every confirmed skill in the skills section, use it in the named project or role where it fits, and write each confirmed metric into the bullet given after "For:" using its exact number. Do not output the block itself as a section.
 
 PROJECT STRUCTURING REQUIREMENTS:
 1. Project Title (e.g., "E-commerce Platform")

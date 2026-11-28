@@ -35,6 +35,7 @@ interface FileUploadProps {
   onShowSubscriptionPlans?: (featureId?: string) => void;
   onShowSubscriptionPlansDirectly?: () => void; // Direct subscription plans (skip plan selection modal)
   onCreditCheckPassed?: () => void; // Callback when credits are available - auto-trigger optimization
+  compact?: boolean; // Slimmer drop zone without the parsing info panel
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
@@ -47,6 +48,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   creditType = 'optimization',
   onShowSubscriptionPlans,
   onCreditCheckPassed,
+  compact = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -267,7 +269,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     <div className="space-y-4">
       {/* Upload Area */}
       <div
-        className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
+        role="button"
+        tabIndex={isUploading || uploadedFile ? -1 : 0}
+        aria-label="Upload your resume (PDF, DOCX or TXT)"
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            handleUploadClick();
+          }
+        }}
+        className={`relative border-2 border-dashed rounded-xl ${compact ? 'p-5' : 'p-8'} text-center transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
           isUploading
             ? 'border-emerald-400 bg-emerald-500/5 cursor-wait'
             : uploadError
@@ -363,11 +374,19 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               />
             </div>
             <p className="text-base font-medium text-slate-200 mb-1">
-              {isDragging ? 'Drop your file here' : 'Upload your resume'}
+              {isDragging ? 'Drop your file here' : compact ? 'Drop your resume here' : 'Upload your resume'}
             </p>
             <p className="text-sm text-slate-400">
               Drag and drop your file here, or click to browse
             </p>
+            {compact && (
+              <>
+                <span className="mt-4 inline-flex min-h-[44px] items-center rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-5 text-sm font-semibold text-emerald-300">
+                  Choose file
+                </span>
+                <span className="mt-2 text-xs text-slate-500">PDF, DOCX or TXT</span>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -381,7 +400,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       />
 
       {/* Supported File Formats Info */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
+      {!compact && <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
         <div className="flex items-start gap-3">
           <Sparkles className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
           <div className="text-sm">
@@ -406,7 +425,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Credit Check Popup */}
       {showCreditPopup && (

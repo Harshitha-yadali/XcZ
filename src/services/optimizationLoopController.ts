@@ -8,6 +8,7 @@ import {
   type CanonicalScoreContext,
 } from './canonicalJdScoringService';
 import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
+import { applyCandidateBoost, type CandidateBoost } from './candidateBoost';
 
 export interface LoopIterationResult {
   iteration: number;
@@ -62,6 +63,8 @@ export interface OptimizationLoopOptions {
   candidateType?: UserType;
   optimizationTier?: JdOptimizationTierId;
   runId?: string;
+  /** Skills and numbers the candidate confirmed: allowed evidence, kept in the resume. */
+  boost?: CandidateBoost | null;
 }
 
 const MAX_LOOPS = 6;
@@ -112,6 +115,8 @@ export async function runOptimizationLoop(
   const baseline = baselineResume
     ? JSON.parse(JSON.stringify(baselineResume)) as ResumeData
     : JSON.parse(JSON.stringify(resume)) as ResumeData;
+  // The before score is the resume as uploaded; validation also allows what the candidate confirmed.
+  const evidenceBaseline = applyCandidateBoost(baseline, options.boost);
   const candidateType = options.candidateType || 'fresher';
   const optimizationTier = options.optimizationTier || 'smart';
   const beforeContext: CanonicalScoreContext = optimizationTier === 'quick'
@@ -176,8 +181,8 @@ export async function runOptimizationLoop(
       }
     }
 
-    const evidenceValidation = validateAndRepairResume(baseline, optimizationResult.optimizedResume);
-    currentResume = evidenceValidation.resume;
+    const evidenceValidation = validateAndRepairResume(evidenceBaseline, optimizationResult.optimizedResume);
+    currentResume = applyCandidateBoost(evidenceValidation.resume, options.boost);
     evidenceViolations.push(...evidenceValidation.violations);
 
     onProgress?.(`Re-scoring after pass ${loop + 1}...`, Math.min(88, progressBase + 8));

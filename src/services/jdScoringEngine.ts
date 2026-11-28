@@ -5,7 +5,7 @@ import {
   SOFT_SKILLS as TAXONOMY_SOFT_SKILLS,
   CONTACT_PROFILE_WORDS,
 } from '../constants/skillsTaxonomy.ts';
-import { SKILL_ALIASES } from './resumeEvidenceExtractor.ts';
+import { canonicalSkillKey, evidencePhrasesFor, impliedSkillsOf } from './resumeEvidenceExtractor.ts';
 import type { ResumeSectionKind } from '../types/resumeEvidence.ts';
 
 export interface ParameterScore {
@@ -152,9 +152,9 @@ function extractJDKeywords(jobDescription: string): JDKeywordExtraction {
   }
 
   return {
-    hard: [...new Set(hardFound)],
+    hard: dropJdNoise([...new Set(hardFound)], jobDescription),
     soft: extractMatches(softSkillPatterns),
-    tools: extractMatches(toolPatterns),
+    tools: dropJdNoise(extractMatches(toolPatterns), jobDescription),
     industry: [...new Set(industryWords)].slice(0, 15),
   };
 }
@@ -191,10 +191,41 @@ function extractResumeSkills(resumeText: string, resumeData: ResumeData): string
   return [...new Set(skills.map(s => s.trim()).filter(Boolean))];
 }
 
-function normalizeSkillKey(skill: string): string {
-  const normalized = skill.toLowerCase().replace(/\s+/g, ' ').trim();
-  const canonical = SKILL_ALIASES[normalized] || skill;
-  return canonical.toLowerCase().replace(/[^a-z0-9+#]+/g, '');
+const normalizeSkillKey = canonicalSkillKey;
+
+// Taxonomy words a JD uses as plain English far more often than as a skill.
+const GENERIC_JD_WORDS = new Set(['teams', 'team', 'verification', 'validation', 'terminal', 'zoom']);
+// Real technologies that are also everyday words ("less than", "the rest of"):
+// counted only when the JD writes them as a name (Go, REST, Express).
+const ENGLISH_WORD_SKILLS = new Set(['go', 'r', 'rest', 'restful', 'less', 'express', 'swift', 'spring', 'backbone', 'ember', 'emotion', 'chef', 'puppet', 'helm', 'aurora', 'shell', 'parcel', 'rollup', 'bamboo']);
+const OS_NAMES = new Set(['windows', 'linux', 'unix', 'ubuntu', 'centos', 'debian', 'macos']);
+const OS_ADMIN_CUE = /\b(?:admin|administration|administrator|sysadmin|server|servers)\b/i;
+
+/** Drops taxonomy hits that are JD noise, not a skill the employer asks for. */
+function dropJdNoise(terms: string[], jobDescription: string): string[] {
+  const segments = jobDescription.split(/\r?\n|(?<=[.!?;])\s+/);
+  const occurrences = (term: string) => [...jobDescription.matchAll(new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi'))].map(match => match[0]);
+  return terms.filter(term => {
+    const lower = term.toLowerCase();
+    if (GENERIC_JD_WORDS.has(lower)) return false;
+    if (ENGLISH_WORD_SKILLS.has(lower)) return occurrences(term).some(found => found !== found.toLowerCase());
+    if (OS_NAMES.has(lower)) {
+      const pattern = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'i');
+      return segments.some(segment => pattern.test(segment) && OS_ADMIN_CUE.test(segment));
+    }
+    return true;
+  });
+}
+
+/** Fewer mandatory skills than this are too few to judge the mandatory category on their own. */
+const MIN_MANDATORY_FOR_GATE = 3;
+
+/** Preferred and contextual JD hard skills the resume grounds (#6). */
+function otherHardSkillCoverage(jdAnalysis: JDAnalysis, context: KeywordSkillScoringContext) {
+  const nonMandatoryKeys = new Set([...jdAnalysis.preferredSkills, ...jdAnalysis.contextualSkills].map(normalizeSkillKey));
+  const matched = context.skillBuckets.supporting.filter(item => nonMandatoryKeys.has(normalizeSkillKey(item.skill))).length;
+  const missingItems = context.skillBuckets.missing.filter(item => item.importance !== 'critical' && nonMandatoryKeys.has(normalizeSkillKey(item.skill)));
+  return { matched, total: matched + missingItems.length, missingItems };
 }
 
 function isContactWord(skill: string): boolean {
@@ -296,19 +327,29 @@ function buildKeywordSkillScoringContext(resume: ResumeData, jobDescription: str
   };
 }
 
-function getGroundedSkillKeys(resume: ResumeData): Set<string> {
-  const keys = new Set<string>();
-  const evidence = resume.evidenceDocument?.skills || [];
-  if (evidence.length > 0) {
-    evidence.forEach(skill => keys.add(normalizeSkillKey(skill.canonicalSkill)));
-    return keys;
-  }
+/** JD hard skills and tools the resume does not ground, mandatory first. */
+export function missingJdSkills(resume: ResumeData, jobDescription: string): string[] {
+  const { jdKeywords, skillBuckets } = buildKeywordSkillScoringContext(resume, jobDescription);
+  const technical = new Set([...jdKeywords.hard, ...jdKeywords.tools].map(normalizeSkillKey));
+  const rank = { critical: 0, important: 1, nice_to_have: 2 } as const;
+  return skillBuckets.missing
+    .filter(item => technical.has(normalizeSkillKey(item.skill)))
+    .sort((a, b) => rank[a.importance] - rank[b.importance])
+    .map(item => item.skill);
+}
 
+function getGroundedSkillKeys(resume: ResumeData): Set<string> {
+  const evidence = resume.evidenceDocument?.skills || [];
   // Structured test fixtures and trusted server-side callers may not include
   // raw source spans. Treat only explicitly structured fields as evidence.
-  resume.skills?.flatMap(group => group.list).forEach(skill => keys.add(normalizeSkillKey(skill)));
-  resume.projects?.flatMap(project => project.techStack || []).forEach(skill => keys.add(normalizeSkillKey(skill)));
-  return keys;
+  const grounded = evidence.length > 0
+    ? evidence.map(skill => skill.canonicalSkill)
+    : [
+        ...(resume.skills?.flatMap(group => group.list) || []),
+        ...(resume.projects?.flatMap(project => project.techStack || []) || []),
+      ];
+  // A parent skill is grounded only through a technology that is itself grounded.
+  return new Set([...grounded, ...impliedSkillsOf(grounded)].map(normalizeSkillKey));
 }
 
 function getFullResumeText(resume: ResumeData): string {
@@ -443,7 +484,11 @@ function collectParameterEvidence(
   };
 
   let matchingSegments: string[];
-  const terms = (termsByParameter[parameter.id] || [])
+  // A skill matched through a spelling variant or an implying technology shows in the resume under that name.
+  const termsWithVariants = [6, 7, 8].includes(parameter.id)
+    ? (termsByParameter[parameter.id] || []).flatMap(evidencePhrasesFor)
+    : termsByParameter[parameter.id] || [];
+  const terms = termsWithVariants
     .map(term => term.toLowerCase().trim())
     .filter(term => term.length >= 2);
 
@@ -569,12 +614,14 @@ function analyzeJD(jd: string): JDAnalysis {
     responsibilities.push(respMatch[1].trim());
   }
 
-  const classified = classifyJdSkillRequirements(jd, [...hardSkills, ...tools]);
+  const realHardSkills = dropJdNoise(hardSkills, jd);
+  const realTools = dropJdNoise(tools, jd);
+  const classified = classifyJdSkillRequirements(jd, [...realHardSkills, ...realTools]);
 
   return {
-    hardSkills: [...new Set(hardSkills)],
+    hardSkills: [...new Set(realHardSkills)],
     softSkills: [...new Set(softSkills)],
-    tools: [...new Set(tools)],
+    tools: [...new Set(realTools)],
     roleKeywords: [...new Set(roleKeywords)],
     seniorityLevel,
     yearsRequired,
@@ -671,11 +718,7 @@ function scoreP6HardSkillMatch(
   const suggestions: string[] = [];
 
   if (context) {
-    const nonMandatoryKeys = new Set([...jdAnalysis.preferredSkills, ...jdAnalysis.contextualSkills].map(normalizeSkillKey));
-    const matchedItems = context.skillBuckets.supporting.filter(item => nonMandatoryKeys.has(normalizeSkillKey(item.skill)));
-    const missingItems = context.skillBuckets.missing.filter(item => item.importance !== 'critical' && nonMandatoryKeys.has(normalizeSkillKey(item.skill)));
-    const matched = matchedItems.length;
-    const totalCritical = matched + missingItems.length;
+    const { matched, total: totalCritical, missingItems } = otherHardSkillCoverage(jdAnalysis, context);
 
     if (totalCritical === 0) {
       return { id: 6, name: 'Other Hard Skill Match %', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: no additional hard skills were identified'], applicable: false, fixable: false, fixType: 'none' };
@@ -747,8 +790,17 @@ function scoreP8MandatorySkillPresence(
     if (totalCritical === 0) {
       return { id: 8, name: 'Mandatory Skill Presence', category: 'Keyword Alignment', score: 0, maxScore: 0, percentage: 100, suggestions, evidence: ['Not applicable: the JD does not explicitly identify mandatory skills'], applicable: false, fixable: false, fixType: 'none' };
     }
-
-    const coverage = matched / totalCritical;
+    let coverage = matched / totalCritical;
+    // One or two missing "required" words are weak evidence (often extraction noise):
+    // blend them with the JD's other hard skills instead of letting one word zero 20%
+    // of the score. Required skills the resume does show are never diluted.
+    if (totalCritical < MIN_MANDATORY_FOR_GATE) {
+      const other = otherHardSkillCoverage(jdAnalysis, context);
+      if (other.total > 0) {
+        const trust = totalCritical / MIN_MANDATORY_FOR_GATE;
+        coverage = Math.max(coverage, trust * coverage + (1 - trust) * (other.matched / other.total));
+      }
+    }
     let score = Math.round(coverage * maxScore);
     if (criticalMissing.length > 5) score = Math.min(score, 2);
     else if (criticalMissing.length > 2) score = Math.min(score, 6);

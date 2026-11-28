@@ -92,4 +92,14 @@ describe('resumeEvidenceValidator', () => {
     const onlyBeta = { ...two, workExperience: [swapped.workExperience[0]] };
     expect(validateAndRepairResume(two, onlyBeta).resume.workExperience[0].bullets).toEqual(two.workExperience[0].bullets);
   });
+
+  it('accepts a skill implied by a grounded technology, never one implied by nothing', () => {
+    const candidate: ResumeData = {
+      ...JSON.parse(JSON.stringify(evidence)),
+      skills: [{ category: 'Technologies', count: 5, list: ['React', 'Node.js', 'JavaScript', 'HTML', 'Python'] }],
+    };
+    const listed = validateAndRepairResume(evidence, candidate).resume.skills.flatMap(group => group.list);
+    expect(listed).toEqual(['React', 'Node.js', 'JavaScript', 'HTML']);
+  });
 });
+

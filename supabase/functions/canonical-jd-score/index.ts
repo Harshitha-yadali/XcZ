@@ -4,7 +4,7 @@ import { scoreResumeAgainstJD } from "../../../src/services/jdScoringEngine.ts";
 import { normalizeCanonicalResume } from "../../../src/services/canonicalResumeNormalizer.ts";
 import type { ResumeData, UserType } from "../../../src/types/canonicalResume.ts";
 
-const SCORING_VERSION = 'pb-jd-v2.0.0';
+const SCORING_VERSION = 'pb-jd-v2.2.0';
 const allowedContexts = new Set([
   'quick_scan', 'smart_before', 'smart_after', 'deep_before', 'deep_after', 'resume_score_checker',
 ]);

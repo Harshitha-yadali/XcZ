@@ -25,6 +25,7 @@ import { optimizeResume as geminiOptimizeResume } from './geminiService';
 import { validateAndRepairResume, type EvidenceViolation } from './resumeEvidenceValidator';
 import { CanonicalJdScoringService, type CanonicalScoreContext } from './canonicalJdScoringService';
 import { mapCanonicalToEnhancedScore } from './canonicalScoreMapper';
+import { applyCandidateBoost, confirmedDetailsBlock, hasBoost, type CandidateBoost } from './candidateBoost';
 import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
 
 // ============================================================================
@@ -59,6 +60,7 @@ export class EnhancedJdOptimizerService {
     modelOverride?: string,
     runId?: string,
     candidateTypeOverride?: UserType,
+    boost?: CandidateBoost | null,
   ): Promise<OptimizationResult> {
     const startTime = Date.now();
 
@@ -94,7 +96,12 @@ export class EnhancedJdOptimizerService {
     try {
       // Detect user type based on experience
       // Convert resume to text for AI processing
-      const resumeTextForAI = this.resumeDataToText(resumeData);
+      // Details the candidate confirmed in the Boost step are resume content the writer may use.
+      const resumeTextForAI = hasBoost(boost)
+        ? `${this.resumeDataToText(resumeData)}
+
+${confirmedDetailsBlock(boost)}`
+        : this.resumeDataToText(resumeData);
       
       // Every paid tier rewrites the full resume. Quick uses one basic Gemini
       // Flash pass; Smart and Deep add their additional refinement stages.
@@ -158,8 +165,10 @@ export class EnhancedJdOptimizerService {
       throw new Error('The selected AI model could not complete this optimization. No credits were charged. Please try again.');
     }
 
-    const evidenceValidation = validateAndRepairResume(resumeData, optimizedResume);
-    optimizedResume = evidenceValidation.resume;
+    // The before score stays on the resume as uploaded; confirmed details are
+    // allowed evidence for the rewrite and are always written into it.
+    const evidenceValidation = validateAndRepairResume(applyCandidateBoost(resumeData, boost), optimizedResume);
+    optimizedResume = applyCandidateBoost(evidenceValidation.resume, boost);
     evidenceViolations = evidenceValidation.violations;
 
     // Step 4: Calculate after score

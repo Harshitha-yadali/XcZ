@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabaseClient';
 import type { ResumeData, UserType } from '../types/resume';
 import type { JDScoringResult } from './jdScoringEngine';
 
-export const CANONICAL_JD_SCORING_VERSION = 'pb-jd-v2.0.0';
+export const CANONICAL_JD_SCORING_VERSION = 'pb-jd-v2.2.0';
 
 export type CanonicalScoreContext =
   | 'quick_scan'

@@ -125,9 +125,12 @@ Responsibilities: Build REST APIs and test backend services.`;
       skills: [{ category: 'Cloud', count: 2, list: ['Docker', 'AWS'] }],
     }, tieredJd, 'experienced');
 
-    expect(complete.parameters.find(parameter => parameter.id === 8)?.percentage).toBe(100);
-    expect(missingPreferred.parameters.find(parameter => parameter.id === 8)?.percentage).toBe(100);
-    expect(missingMandatory.parameters.find(parameter => parameter.id === 8)?.percentage).toBe(0);
+    // Two missing mandatory skills are blended with the other hard skills, never above them.
+    const p8 = (result: typeof complete) => result.parameters.find(parameter => parameter.id === 8)?.percentage ?? -1;
+    expect(p8(complete)).toBe(100);
+    expect(p8(missingPreferred)).toBe(100);
+    expect(p8(missingMandatory)).toBeGreaterThan(0);
+    expect(p8(missingMandatory)).toBeLessThan(p8(missingPreferred));
     expect(complete.overallScore - missingMandatory.overallScore)
       .toBeGreaterThan(complete.overallScore - missingPreferred.overallScore);
   });
@@ -181,5 +184,82 @@ Responsibilities: Build REST APIs and test backend services.`;
 
     expect(unsupportedAwards).toEqual([]);
     expect(result.parameters.find(parameter => parameter.id === 23)?.score).toBe(0);
+  });
+
+  describe('honest skill matching (pb-jd-v2.1.0)', () => {
+    const p = (result: ReturnType<typeof scoreResumeAgainstJD>, id: number) => result.parameters.find(parameter => parameter.id === id)!;
+    const fromText = (rawText: string) => normalizeCanonicalResume({
+      name: 'Candidate', email: 'candidate@example.com', evidenceDocument: { rawText },
+    });
+
+    it('does not count generic JD words or plain OS names as required tools', () => {
+      const jd = `Job Title: Frontend Developer
+Required: React, verification of releases, and working across teams.
+Our office laptops run Windows and Linux. You will go above and beyond, in less than a week.`;
+      const result = scoreResumeAgainstJD(alignedResume, jd, 'fresher');
+      const missing = p(result, 7).suggestions.join(' ') + p(result, 8).suggestions.join(' ') + p(result, 6).suggestions.join(' ');
+      expect(missing).not.toMatch(/\b(?:teams|windows|linux|verification|less|go)\b/i);
+    });
+
+    it('keeps an OS name when the JD asks for administering it', () => {
+      const jd = `Job Title: Systems Engineer
+Required: Linux server administration, Python and Bash.`;
+      const result = scoreResumeAgainstJD(alignedResume, jd, 'experienced');
+      expect(p(result, 7).suggestions.join(' ')).toMatch(/linux/i);
+    });
+
+    it('does not let one missing mandatory word zero the mandatory category', () => {
+      const oneRequired = `Job Title: Backend Engineer
+Required: Kotlin.
+Preferred: Python and PostgreSQL. Build backend services.`;
+      const single = scoreResumeAgainstJD(alignedResume, oneRequired, 'experienced');
+      // 1 of 3 trust in the lone keyword (0%), 2 of 3 in the other hard skills (100%).
+      expect(p(single, 8).percentage).toBe(70);
+
+      const threeRequired = `Job Title: Backend Engineer
+Required: Kotlin, Scala and Ruby.
+Build backend services in Python.`;
+      const gated = scoreResumeAgainstJD(alignedResume, threeRequired, 'experienced');
+      expect(p(gated, 8).applicable).toBe(true);
+      expect(p(gated, 8).percentage).toBe(0);
+    });
+
+    it('matches spelling variants of one skill', () => {
+      const jd = `Job Title: Full Stack Developer
+Required: React.js, Node.js, Postgres and k8s.
+Build product features.`;
+      const resume = fromText(`SKILLS
+ReactJS, NodeJS, PostgreSQL, Kubernetes
+
+PROJECTS
+Shop App
+- Built a shop with ReactJS and NodeJS on PostgreSQL, deployed on Kubernetes.`);
+      const result = scoreResumeAgainstJD(resume, jd, 'fresher');
+      expect(p(result, 8).percentage).toBe(100);
+      expect(p(result, 8).evidence?.length).toBeGreaterThan(0);
+    });
+
+    it('credits an implied skill only when its source technology is grounded', () => {
+      const jd = `Job Title: Backend Developer
+Required: JavaScript, Python and SQL.
+Build APIs.`;
+      const withSources = fromText(`SKILLS
+Express, Django, MySQL
+
+PROJECTS
+Orders API
+- Built an orders API with Express and a reporting service with Django on MySQL.`);
+      const withoutSources = fromText(`SKILLS
+Figma, Branding
+
+PROJECTS
+Brand Kit
+- Designed a brand kit for a local bakery.`);
+      const credited = scoreResumeAgainstJD(withSources, jd, 'fresher');
+      const notCredited = scoreResumeAgainstJD(withoutSources, jd, 'fresher');
+      expect(p(credited, 8).percentage).toBe(100);
+      expect(p(credited, 8).evidence?.join(' ')).toMatch(/Express|Django|MySQL/);
+      expect(p(notCredited, 8).percentage).toBe(0);
+    });
   });
 });

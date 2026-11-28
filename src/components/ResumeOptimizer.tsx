@@ -17,6 +17,7 @@ import { SubscriptionPlans } from './payment/SubscriptionPlans';
 import { SubscriptionStatus } from './payment/SubscriptionStatus';
 import { MissingSectionsModal } from './MissingSectionsModal';
 import { InputWizard } from './InputWizard';
+import { ScoreCheckerHandoff, parseScoreCheckerHandoff, loadScoreCheckerHandoff, clearScoreCheckerHandoff } from '../utils/scoreCheckerHandoff';
 import { LoadingAnimation } from './LoadingAnimation';
 // REMOVED: OpenRouter/Gemini - now using EdenAI only
 // import { optimizeResume } from '../services/geminiService';
@@ -46,6 +47,8 @@ import MissingProfilePrompt from './MissingProfilePrompt';
 import ResumeEditor from './editor/ResumeEditor';
 import ExportResumeModal from './ExportResumeModal';
 import OptimizationQualityModal from './optimizer/OptimizationQualityModal';
+import BoostQuestionsModal from './optimizer/BoostQuestionsModal';
+import type { CandidateBoost } from '../services/candidateBoost';
 import {
   DEFAULT_JD_OPTIMIZATION_TIER,
   getJdOptimizationPackage,
@@ -121,24 +124,35 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     />
   );
 
-  const jobContext = location.state as { jobId?: string; jobDescription?: string; roleTitle?: string; companyName?: string; fromJobApplication?: boolean } | null;
+  const jobContext = location.state as { jobId?: string; jobDescription?: string; roleTitle?: string; companyName?: string; fromJobApplication?: boolean; fromScoreChecker?: boolean; scoreHandoff?: unknown } | null;
   const jobIdFromContext = jobContext?.jobId;
 
-  const [extractionResult, setExtractionResult] = useState<ExtractionResult>({ text: '', extraction_mode: 'TEXT', trimmed: false });
-  const [jobDescription, setJobDescription] = useState(jobContext?.jobDescription || '');
-  const [targetRole, setTargetRole] = useState(jobContext?.roleTitle || '');
+  // Resume + candidate type the Score Checker already scored. Reusing them
+  // (instead of re-uploading and re-parsing) makes the "before" score match.
+  // sessionStorage is the fallback when navigation state is missing.
+  const [scoreHandoff, setScoreHandoff] = useState<ScoreCheckerHandoff | null>(() =>
+    jobContext?.fromScoreChecker
+      ? parseScoreCheckerHandoff(jobContext.scoreHandoff) ?? loadScoreCheckerHandoff()
+      : null,
+  );
+
+  const [extractionResult, setExtractionResult] = useState<ExtractionResult>(() => scoreHandoff
+    ? { text: scoreHandoff.resumeText, extraction_mode: 'TEXT', trimmed: false, filename: scoreHandoff.filename || undefined }
+    : { text: '', extraction_mode: 'TEXT', trimmed: false });
+  const [jobDescription, setJobDescription] = useState(jobContext?.jobDescription || scoreHandoff?.jobDescription || '');
+  const [targetRole, setTargetRole] = useState(jobContext?.roleTitle || scoreHandoff?.jobTitle || '');
   
   // Ref to always get latest jobDescription value in callbacks (fixes stale closure issue)
   const jobDescriptionRef = useRef(jobDescription);
   useEffect(() => {
     jobDescriptionRef.current = jobDescription;
   }, [jobDescription]);
-  const [userType, setUserType] = useState<UserType>('fresher');
+  const [userType, setUserType] = useState<UserType>(scoreHandoff?.candidateType ?? 'fresher');
   const [scoringMode, setScoringMode] = useState<ScoringMode>('general');
   const [autoScoreOnUpload, setAutoScoreOnUpload] = useState(true);
 
   const [optimizedResume, setOptimizedResume] = useState<ResumeData | null>(null);
-  const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(null);
+  const [parsedResumeData, setParsedResumeData] = useState<ResumeData | null>(scoreHandoff?.parsedResume ?? null);
   const [submittedResume, setSubmittedResume] = useState<ResumeData | null>(null);
   const [interviewPack, setInterviewPack] = useState<InterviewPackData | null>(null);
   const [pendingResumeData, setPendingResumeData] = useState<ResumeData | null>(null);
@@ -237,6 +251,10 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   const [qualitySelectionError, setQualitySelectionError] = useState<string | null>(null);
   const selectedOptimizationTierRef = useRef<JdOptimizationTierId>(DEFAULT_JD_OPTIMIZATION_TIER);
   const qualitySelectionLockRef = useRef(false);
+  // Boost step: what the candidate confirmed, and for which resume + JD it was asked.
+  const [showBoost, setShowBoost] = useState(false);
+  const boostRef = useRef<CandidateBoost | null>(null);
+  const boostAskedForRef = useRef<{ resume: ResumeData; jd: string } | null>(null);
   const [jobApplicationLink, setJobApplicationLink] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -257,6 +275,10 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
     setJobDescription('');
     setTargetRole('');
     setUserType('fresher');
+    setScoreHandoff(null);
+    clearScoreCheckerHandoff();
+    boostRef.current = null;
+    boostAskedForRef.current = null;
     setBeforeScore(null);
     setAfterScore(null);
     setInitialResumeScore(null);
@@ -416,6 +438,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           model,
           optimizationRunId,
           userType,
+          boostRef.current,
         );
         // One retry. Quick may fall back to its previous model; Smart and Deep are
         // never downgraded, they fail and are refunded.
@@ -468,6 +491,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
               candidateType: userType,
               optimizationTier: qualityTier.id,
               runId: optimizationRunId,
+              boost: boostRef.current,
             },
           );
           setJdOptimizationResult(loopResult);
@@ -808,6 +832,13 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     // --- END NEW ---
 
     if (!requestedTier) {
+      // Ask the Boost questions once per resume + JD, before the paid step.
+      const asked = boostAskedForRef.current;
+      if (parsedResumeData && (asked?.resume !== parsedResumeData || asked.jd !== jobDescription)) {
+        boostRef.current = null;
+        setShowBoost(true);
+        return;
+      }
       try {
         const latestSubscription = await paymentService.getUserSubscription(user.id);
         const remainingCredits = latestSubscription
@@ -898,6 +929,17 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     continueOptimizationProcess,
     parsedResumeData, // ⬅️ added dependency because we branch on it
   ]); // Dependencies for memoized function
+
+  const handleOptimizeRef = useRef(handleOptimize);
+  handleOptimizeRef.current = handleOptimize;
+  const handleBoostContinue = useCallback((boost: CandidateBoost | null) => {
+    if (!parsedResumeData) return;
+    boostRef.current = boost;
+    boostAskedForRef.current = { resume: parsedResumeData, jd: jobDescription };
+    setShowBoost(false);
+    void handleOptimizeRef.current();
+  }, [parsedResumeData, jobDescription]);
+  const handleBoostClose = useCallback(() => setShowBoost(false), []);
 
   useEffect(() => {
     setToolProcessTrigger(() => handleOptimize);
@@ -1371,6 +1413,39 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
             )}
 
             <div className="max-w-7xl mx-auto space-y-6">
+              {scoreHandoff && parsedResumeData === scoreHandoff.parsedResume && (
+                <div className="container-responsive max-w-4xl mx-auto">
+                  <div className="card-surface p-5 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center gap-4">
+                    <CheckCircle className="w-6 h-6 text-emerald-400 flex-shrink-0" />
+                    <div className="flex-1 text-sm text-slate-300">
+                      {userType === scoreHandoff.candidateType && jobDescription.trim() === scoreHandoff.jobDescription.trim() ? (
+                        <p className="text-base font-semibold text-slate-100">
+                          Your score: {scoreHandoff.score} <span className="font-normal text-slate-400">(from your check)</span>
+                        </p>
+                      ) : (
+                        <p className="text-base font-semibold text-slate-100">
+                          Your check scored {scoreHandoff.score}. <span className="font-normal text-slate-400">You changed the job description or experience level, so it will be scored again.</span>
+                        </p>
+                      )}
+                      <p className="mt-1">
+                        We're using the resume you just checked{scoreHandoff.filename ? ` (${scoreHandoff.filename})` : ''}. Press Next; no need to upload it again.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExtractionResult({ text: '', extraction_mode: 'TEXT', trimmed: false });
+                        setParsedResumeData(null);
+                        setScoreHandoff(null);
+                        clearScoreCheckerHandoff();
+                      }}
+                      className="btn-secondary px-4 py-2 rounded-xl text-sm whitespace-nowrap"
+                    >
+                      Use a different resume
+                    </button>
+                  </div>
+                </div>
+              )}
               <InputWizard
                 extractionResult={extractionResult}
                 setExtractionResult={setExtractionResult}
@@ -1827,6 +1902,16 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
         currentResumeData={pendingResumeData}
         onSectionsProvided={handleMissingSectionsProvided}
       />
+
+      {showBoost && parsedResumeData && (
+        <BoostQuestionsModal
+          resume={parsedResumeData}
+          jobDescription={jobDescription}
+          candidateType={userType}
+          onContinue={handleBoostContinue}
+          onClose={handleBoostClose}
+        />
+      )}
 
       <OptimizationQualityModal
         isOpen={showOptimizationQuality}

@@ -131,6 +131,24 @@ describe('targetedParameterOptimizer', () => {
     expect(allSkills).not.toContain('Redis');
   });
 
+  it('lists a JD skill proven by an evidenced technology (Express -> Node.js), not one proven by nothing', async () => {
+    chatWithSystemMock.mockRejectedValue(new Error('offline'));
+    const resume: ResumeData = {
+      name: 'Candidate', phone: '+91 9999999999', email: 'c@example.com', linkedin: '', github: '',
+      education: [], certifications: [], projects: [],
+      workExperience: [{ role: 'Developer', company: 'Acme', year: '2024', bullets: ['Built REST services with Express.'] }],
+      skills: [{ category: 'Frameworks', count: 1, list: ['Express'] }],
+    };
+    const gaps = [{
+      parameterId: 6, parameterName: 'Hard Skills Match', category: 'Skills', currentScore: 0, maxScore: 5, percentage: 0,
+      fixType: 'ai' as const, suggestions: ['Add missing skills: Node.js, Python'], priority: 'critical' as const,
+    }];
+    const result = await optimizeByParameter(resume, 'Backend developer with Node.js and Python.', gaps);
+    const allSkills = (result.optimizedResume.skills || []).flatMap(category => category.list);
+    expect(allSkills).toContain('Node.js');
+    expect(allSkills).not.toContain('Python');
+  });
+
   it('builds project tech stacks from project evidence instead of JD-only tools', async () => {
     chatWithSystemMock.mockRejectedValue(
       new Error('AI proxy request failed (504): {"code":"IDLE_TIMEOUT","message":"Request idle timeout limit reached"}')

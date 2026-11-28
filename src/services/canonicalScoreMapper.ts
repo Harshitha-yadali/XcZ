@@ -91,7 +91,7 @@ export function mapCanonicalToEnhancedScore(
     match_band: result.matchBand as MatchBand,
     interview_probability_range: result.interviewProbability,
     confidence: 'High',
-    rubric_version: 'pb-jd-v2.0.0',
+    rubric_version: 'pb-jd-v2.2.0',
     weighting_mode: 'JD',
     extraction_mode: 'TEXT',
     trimmed: false,

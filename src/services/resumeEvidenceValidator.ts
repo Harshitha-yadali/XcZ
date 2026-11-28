@@ -7,6 +7,7 @@ import {
   FRONTEND_TECHNOLOGIES,
   PROGRAMMING_LANGUAGES,
 } from '../constants/skillsTaxonomy';
+import { canonicalSkillKey, impliedSkillsOf } from './resumeEvidenceExtractor';
 
 export interface EvidenceViolation {
   section: 'contact' | 'education' | 'experience' | 'projects' | 'skills' | 'certifications' | 'additional';
@@ -128,14 +129,14 @@ function validateBullets(
   });
 }
 
-function filterSkills(candidate: Skill[] | undefined, evidence: Skill[] | undefined): Skill[] {
-  const allowed = new Set(
-    (evidence || []).flatMap((category) => category.list || []).map(normalize),
-  );
+function filterSkills(candidate: Skill[] | undefined, evidence: Skill[] | undefined, groundedElsewhere: string[] = []): Skill[] {
+  const grounded = [...(evidence || []).flatMap((category) => category.list || []), ...groundedElsewhere];
+  // A parent skill proven by a grounded technology (Express -> Node.js) may be listed too.
+  const allowed = new Set([...grounded, ...impliedSkillsOf(grounded)].map(canonicalSkillKey));
 
   return (candidate || [])
     .map((category) => {
-      const list = (category.list || []).filter((skill) => allowed.has(normalize(skill)));
+      const list = (category.list || []).filter((skill) => allowed.has(canonicalSkillKey(skill)));
       return { ...category, list, count: list.length };
     })
     .filter((category) => category.list.length > 0);
@@ -197,7 +198,14 @@ export function validateAndRepairResume(
     };
   });
 
-  const filteredSkills = filterSkills(candidate.skills, evidence.skills);
+  const filteredSkills = filterSkills(
+    candidate.skills,
+    evidence.skills,
+    [
+      ...(evidence.evidenceDocument?.skills || []).map((skill) => skill.canonicalSkill),
+      ...(evidence.projects || []).flatMap((project) => project.techStack || []),
+    ],
+  );
   const candidateSkillCount = (candidate.skills || []).reduce((sum, category) => sum + (category.list?.length || 0), 0);
   const filteredSkillCount = filteredSkills.reduce((sum, category) => sum + category.list.length, 0);
   if (filteredSkillCount < candidateSkillCount) {

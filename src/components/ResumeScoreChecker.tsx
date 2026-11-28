@@ -1,64 +1,23 @@
 // src/components/ResumeScoreChecker.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
-  Upload,
-  FileText,
-  TrendingUp,
-  Award,
-  Lightbulb,
   ArrowLeft,
-  Target,
-  Sparkles,
-  Briefcase,
   ArrowRight,
-  BarChart3,
-  Eye,
-  Shield,
   CheckCircle,
-  Calendar,
+  ChevronDown,
+  Eye,
+  Loader2,
+  Shield,
+  Target,
+  AlertTriangle,
 } from 'lucide-react';
 
-const GradientOrb: React.FC<{ className?: string; delay?: number }> = ({ className, delay = 0 }) => (
-  <motion.div
-    className={`absolute rounded-full blur-3xl pointer-events-none ${className}`}
-    animate={{
-      scale: [1, 1.2, 1],
-      opacity: [0.3, 0.5, 0.3],
-    }}
-    transition={{
-      duration: 8,
-      repeat: Infinity,
-      delay,
-      ease: "easeInOut"
-    }}
-  />
-);
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2
-    }
-  }
-} as const;
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: "easeOut" as const }
-  }
-} as const;
 import { FileUpload } from './FileUpload';
 import { ATSScoreChecker16Parameter, ATSScore16Parameter } from '../services/atsScoreChecker16Parameter';
-import { LoadingAnimation } from './LoadingAnimation';
 import { ScoringMode, ExtractionResult } from '../types/resume';
 import { ParsedResume } from '../services/geminiResumeParserService';
+import { ScoreCheckerHandoff, saveScoreCheckerHandoff } from '../utils/scoreCheckerHandoff';
 import type { Subscription } from '../types/payment';
 import { paymentService } from '../services/paymentService';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -121,6 +80,60 @@ const getVisibleScoreParameters = (result: ATSScore16Parameter): VisibleScorePar
     };
   });
 };
+
+const getScoreBand = (score: number) =>
+  score >= 80
+    ? { label: 'Strong match', note: 'Likely to pass ATS screening for this job.', text: 'text-emerald-400', stroke: 'stroke-emerald-400', chip: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30' }
+    : score >= 60
+      ? { label: 'Fair match', note: 'A few gaps could get you filtered out.', text: 'text-amber-400', stroke: 'stroke-amber-400', chip: 'bg-amber-500/15 text-amber-300 border-amber-400/30' }
+      : { label: 'Needs work', note: 'Likely filtered by ATS before a recruiter sees it.', text: 'text-red-400', stroke: 'stroke-red-400', chip: 'bg-red-500/15 text-red-300 border-red-400/30' };
+
+const barColor = (percentage: number) =>
+  percentage >= 80 ? 'bg-emerald-500' : percentage >= 60 ? 'bg-amber-500' : 'bg-red-500';
+
+interface TopIssue {
+  key: string;
+  title: string;
+  detail: string;
+  scoreLabel?: string;
+}
+
+// Most impactful first: canonical checks below 80%, ordered by points lost.
+// skipMandatorySkills: check 8 is already shown as the "Missing key skills" card.
+const getTopIssues = (result: ATSScore16Parameter, limit: number, skipMandatorySkills: boolean): TopIssue[] => {
+  const weak = (result.canonicalParameters || []).filter(
+    p => p.applicable !== false && p.percentage < 80 && !(skipMandatorySkills && p.id === 8),
+  );
+  if (weak.length) {
+    return weak
+      .map(p => ({
+        lost: (p.weightedMaxPoints ?? p.maxScore) - (p.earnedPoints ?? p.score),
+        issue: {
+          key: `issue-${p.id}`,
+          title: p.name,
+          detail: p.suggestions[0] || '',
+          scoreLabel: `${p.score}/${p.maxScore}`,
+        },
+      }))
+      .sort((a, b) => b.lost - a.lost)
+      .slice(0, limit)
+      .map(entry => entry.issue);
+  }
+  return result.areasToImprove.slice(0, limit).map((rec, index) => ({ key: `rec-${index}`, title: rec, detail: '' }));
+};
+
+const LOADING_STEPS = ['Reading your resume', 'Matching it to the job', 'Scoring 30 ATS checks'];
+const loadingStepIndex = (step: string) =>
+  step.startsWith('Scoring') ? 2 : step.startsWith('Comparing') ? 1 : 0;
+
+const USER_TYPES = [
+  { id: 'fresher', label: 'Fresher', hint: '0-2 yrs' },
+  { id: 'experienced', label: 'Experienced', hint: '2+ yrs' },
+  { id: 'student', label: 'Student', hint: 'Studying' },
+] as const;
+
+const cardClass = 'rounded-2xl border border-white/[0.08] bg-white/[0.03]';
+const inputClass = 'w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-4 py-3 text-base text-slate-100 placeholder-slate-500 transition-colors focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/40';
 
 interface ResumeScoreCheckerProps {
   onNavigateBack: () => void;
@@ -485,12 +498,6 @@ if (hasScoreCheckCredits) {
 
 
 
-  const handleContinueToUpload = () => {
-    if (scoringMode && userType) {
-      setCurrentStep(1);
-    }
-  };
-
   // Auto-detect user type from job description
   const detectUserTypeFromJD = (jobDescription: string): 'fresher' | 'experienced' | 'student' => {
     const jdLower = jobDescription.toLowerCase();
@@ -567,11 +574,26 @@ if (hasScoreCheckCredits) {
   };
 
   const handleOptimizeResume = () => {
+    // Hand over the exact input the checker scored, so the optimizer's
+    // "before" score is computed on the same resume + JD + candidate type.
+    const scoreHandoff: ScoreCheckerHandoff | null = parsedResumeData && scoreResult
+      ? {
+          parsedResume: parsedResumeData,
+          resumeText: extractionResult.text,
+          filename: uploadedFilename,
+          candidateType: userType || 'fresher', // same fallback the scorer call uses
+          jobDescription,
+          jobTitle,
+          score: scoreResult.overallScore,
+        }
+      : null;
+    if (scoreHandoff) saveScoreCheckerHandoff(scoreHandoff);
     navigate('/optimizer', {
       state: {
         jobDescription: jobDescription,
         roleTitle: jobTitle,
         fromScoreChecker: true,
+        scoreHandoff,
       },
     });
   };
@@ -587,6 +609,31 @@ if (hasScoreCheckCredits) {
     setIsOptimizedResume(false);
   };
 
+  const reduceMotion = useReducedMotion();
+  const fadeIn = (delay = 0) =>
+    reduceMotion
+      ? {}
+      : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.3, delay } };
+
+  const creditsLeft = userSubscription
+    ? userSubscription.scoreChecksTotal - userSubscription.scoreChecksUsed
+    : null;
+  const missingInputs = [
+    !extractionResult.text.trim() && 'your resume',
+    !jobTitle.trim() && 'the job title',
+    !jobDescription.trim() && 'the job description',
+    !userType && 'your experience level',
+  ].filter(Boolean) as string[];
+  const isReady = scoringMode !== null && missingInputs.length === 0;
+  const showResult = currentStep === 2 && scoreResult && !isAnalyzing;
+
+  const missingSkills = scoreResult
+    ? [...new Set([...scoreResult.missingKeywords.critical, ...scoreResult.missingKeywords.important])].slice(0, 8)
+    : [];
+  const topIssues = scoreResult ? getTopIssues(scoreResult, missingSkills.length ? 4 : 5, missingSkills.length > 0) : [];
+  const band = scoreResult ? getScoreBand(scoreResult.overallScore) : null;
+  const activeLoadingStep = loadingStepIndex(loadingStep);
+
   return (
     <>
       <Seo
@@ -595,698 +642,370 @@ if (hasScoreCheckCredits) {
         keywords="ATS resume score, ATS resume checker, ATS resume score checker, ATS resume analysis, ATS resume scan, ATS resume test, ATS resume compatibility, ATS resume screening, ATS resume parsing test, ATS resume keyword checker, ATS resume keyword analysis, ATS resume keyword optimization, ATS resume scoring system, ATS resume AI, resume score checker, resume keyword score, resume keyword heatmap, resume keyword report, resume ATS compatibility test, resume optimization score, ATS resume India, ATS resume fresher, ATS resume experienced, PrimoBoost AI"
         canonicalPath="/score-checker"
       />
-      {isAnalyzing ? (
-        <LoadingAnimation
-          message={loadingStep}
-          submessage="Please wait while we analyze your resume."
-        />
-      ) : (
-        <div className="relative min-h-screen flex flex-col bg-gradient-to-b from-teal-dark-900 via-surface-sunken to-surface-deepest text-slate-100 px-4 sm:px-0 lg:pl-16 transition-colors duration-300 overflow-hidden">
-          {/* Animated background gradients */}
-          <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-            <GradientOrb className="w-[500px] h-[500px] -top-40 -left-40 bg-emerald-500/20" delay={0} />
-            <GradientOrb className="w-[400px] h-[400px] top-1/3 -right-40 bg-cyan-500/15" delay={2} />
-            <GradientOrb className="w-[300px] h-[300px] bottom-20 left-1/4 bg-indigo-500/10" delay={4} />
-          </div>
-
-          <div className="bg-slate-900/80 backdrop-blur-xl shadow-lg border-b border-emerald-400/20 sticky top-0 z-40">
-            <div className="container-responsive">
-              <div className="flex items-center justify-between h-16 py-3">
-                <button
-                  onClick={onNavigateBack}
-                  className="lg:hidden bg-gradient-to-r from-neon-cyan-500 to-neon-blue-500 text-white hover:from-neon-cyan-400 hover:to-neon-blue-400 active:from-neon-cyan-600 active:to-neon-blue-600 shadow-md hover:shadow-neon-cyan py-3 px-5 rounded-xl inline-flex items-center space-x-2 transition-all duration-200"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                  <span className="hidden sm:block">Back to Home</span>
-                </button>
-                <h1 className="text-lg font-semibold text-emerald-50">Resume Score Checker</h1>
-                <div className="w-24"></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative flex-grow py-8">
-            {/* Score Credits Left Badge */}
-            {isAuthenticated && userSubscription && (
-              <div className="relative text-center mb-6 z-10">
-                <button className="inline-flex items-center space-x-2 px-6 py-3 rounded-full transition-all duration-200 font-semibold text-sm bg-gradient-to-r from-emerald-500 to-cyan-600 text-white shadow-md hover:shadow-emerald-500/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 max-w-[300px] mx-auto justify-center">
-                  <span>
-                    Score Credits Left: {userSubscription.scoreChecksTotal - userSubscription.scoreChecksUsed}
-                  </span>
-                </button>
-              </div>
-            )}
-
-            {currentStep === 0 && (
-              <div className="container-responsive">
-                {/* Hero Section */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="text-center mb-12"
-                >
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-400/30 mb-6">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-emerald-300 text-sm font-medium">Step 1 of 2 - Your Experience Level</span>
-                  </div>
-                  <h1 className="text-3xl md:text-4xl font-bold text-slate-100 mb-4">
-                    Get Your Resume <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">Score</span>
-                  </h1>
-                  <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-                    We score your resume against a specific job description to show keyword matches,
-                    skill gaps, and role-specific fixes before you apply
-                  </p>
-                </motion.div>
-
-                {/* Scoring method is always JD-based here - no picker to show */}
-
-                {/* User Type Selection */}
-                {scoringMode && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.3 }}
-                    className="max-w-4xl mx-auto mb-8"
-                    data-user-type-section
-                  >
-                    <div className="text-center mb-6">
-                      <h3 className="text-xl font-semibold text-slate-100 mb-2">What's your experience level?</h3>
-                      <p className="text-slate-400">This helps us apply the right evaluation criteria for your resume</p>
-                    </div>
-                    
-                    <div className="grid md:grid-cols-3 gap-4">
-                      {/* Fresher Option */}
-                      <motion.button
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setUserType('fresher')}
-                        className={`p-4 rounded-xl border text-left transition-all duration-300 ${
-                          userType === 'fresher'
-                            ? 'border-emerald-400/60 bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 shadow-[0_0_30px_rgba(16,185,129,0.2)]'
-                            : 'border-slate-700/50 hover:border-emerald-400/40 bg-slate-900/60 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            userType === 'fresher' ? 'bg-emerald-500/20' : 'bg-slate-700/50'
-                          }`}>
-                            <Sparkles className={`w-5 h-5 ${userType === 'fresher' ? 'text-emerald-400' : 'text-slate-400'}`} />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-slate-100">Fresher</h4>
-                            <p className="text-xs text-slate-400">0-2 years experience</p>
-                          </div>
-                        </div>
-                        <p className="text-sm text-slate-300">
-                          Recent graduate or entry-level professional. We'll focus on education, projects, and skills.
-                        </p>
-                      </motion.button>
-
-                      {/* Experienced Option */}
-                      <motion.button
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setUserType('experienced')}
-                        className={`p-4 rounded-xl border text-left transition-all duration-300 ${
-                          userType === 'experienced'
-                            ? 'border-cyan-400/60 bg-gradient-to-br from-cyan-500/20 to-teal-500/10 shadow-[0_0_30px_rgba(6,182,212,0.2)]'
-                            : 'border-slate-700/50 hover:border-cyan-400/40 bg-slate-900/60 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            userType === 'experienced' ? 'bg-cyan-500/20' : 'bg-slate-700/50'
-                          }`}>
-                            <Briefcase className={`w-5 h-5 ${userType === 'experienced' ? 'text-cyan-400' : 'text-slate-400'}`} />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-slate-100">Experienced</h4>
-                            <p className="text-xs text-slate-400">2+ years experience</p>
-                          </div>
-                        </div>
-                        <p className="text-sm text-slate-300">
-                          Professional with work experience. We'll emphasize achievements, career progression, and impact.
-                        </p>
-                      </motion.button>
-
-                      {/* Student Option */}
-                      <motion.button
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setUserType('student')}
-                        className={`p-4 rounded-xl border text-left transition-all duration-300 ${
-                          userType === 'student'
-                            ? 'border-amber-400/60 bg-gradient-to-br from-amber-500/20 to-orange-500/10 shadow-[0_0_30px_rgba(245,158,11,0.2)]'
-                            : 'border-slate-700/50 hover:border-amber-400/40 bg-slate-900/60 hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            userType === 'student' ? 'bg-amber-500/20' : 'bg-slate-700/50'
-                          }`}>
-                            <Calendar className={`w-5 h-5 ${userType === 'student' ? 'text-amber-400' : 'text-slate-400'}`} />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-slate-100">Student</h4>
-                            <p className="text-xs text-slate-400">Currently studying</p>
-                          </div>
-                        </div>
-                        <p className="text-sm text-slate-300">
-                          Current student seeking internships or entry-level roles. We'll focus on academics and potential.
-                        </p>
-                      </motion.button>
-                    </div>
-
-                    {/* Continue Button */}
-                    {scoringMode && userType && (
-                      <div className="text-center mt-8">
-                        <motion.button
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.3 }}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleContinueToUpload}
-                          className="px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 flex items-center space-x-3 mx-auto shadow-xl hover:shadow-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white animate-pulse"
-                        >
-                          <ArrowRight className="w-6 h-6" />
-                          <span>Continue to Upload Resume</span>
-                        </motion.button>
-                      </div>
-                    )}
-                    
-                    {/* Guidance text when user hasn't selected experience level */}
-                    {scoringMode && !userType && (
-                      <div className="text-center mt-8">
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.5, delay: 0.5 }}
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-400/30"
-                        >
-                          <ArrowRight className="w-4 h-4 text-amber-400" />
-                          <span className="text-amber-300 text-sm font-medium">Please select your experience level above to continue</span>
-                        </motion.div>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                {/* What You'll Get Section */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.4 }}
-                  className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 max-w-5xl mx-auto"
-                >
-                  <h3 className="text-lg font-semibold text-slate-100 mb-6 text-center">What You'll Get</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="text-center">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center mx-auto mb-3">
-                        <Award className="w-6 h-6 text-amber-400" />
-                      </div>
-                      <p className="text-slate-300 text-sm font-medium">Overall Score</p>
-                      <p className="text-slate-500 text-xs mt-1">0-100 rating</p>
-                    </div>
-                    <div className="text-center">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center mx-auto mb-3">
-                        <Lightbulb className="w-6 h-6 text-blue-400" />
-                      </div>
-                      <p className="text-slate-300 text-sm font-medium">Smart Tips</p>
-                      <p className="text-slate-500 text-xs mt-1">AI suggestions</p>
-                    </div>
-                    <div className="text-center">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 flex items-center justify-center mx-auto mb-3">
-                        <TrendingUp className="w-6 h-6 text-emerald-400" />
-                      </div>
-                      <p className="text-slate-300 text-sm font-medium">Improvements</p>
-                      <p className="text-slate-500 text-xs mt-1">Action items</p>
-                    </div>
-                    <div className="text-center">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center mx-auto mb-3">
-                        <FileText className="w-6 h-6 text-purple-400" />
-                      </div>
-                      <p className="text-slate-300 text-sm font-medium">Detailed Report</p>
-                      <p className="text-slate-500 text-xs mt-1">Full breakdown</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            )}
-
-            {currentStep === 1 && (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="container-responsive"
-              >
-                <div className="max-w-4xl mx-auto">
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="mb-6"
-                  >
-                    <button
-                      onClick={() => setCurrentStep(0)}
-                      className="bg-slate-800/80 hover:bg-slate-700/80 text-slate-100 font-semibold py-2 px-4 rounded-xl transition-all duration-300 flex items-center space-x-2 border border-slate-700/50 hover:border-emerald-400/30"
-                    >
-                      <ArrowLeft className="w-5 h-5" />
-                      <span>Back to Experience Level</span>
-                    </button>
-                  </motion.div>
-                  <motion.div 
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="space-y-8"
-                  >
-                    <motion.div variants={itemVariants} className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-[0_25px_80px_rgba(16,185,129,0.12)] border border-emerald-400/30 overflow-hidden">
-                      <div className="bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 p-6 border-b border-emerald-400/20">
-                        <h2 className="text-xl font-semibold text-emerald-50 flex items-center">
-                          <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-400/40 mr-3">
-                            <Upload className="w-5 h-5 text-emerald-300" />
-                          </div>
-                          Upload Your Resume
-                        </h2>
-                        
-                        {/* Auto-detection indicator when coming from Job Details */}
-                        {userType && jobDescription && (
-                          <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-400/30">
-                            <div className="flex items-center gap-2 text-emerald-300 text-sm">
-                              <CheckCircle className="w-4 h-4" />
-                              <span>
-                                Auto-detected as <span className="font-semibold capitalize">{userType}</span> role from job description
-                              </span>
-                            </div>
-                            <p className="text-emerald-400/70 text-xs mt-1">
-                              We'll apply {userType === 'fresher' || userType === 'student' ? 'fresher-friendly' : 'experienced'} evaluation criteria
-                            </p>
-                          </div>
-                        )}
-                        <p className="text-slate-300 mt-1 ml-12">Upload your current resume for analysis</p>
-                      </div>
-                      <div className="p-6">
-                        <FileUpload 
-                          onFileUpload={handleFileUpload} 
-                          onParsedResume={handleParsedResume}
-                          isAuthenticated={isAuthenticated}
-                          onShowAuth={onShowAuth}
-                          requireAuth={true}
-                          userId={user?.id}
-                          creditType="score_check"
-                          onShowSubscriptionPlans={onShowSubscriptionPlans}
-                          onCreditCheckPassed={() => {
-                            // Credits available - user still needs to fill JD and click analyze
-                          }}
-                        />
-                      </div>
-                    </motion.div>
-
-                    {scoringMode === 'jd_based' && (
-                      <motion.div variants={itemVariants} className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-[0_25px_80px_rgba(251,191,36,0.1)] border border-amber-400/30 overflow-hidden">
-                        <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 p-6 border-b border-amber-400/20">
-                          <h2 className="text-xl font-semibold text-amber-50 flex items-center">
-                            <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-400/40 mr-3">
-                              <Briefcase className="w-5 h-5 text-amber-300" />
-                            </div>
-                            Job Title *
-                          </h2>
-                          <p className="text-slate-300 mt-1 ml-12">Enter the exact job title you're targeting</p>
-                        </div>
-                        <div className="p-6">
-                          <input
-                            type="text"
-                            value={jobTitle}
-                            onChange={(e) => setJobTitle(e.target.value)}
-                            placeholder="e.g., Senior Software Engineer, Product Manager, Data Scientist"
-                            className="w-full px-4 py-3 border border-slate-700/50 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-slate-800/50 text-slate-100 placeholder-slate-400 transition-all duration-300"
-                          />
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {scoringMode === 'jd_based' && (
-                      <motion.div variants={itemVariants} className="bg-slate-900/80 backdrop-blur-xl rounded-2xl shadow-[0_25px_80px_rgba(34,197,94,0.1)] border border-emerald-400/30 overflow-hidden">
-                        <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 p-6 border-b border-emerald-400/20">
-                          <h2 className="text-xl font-semibold text-emerald-50 flex items-center">
-                            <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-400/40 mr-3">
-                              <FileText className="w-5 h-5 text-emerald-300" />
-                            </div>
-                            Job Description <span className="text-red-400 ml-1">*</span>
-                          </h2>
-                          <p className="text-slate-300 mt-1 ml-12">Paste the complete job description for accurate matching</p>
-                        </div>
-                        <div className="p-6">
-                          <textarea
-                            value={jobDescription}
-                            onChange={(e) => setJobDescription(e.target.value)}
-                            placeholder="Paste the full job description here including responsibilities, requirements, qualifications, and benefits..."
-                            rows={8}
-                            className="w-full px-4 py-3 border border-slate-700/50 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-y min-h-[200px] bg-slate-800/50 text-slate-100 placeholder-slate-400 transition-all duration-300"
-                          />
-                          <div className="flex items-center justify-between mt-2">
-                            <p className="text-xs text-slate-400">
-                              Required for JD-based scoring and analysis
-                            </p>
-                            <span className="text-xs text-slate-400">
-                              {jobDescription.length} characters
-                            </span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    <div className="text-center">
-                      <button
-                        onClick={() => analyzeResume()}
-                        disabled={scoringMode === null || !extractionResult.text.trim() || (scoringMode === 'jd_based' && (!jobDescription.trim() || !jobTitle.trim()))}
-                        className={`px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 flex items-center space-x-3 mx-auto shadow-xl hover:shadow-2xl ${
-                          scoringMode === null || !extractionResult.text.trim() || (scoringMode === 'jd_based' && (!jobDescription.trim() || !jobTitle.trim()))
-                            ? 'bg-gray-400 cursor-not-allowed text-white'
-                            : 'bg-gradient-to-r from-neon-cyan-500 to-neon-purple-500 hover:from-neon-cyan-400 hover:to-neon-purple-400 text-white hover:shadow-neon-cyan transform hover:scale-105'
-                        }`}
-                      >
-                        <TrendingUp className="w-6 h-6" />
-                        <span>{isAuthenticated ? 'Analyze My Resume' : 'Sign In to Analyze'}</span>
-                      </button>
-                      {!isAuthenticated && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
-                          Sign in to access our AI-powered resume analysis
-                        </p>
-                      )}
-                    </div>
-                  </motion.div>
-                </div>
-              </motion.div>
-            )}
-
-            {currentStep === 2 && scoreResult && (
-              <div className="container-responsive py-8">
-                {premiumResult ? (
-                  <PremiumResultsDashboard
-                    result={premiumResult}
-                    onCheckAnother={handleCheckAnotherResume}
-                    onNavigateBack={onNavigateBack}
-                    onOptimizeResume={handleOptimizeResume}
-                  />
-                ) : (
-                  <div className="max-w-5xl mx-auto space-y-6">
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5 }}
-                      className="bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-emerald-400/30 overflow-hidden shadow-[0_25px_80px_rgba(16,185,129,0.15)]"
-                    >
-                      <div className="bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 p-6 border-b border-emerald-400/20">
-                        <div className="flex items-center justify-between flex-wrap gap-4">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-400/40">
-                              <Award className="w-6 h-6 text-emerald-400" />
-                            </div>
-                            <h2 className="text-xl font-bold text-slate-100">Your Resume Score</h2>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {extractionResult.extraction_mode === 'OCR' && (
-                              <span className="px-3 py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full font-medium border border-amber-400/30">
-                                <Eye className="w-3 h-3 inline mr-1" />
-                                OCR Used
-                              </span>
-                            )}
-                            <span className={`px-3 py-1 text-xs rounded-full font-medium border ${
-                              scoreResult.confidence === 'High' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' :
-                              scoreResult.confidence === 'Medium' ? 'bg-amber-500/20 text-amber-300 border-amber-400/30' :
-                              'bg-red-500/20 text-red-300 border-red-400/30'
-                            }`}>
-                              <Shield className="w-3 h-3 inline mr-1" />
-                              {scoreResult.confidence} Confidence
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="p-8">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                          <motion.div
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{ duration: 0.6, delay: 0.2 }}
-                            className="flex flex-col items-center"
-                          >
-                            <div className="relative w-40 h-40 mb-4">
-                              <svg className="w-40 h-40 transform -rotate-90" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="50" fill="none" stroke="#1e293b" strokeWidth="10" />
-                                <motion.circle
-                                  cx="60" cy="60" r="50" fill="none" strokeWidth="10" strokeLinecap="round"
-                                  initial={{ strokeDasharray: "0 314" }}
-                                  animate={{ strokeDasharray: `${(scoreResult.overallScore / 100) * 314} 314` }}
-                                  transition={{ duration: 1.5, ease: "easeOut" as const, delay: 0.3 }}
-                                  className={`${
-                                    scoreResult.overallScore >= 80 ? 'stroke-emerald-400' :
-                                    scoreResult.overallScore >= 60 ? 'stroke-amber-400' : 'stroke-red-400'
-                                  }`}
-                                />
-                              </svg>
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="text-center">
-                                  <motion.div
-                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-                                    className={`text-5xl font-bold ${
-                                      scoreResult.overallScore >= 80 ? 'text-emerald-400' :
-                                      scoreResult.overallScore >= 60 ? 'text-amber-400' : 'text-red-400'
-                                    }`}
-                                  >
-                                    {scoreResult.overallScore}
-                                  </motion.div>
-                                  <div className="text-slate-400 text-sm">out of 100</div>
-                                </div>
-                              </div>
-                            </div>
-                            <div className={`px-4 py-2 rounded-full text-sm font-semibold ${
-                              scoreResult.overallScore >= 80 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' :
-                              scoreResult.overallScore >= 60 ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30' :
-                              'bg-red-500/20 text-red-300 border border-red-400/30'
-                            }`}>
-                              {scoreResult.overallScore >= 80 ? 'Excellent' : scoreResult.overallScore >= 60 ? 'Good' : 'Needs Work'}
-                            </div>
-                          </motion.div>
-
-                          <motion.div
-                            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.5, delay: 0.4 }}
-                            className="flex flex-col gap-4"
-                          >
-                            <div className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50">
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="p-2 rounded-lg bg-cyan-500/20 border border-cyan-400/30">
-                                  <Award className="w-5 h-5 text-cyan-400" />
-                                </div>
-                                <span className="text-slate-400 text-sm">Match Quality</span>
-                              </div>
-                              <div className={`text-2xl font-bold ${
-                                scoreResult.matchQuality === 'Excellent' ? 'text-emerald-400' :
-                                scoreResult.matchQuality === 'Good' ? 'text-cyan-400' :
-                                scoreResult.matchQuality === 'Adequate' ? 'text-amber-400' : 'text-red-400'
-                              }`}>
-                                {scoreResult.matchQuality}
-                              </div>
-                            </div>
-                            <div className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50">
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-400/30">
-                                  <TrendingUp className="w-5 h-5 text-emerald-400" />
-                                </div>
-                                <span className="text-slate-400 text-sm">Shortlist Chances</span>
-                              </div>
-                              <div className="text-2xl font-bold text-emerald-400">
-                                {scoreResult.canonicalInterviewProbability || scoreResult.interviewChance}
-                              </div>
-                            </div>
-                          </motion.div>
-
-                          <motion.div
-                            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.5, delay: 0.5 }}
-                            className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50"
-                          >
-                            <h3 className="text-lg font-semibold text-slate-100 mb-3">Analysis Summary</h3>
-                            <p className="text-slate-300 text-sm leading-relaxed mb-4">{scoreResult.summary}</p>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="bg-emerald-500/10 border border-emerald-400/30 rounded-lg p-3">
-                                <div className="text-emerald-400 font-bold text-lg">{scoreResult.strengths.length}</div>
-                                <div className="text-emerald-300/70 text-xs">Strengths</div>
-                              </div>
-                              <div className="bg-amber-500/10 border border-amber-400/30 rounded-lg p-3">
-                                <div className="text-amber-400 font-bold text-lg">{scoreResult.areasToImprove.length}</div>
-                                <div className="text-amber-300/70 text-xs">To Improve</div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.3 }}
-                      className="bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-cyan-400/30 overflow-hidden"
-                    >
-                      <div className="bg-gradient-to-r from-cyan-500/10 to-teal-500/10 p-6 border-b border-cyan-400/20">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-400/40">
-                            <BarChart3 className="w-6 h-6 text-cyan-400" />
-                          </div>
-                          <div>
-                            <h2 className="text-xl font-bold text-slate-100">Parameter Breakdown</h2>
-                            <p className="text-slate-400 text-sm">Industry-standard ATS parameters</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {getVisibleScoreParameters(scoreResult).map((parameter, index) => {
-                            const { key, name, score, maxScore, percentage, evidence, applicable } = parameter;
-                            return (
-                              <motion.div
-                                key={key}
-                                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3, delay: 0.4 + index * 0.05 }}
-                                className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 hover:border-cyan-400/30 transition-colors"
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <h4 className="font-semibold text-slate-200 text-sm">{name}</h4>
-                                  <span className="text-xs text-slate-500">{applicable ? `${maxScore} pts max` : 'Not Applicable'}</span>
-                                </div>
-                                {applicable ? <>
-                                <div className="flex items-center gap-2 mb-3">
-                                  <span className={`text-xl font-bold ${
-                                    percentage >= 80 ? 'text-emerald-400' : percentage >= 60 ? 'text-amber-400' : 'text-red-400'
-                                  }`}>{score}</span>
-                                  <span className="text-slate-500">/ {maxScore}</span>
-                                  <span className="ml-auto text-xs text-cyan-400">{percentage.toFixed(0)}%</span>
-                                </div>
-                                <div className="w-full bg-slate-700/50 rounded-full h-2">
-                                  <motion.div
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${Math.min(percentage, 100)}%` }}
-                                    transition={{ duration: 0.8, delay: 0.5 + index * 0.05 }}
-                                    className={`h-2 rounded-full ${
-                                      percentage >= 80 ? 'bg-emerald-500' : percentage >= 60 ? 'bg-amber-500' : 'bg-red-500'
-                                    }`}
-                                  />
-                                </div>
-                                </> : (
-                                  <div className="mb-3 rounded-lg bg-slate-700/30 px-3 py-2 text-sm font-medium text-slate-400">
-                                    N/A — excluded from the final score
-                                  </div>
-                                )}
-                                {evidence.length > 0 && (
-                                  <div className="mt-3 border-t border-slate-700/50 pt-3">
-                                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Evidence</p>
-                                    {evidence.slice(0, 2).map((excerpt, evidenceIndex) => (
-                                      <p key={`${key}-evidence-${evidenceIndex}`} className="text-xs leading-5 text-slate-400">
-                                        “{excerpt}”
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.4 }}
-                      className="bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-teal-400/30 overflow-hidden"
-                    >
-                      <div className="bg-gradient-to-r from-teal-500/10 to-emerald-500/10 p-6 border-b border-teal-400/20">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-xl bg-teal-500/20 border border-teal-400/40">
-                            <Lightbulb className="w-6 h-6 text-teal-400" />
-                          </div>
-                          <h2 className="text-xl font-bold text-slate-100">Recommendations</h2>
-                        </div>
-                      </div>
-                      <div className="p-6">
-                        <div className="space-y-3">
-                          {scoreResult.areasToImprove.length > 0 ? (
-                            scoreResult.areasToImprove.map((rec, index) => (
-                              <motion.div
-                                key={index}
-                                initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                                transition={{ duration: 0.3, delay: 0.5 + index * 0.1 }}
-                                className="flex items-start gap-3 bg-slate-800/30 rounded-lg p-4 border border-slate-700/30"
-                              >
-                                <div className="p-1 rounded-full bg-teal-500/20 mt-0.5">
-                                  <ArrowRight className="w-4 h-4 text-teal-400" />
-                                </div>
-                                <span className="text-slate-300 text-sm">{rec}</span>
-                              </motion.div>
-                            ))
-                          ) : (
-                            <p className="text-slate-400 italic text-center py-4">Your resume looks great!</p>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.45 }}
-                      className="bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-400/30 rounded-2xl p-6 sm:p-8 text-center"
-                    >
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold uppercase tracking-wide mb-3">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        {scoreResult.overallScore >= 80 ? 'Almost there' : 'Fixable right now'}
-                      </div>
-                      <h3 className="text-xl sm:text-2xl font-bold text-slate-100 mb-2">
-                        {scoreResult.overallScore >= 80
-                          ? "Close the last few points to stand out"
-                          : `Your ${scoreResult.overallScore}/100 score is costing you interview calls`}
-                      </h3>
-                      <p className="text-slate-300 max-w-xl mx-auto mb-6">
-                        The AI Resume Optimizer rewrites your resume against this job description to fix exactly
-                        what's flagged above — same issues, done in minutes.
-                      </p>
-                      <button
-                        onClick={() => navigate('/optimizer')}
-                        className="px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-semibold rounded-xl hover:from-emerald-400 hover:to-cyan-400 transition-all duration-300 shadow-lg shadow-emerald-500/25 inline-flex items-center gap-2"
-                      >
-                        <Target className="w-4.5 h-4.5" />
-                        Optimize My Resume Now
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </motion.div>
-
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.5 }}
-                      className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4"
-                    >
-                      <button
-                        onClick={handleCheckAnotherResume}
-                        className="px-8 py-3 bg-slate-800 text-slate-200 font-semibold rounded-xl hover:bg-slate-700 transition-all duration-300 border border-slate-700 flex items-center gap-2"
-                      >
-                        Check Another Resume
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={onNavigateBack}
-                        className="px-8 py-3 bg-slate-800 text-slate-200 font-semibold rounded-xl hover:bg-slate-700 transition-all duration-300 border border-slate-700"
-                      >
-                        Back to Home
-                      </button>
-                    </motion.div>
-                  </div>
-                )}
-              </div>
+      <div className="min-h-screen bg-surface-deepest text-slate-100 lg:pl-16">
+        {/* Slim top bar */}
+        <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-surface-deepest/90 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 max-w-2xl items-center gap-2 px-4">
+            <button
+              onClick={onNavigateBack}
+              aria-label="Back to home"
+              className="-ml-2 grid h-11 w-11 place-items-center rounded-xl text-slate-300 hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 lg:hidden"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <span className="text-sm font-semibold text-slate-200">Resume Score Checker</span>
+            {isAuthenticated && creditsLeft !== null && (
+              <span className="ml-auto rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                {creditsLeft} {creditsLeft === 1 ? 'check' : 'checks'} left
+              </span>
             )}
           </div>
         </div>
-      )}
+
+        <main className={`mx-auto max-w-2xl px-4 py-6 sm:py-10 ${showResult ? 'pb-44 sm:pb-10' : ''}`}>
+          {isAnalyzing ? (
+            /* ---------- Loading ---------- */
+            <motion.section {...fadeIn()} className={`${cardClass} p-6 sm:p-8`} aria-live="polite" aria-busy="true">
+              <h1 className="text-xl font-semibold text-slate-100">Checking your resume…</h1>
+              <p className="mt-1 text-sm text-slate-400">This can take a minute or two. Please keep this tab open.</p>
+              <ol className="mt-6 space-y-4">
+                {LOADING_STEPS.map((label, index) => {
+                  const done = index < activeLoadingStep;
+                  const active = index === activeLoadingStep;
+                  return (
+                    <li key={label} className="flex items-center gap-3">
+                      <span
+                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border ${
+                          done
+                            ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
+                            : active
+                              ? 'border-cyan-400/40 bg-cyan-500/10 text-cyan-300'
+                              : 'border-slate-700 text-slate-500'
+                        }`}
+                      >
+                        {done ? (
+                          <CheckCircle className="h-4 w-4" />
+                        ) : active ? (
+                          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                        ) : (
+                          <span className="text-xs font-semibold">{index + 1}</span>
+                        )}
+                      </span>
+                      <span className={`text-sm ${done || active ? 'text-slate-100' : 'text-slate-500'}`}>{label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </motion.section>
+          ) : showResult && scoreResult && band ? (
+            premiumResult ? (
+              <PremiumResultsDashboard
+                result={premiumResult}
+                onCheckAnother={handleCheckAnotherResume}
+                onNavigateBack={onNavigateBack}
+                onOptimizeResume={handleOptimizeResume}
+              />
+            ) : (
+              /* ---------- Result ---------- */
+              <div className="space-y-4">
+                <motion.section {...fadeIn()} className={`${cardClass} p-6 text-center sm:p-8`}>
+                  <div className="relative mx-auto h-40 w-40">
+                    <svg className="h-40 w-40 -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
+                      <circle cx="60" cy="60" r="50" fill="none" stroke="#1e293b" strokeWidth="10" />
+                      <motion.circle
+                        cx="60" cy="60" r="50" fill="none" strokeWidth="10" strokeLinecap="round"
+                        className={band.stroke}
+                        initial={reduceMotion ? false : { strokeDasharray: '0 314' }}
+                        animate={{ strokeDasharray: `${(scoreResult.overallScore / 100) * 314} 314` }}
+                        transition={{ duration: 1, ease: 'easeOut' }}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className={`text-5xl font-bold ${band.text}`}>{scoreResult.overallScore}</span>
+                      <span className="text-sm text-slate-400">out of 100</span>
+                    </div>
+                  </div>
+                  <h1 className="mt-4 text-2xl font-bold text-slate-100">{band.label}</h1>
+                  <p className="mt-1 text-slate-300">{band.note}</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs">
+                    <span className={`rounded-full border px-3 py-1 font-medium ${band.chip}`}>
+                      Shortlist chance: {scoreResult.canonicalInterviewProbability || scoreResult.interviewChance}
+                    </span>
+                    {jobTitle && (
+                      <span className="max-w-full truncate rounded-full border border-slate-700 px-3 py-1 text-slate-300">
+                        For: {jobTitle}
+                      </span>
+                    )}
+                  </div>
+                </motion.section>
+
+                {/* Primary CTA: fixed to the bottom on phones, inline card from sm up */}
+                <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.08] bg-surface-deepest/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:static sm:rounded-2xl sm:border sm:border-emerald-400/20 sm:bg-emerald-500/[0.06] sm:p-6 sm:backdrop-blur-none">
+                  <button
+                    onClick={handleOptimizeResume}
+                    className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 font-semibold text-white shadow-lg shadow-emerald-500/20 transition-colors hover:from-emerald-400 hover:to-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-deepest"
+                  >
+                    <Target className="h-5 w-5" aria-hidden="true" />
+                    Fix my resume for this job
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <p className="mt-2 text-center text-xs text-slate-400">
+                    JD-based optimizer: adds the right keywords, rewrites bullets, re-scores
+                  </p>
+                </div>
+
+                <motion.section {...fadeIn(0.05)} aria-labelledby="top-issues-heading">
+                  <h2 id="top-issues-heading" className="mb-3 px-1 text-base font-semibold text-slate-100">
+                    {topIssues.length || missingSkills.length ? 'What to fix first' : 'Looking good'}
+                  </h2>
+                  <ul className="space-y-3">
+                    {missingSkills.length > 0 && (
+                      <li className={`${cardClass} p-4`}>
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" aria-hidden="true" />
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-100">Missing key skills from the job</p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {missingSkills.map(skill => (
+                                <span key={skill} className="rounded-md border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-xs text-red-200">
+                                  {skill}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    )}
+                    {topIssues.map(issue => (
+                      <li key={issue.key} className={`${cardClass} p-4`}>
+                        <div className="flex items-start gap-3">
+                          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" aria-hidden="true" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <p className="font-medium text-slate-100">{issue.title}</p>
+                              {issue.scoreLabel && <span className="shrink-0 text-xs text-slate-500">{issue.scoreLabel}</span>}
+                            </div>
+                            {issue.detail && <p className="mt-1 text-sm leading-relaxed text-slate-400">{issue.detail}</p>}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                    {!topIssues.length && !missingSkills.length && (
+                      <li className={`${cardClass} p-4 text-sm text-slate-300`}>No major issues found. Your resume matches this job well.</li>
+                    )}
+                  </ul>
+                </motion.section>
+
+                <details className={`${cardClass} group`}>
+                  <summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between rounded-2xl px-4 font-medium text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 [&::-webkit-details-marker]:hidden">
+                    See full breakdown
+                    <ChevronDown className="h-5 w-5 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <div className="space-y-6 border-t border-white/[0.06] p-4">
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full border border-slate-700 px-3 py-1 text-slate-300">Match: {scoreResult.matchQuality}</span>
+                      <span className="rounded-full border border-slate-700 px-3 py-1 text-slate-300">
+                        <Shield className="mr-1 inline h-3 w-3" aria-hidden="true" />
+                        {scoreResult.confidence} confidence
+                      </span>
+                      {extractionResult.extraction_mode === 'OCR' && (
+                        <span className="rounded-full border border-amber-400/30 px-3 py-1 text-amber-300">
+                          <Eye className="mr-1 inline h-3 w-3" aria-hidden="true" />
+                          OCR used
+                        </span>
+                      )}
+                    </div>
+                    {scoreResult.summary && <p className="text-sm leading-relaxed text-slate-300">{scoreResult.summary}</p>}
+
+                    {scoreResult.canonicalCategories && scoreResult.canonicalCategories.length > 0 && (
+                      <div>
+                        <h3 className="mb-3 text-sm font-semibold text-slate-200">By category</h3>
+                        <ul className="space-y-3">
+                          {scoreResult.canonicalCategories.map(category => (
+                            <li key={category.name}>
+                              <div className="mb-1 flex justify-between gap-3 text-sm">
+                                <span className="text-slate-300">{category.name}</span>
+                                <span className="text-slate-400">{Math.round(category.percentage)}%</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-slate-800">
+                                <div className={`h-2 rounded-full ${barColor(category.percentage)}`} style={{ width: `${Math.min(category.percentage, 100)}%` }} />
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div>
+                      <h3 className="mb-3 text-sm font-semibold text-slate-200">Every check</h3>
+                      <ul className="divide-y divide-white/[0.06]">
+                        {getVisibleScoreParameters(scoreResult).map(({ key, name, score, maxScore, percentage, evidence, applicable }) => (
+                          <li key={key} className="py-3">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                              <span className="text-slate-200">{name}</span>
+                              <span className="shrink-0 text-slate-400">{applicable ? `${score}/${maxScore}` : 'N/A'}</span>
+                            </div>
+                            {applicable ? (
+                              <div className="mt-2 h-1.5 rounded-full bg-slate-800">
+                                <div className={`h-1.5 rounded-full ${barColor(percentage)}`} style={{ width: `${Math.min(percentage, 100)}%` }} />
+                              </div>
+                            ) : (
+                              <p className="mt-1 text-xs text-slate-500">Excluded from the final score</p>
+                            )}
+                            {evidence.slice(0, 2).map((excerpt, evidenceIndex) => (
+                              <p key={`${key}-evidence-${evidenceIndex}`} className="mt-1 text-xs leading-5 text-slate-500">“{excerpt}”</p>
+                            ))}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {scoreResult.strengths.length > 0 && (
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-slate-200">Strengths</h3>
+                        <ul className="space-y-1 text-sm text-slate-300">
+                          {scoreResult.strengths.map((strength, index) => (
+                            <li key={index} className="flex gap-2"><CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />{strength}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {scoreResult.areasToImprove.length > 0 && (
+                      <div>
+                        <h3 className="mb-2 text-sm font-semibold text-slate-200">All recommendations</h3>
+                        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
+                          {scoreResult.areasToImprove.map((rec, index) => <li key={index}>{rec}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </details>
+
+                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-center">
+                  <button
+                    onClick={handleCheckAnotherResume}
+                    className="min-h-[44px] rounded-xl border border-slate-700 px-6 font-medium text-slate-200 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  >
+                    Check another resume
+                  </button>
+                  <button
+                    onClick={onNavigateBack}
+                    className="min-h-[44px] rounded-xl px-6 font-medium text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  >
+                    Back to home
+                  </button>
+                </div>
+              </div>
+            )
+          ) : (
+            /* ---------- Input ---------- */
+            <>
+              <motion.header {...fadeIn()} className="mb-6 text-center">
+                <h1 className="text-2xl font-bold text-slate-100 sm:text-3xl">Check your resume against a job</h1>
+                <p className="mt-2 text-slate-400">See your ATS score and what to fix. Takes about 2 minutes.</p>
+              </motion.header>
+
+              <motion.section {...fadeIn(0.05)} className={`${cardClass} space-y-8 p-4 sm:p-6`}>
+                {/* Step 1 */}
+                <div>
+                  <h2 className="mb-3 flex items-center gap-3 text-base font-semibold text-slate-100 sm:text-lg">
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-emerald-500/15 text-sm text-emerald-300">1</span>
+                    Upload your resume
+                  </h2>
+                  <FileUpload
+                    compact
+                    onFileUpload={handleFileUpload}
+                    onParsedResume={handleParsedResume}
+                    isAuthenticated={isAuthenticated}
+                    onShowAuth={onShowAuth}
+                    requireAuth={true}
+                    userId={user?.id}
+                    creditType="score_check"
+                    onShowSubscriptionPlans={onShowSubscriptionPlans}
+                    onCreditCheckPassed={() => {
+                      // Credits available - user still needs to fill JD and click analyze
+                    }}
+                  />
+                </div>
+
+                {/* Step 2 */}
+                {scoringMode === 'jd_based' && (
+                  <div className="space-y-4">
+                    <h2 className="flex items-center gap-3 text-base font-semibold text-slate-100 sm:text-lg">
+                      <span className="grid h-7 w-7 place-items-center rounded-full bg-emerald-500/15 text-sm text-emerald-300">2</span>
+                      Add the job you're applying for
+                    </h2>
+                    <div>
+                      <label htmlFor="rsc-job-title" className="mb-1.5 block text-sm font-medium text-slate-300">Job title</label>
+                      <input
+                        id="rsc-job-title"
+                        type="text"
+                        value={jobTitle}
+                        onChange={(e) => setJobTitle(e.target.value)}
+                        placeholder="e.g. Software Engineer"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="rsc-jd" className="mb-1.5 block text-sm font-medium text-slate-300">Job description</label>
+                      <textarea
+                        id="rsc-jd"
+                        value={jobDescription}
+                        onChange={(e) => setJobDescription(e.target.value)}
+                        placeholder="Paste the full job description here"
+                        rows={6}
+                        className={`${inputClass} min-h-[160px] resize-y`}
+                      />
+                      <p className="mt-1 text-right text-xs text-slate-500">{jobDescription.length} characters</p>
+                    </div>
+                    <fieldset>
+                      <legend className="mb-1.5 text-sm font-medium text-slate-300">Your experience level</legend>
+                      <div className="grid grid-cols-3 gap-2">
+                        {USER_TYPES.map(option => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            aria-pressed={userType === option.id}
+                            onClick={() => setUserType(option.id)}
+                            className={`min-h-[52px] rounded-xl border px-2 py-2 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                              userType === option.id
+                                ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200'
+                                : 'border-slate-700/60 bg-slate-900/40 text-slate-300 hover:border-slate-600'
+                            }`}
+                          >
+                            <span className="block text-sm font-medium">{option.label}</span>
+                            <span className="block text-xs text-slate-500">{option.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {userType && location.state && (location.state as { jobDescription?: string }).jobDescription && (
+                        <p className="mt-2 text-xs text-emerald-400/80">Auto-detected from the job description. Change it if it's wrong.</p>
+                      )}
+                    </fieldset>
+                  </div>
+                )}
+
+                <div>
+                  <button
+                    onClick={() => analyzeResume()}
+                    disabled={isAuthenticated && !isReady}
+                    className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-colors hover:from-emerald-400 hover:to-cyan-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-deepest disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-400 disabled:shadow-none"
+                  >
+                    {isAuthenticated ? 'Check my score' : 'Sign in to check my score'}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <p className="mt-2 text-center text-xs text-slate-500">
+                    {isAuthenticated && missingInputs.length > 0
+                      ? `Add ${missingInputs.join(', ')} to continue.`
+                      : 'Each check uses 1 score credit.'}
+                  </p>
+                </div>
+              </motion.section>
+            </>
+          )}
+        </main>
+      </div>
     </>
   );
 };

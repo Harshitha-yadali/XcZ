@@ -25,14 +25,134 @@ export const SECTION_ALIASES: Record<Exclude<ResumeSectionKind, 'header'>, reado
 
 export const BULLET_PATTERN = /^\s*([\u2022\u25CF\u25E6\u25AA\-–—*])\s+/;
 
+/** Spelling variants of one skill, keyed by the lowercase variant as written. */
 export const SKILL_ALIASES: Record<string, string> = {
   js: 'JavaScript',
+  ts: 'TypeScript',
+  node: 'Node.js',
   nodejs: 'Node.js',
+  'node js': 'Node.js',
+  'react.js': 'React',
+  reactjs: 'React',
+  'vue.js': 'Vue',
+  vuejs: 'Vue',
+  nextjs: 'Next.js',
+  'express.js': 'Express',
+  expressjs: 'Express',
+  'nest.js': 'NestJS',
+  mongo: 'MongoDB',
+  postgres: 'PostgreSQL',
+  'ms sql': 'SQL Server',
+  mssql: 'SQL Server',
+  k8s: 'Kubernetes',
+  gcp: 'Google Cloud',
+  'google cloud platform': 'Google Cloud',
+  'amazon web services': 'AWS',
+  'microsoft azure': 'Azure',
+  golang: 'Go',
+  cpp: 'C++',
+  html5: 'HTML',
+  css3: 'CSS',
+  'tailwind css': 'Tailwind',
+  ml: 'Machine Learning',
+  ai: 'Artificial Intelligence',
+  genai: 'Generative AI',
+  'gen ai': 'Generative AI',
+  llms: 'LLM',
+  'large language models': 'LLM',
+  'natural language processing': 'NLP',
+  sklearn: 'scikit-learn',
+  'scikit learn': 'scikit-learn',
+  'apache spark': 'Spark',
+  'apache kafka': 'Kafka',
+  powerbi: 'Power BI',
+  'ms excel': 'Excel',
+  'microsoft excel': 'Excel',
+  rest: 'REST API',
+  restful: 'REST API',
+  'rest apis': 'REST API',
   'restful api': 'REST API',
   'restful apis': 'REST API',
   cicd: 'CI/CD',
   'ci cd': 'CI/CD',
+  'ci-cd': 'CI/CD',
+  oop: 'OOP',
+  oops: 'OOP',
   'object oriented programming': 'OOP',
+  'object-oriented programming': 'OOP',
+  dsa: 'DSA',
+  'data structures and algorithms': 'DSA',
+  'data structures & algorithms': 'DSA',
+  vscode: 'VS Code',
+  'visual studio code': 'VS Code',
+  'test-driven development': 'TDD',
+  'end-to-end testing': 'E2E Testing',
+};
+
+/**
+ * A technology that proves its parent skills: anyone who evidently wrote
+ * Express code wrote JavaScript on Node.js. A parent counts only when the
+ * source technology itself is grounded in the candidate's own text.
+ */
+export const IMPLIED_SKILLS: Record<string, readonly string[]> = {
+  Express: ['Node.js', 'JavaScript'],
+  NestJS: ['Node.js'],
+  'Node.js': ['JavaScript'],
+  TypeScript: ['JavaScript'],
+  jQuery: ['JavaScript'],
+  React: ['JavaScript', 'HTML', 'CSS'],
+  Angular: ['JavaScript', 'HTML', 'CSS'],
+  Vue: ['JavaScript', 'HTML', 'CSS'],
+  'Next.js': ['React', 'JavaScript'],
+  Django: ['Python'],
+  Flask: ['Python'],
+  FastAPI: ['Python'],
+  Pandas: ['Python'],
+  NumPy: ['Python'],
+  'Spring Boot': ['Java'],
+  Hibernate: ['Java'],
+  Laravel: ['PHP'],
+  'Ruby on Rails': ['Ruby'],
+  TensorFlow: ['Machine Learning', 'Python'],
+  PyTorch: ['Machine Learning', 'Python'],
+  Keras: ['Machine Learning', 'Python'],
+  'scikit-learn': ['Machine Learning', 'Python'],
+  Tableau: ['Data Visualization'],
+  'Power BI': ['Data Visualization'],
+  MySQL: ['SQL'],
+  PostgreSQL: ['SQL'],
+  'SQL Server': ['SQL'],
+  SQLite: ['SQL'],
+  Docker: ['Containers'],
+  Kubernetes: ['Containers'],
+  Git: ['Version Control'],
+};
+
+const ENGLISH_WORD_ALIASES = new Set(['rest', 'restful', 'node', 'ai', 'ml', 'ts']);
+
+const stripSkill = (value: string) => value.toLowerCase().replace(/[^a-z0-9+#]+/g, '');
+const ALIAS_BY_KEY = new Map(Object.entries(SKILL_ALIASES).map(([alias, canonical]) => [stripSkill(alias), canonical]));
+
+/** One key per skill however it is spelled: "ReactJS", "React.js" and "react" all give "react". */
+export const canonicalSkillKey = (skill: string): string => stripSkill(ALIAS_BY_KEY.get(stripSkill(skill)) || skill);
+
+const IMPLIED_BY_KEY = new Map(Object.entries(IMPLIED_SKILLS).map(([source, parents]) => [canonicalSkillKey(source), parents]));
+
+/** Parent skills proven by the given (already grounded) skills. */
+export const impliedSkillsOf = (skills: Iterable<string>): string[] => {
+  const out = new Set<string>();
+  for (const skill of skills) IMPLIED_BY_KEY.get(canonicalSkillKey(skill))?.forEach(parent => out.add(parent));
+  return [...out];
+};
+
+/** Ways a resume can show the skill: its spellings, plus technologies that imply it. */
+export const evidencePhrasesFor = (skill: string): string[] => {
+  const key = canonicalSkillKey(skill);
+  const spellings = (k: string) => Object.entries(SKILL_ALIASES).filter(([, c]) => canonicalSkillKey(c) === k).flatMap(([a, c]) => [a, c]);
+  const sources = Object.entries(IMPLIED_SKILLS)
+    .filter(([, parents]) => parents.some(parent => canonicalSkillKey(parent) === key))
+    .flatMap(([source]) => [source, ...spellings(canonicalSkillKey(source))]);
+  return [...new Set([skill, ...spellings(key), ...sources])];
 };
 
 interface SourceLine {
@@ -259,10 +379,12 @@ const extractGroundedSkills = (
     if (!section) continue;
     for (const [key, canonicalSkill] of names) {
       const phrases = [canonicalSkill, ...Object.entries(SKILL_ALIASES)
-        .filter(([, canonical]) => normalizeSkillKey(canonical) === key)
+        .filter(([, canonical]) => normalizeSkillKey(canonical) === normalizeSkillKey(canonicalSkill))
         .map(([alias]) => alias)];
       for (const phrase of new Set(phrases)) {
         for (const occurrence of findExactOccurrences(rawText, phrase, section.contentStartIndex, section.contentEndIndex)) {
+          // "the rest of", "each node": everyday words count only when written as a name.
+          if (ENGLISH_WORD_ALIASES.has(phrase) && occurrence.sourceText === occurrence.sourceText.toLowerCase()) continue;
           evidence.push({
             canonicalSkill,
             sourceText: occurrence.sourceText,
@@ -325,11 +447,51 @@ const extractProjects = (
   });
 };
 
+/**
+ * Heading of the block the candidate confirms in the optimizer's Boost step.
+ * It is appended after the uploaded text, so it survives every rebuild from rawText.
+ */
+export const CONFIRMED_DETAILS_HEADING = 'CANDIDATE-CONFIRMED DETAILS';
+const CONFIRMED_SKILL_LINE = /^Confirmed skill: (.+?)(?: \| Used in (project|experience)?:? ?(.*))?$/;
+const CONFIRMED_METRIC_LINE = /^Confirmed metric: (.+?) \| For: (.+)$/;
+const bulletKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** Credits what the candidate confirmed: skills as grounded, numbers inside the bullet they belong to. */
+const applyConfirmedDetails = (doc: ResumeEvidenceDocument, rawText: string, blockStart: number) => {
+  for (const line of splitSourceLines(rawText).filter(item => item.start > blockStart)) {
+    const skill = line.text.match(CONFIRMED_SKILL_LINE);
+    if (skill) {
+      const name = skill[1].trim();
+      const startIndex = line.start + 'Confirmed skill: '.length;
+      doc.skills.push({
+        canonicalSkill: SKILL_ALIASES[name.toLowerCase()] || name,
+        sourceText: rawText.slice(startIndex, startIndex + name.length),
+        sourceSection: skill[2] === 'project' ? 'projects' : skill[2] === 'experience' ? 'experience' : 'skills',
+        startIndex,
+        endIndex: startIndex + name.length,
+      });
+      continue;
+    }
+    const metric = line.text.match(CONFIRMED_METRIC_LINE);
+    if (!metric) continue;
+    const target = bulletKey(metric[2]);
+    const bullet = target && doc.bullets.find(item => bulletKey(item.text).startsWith(target));
+    if (bullet) bullet.text = `${bullet.text.replace(/[.;\s]+$/, '')}; ${metric[1].trim()}`;
+  }
+};
+
 export const parseResumeEvidence = (rawText: string): ResumeEvidenceDocument => {
-  const lines = splitSourceLines(rawText);
-  const sections = buildSections(rawText, lines);
-  const bullets = extractBullets(rawText, lines, sections);
-  const skills = extractGroundedSkills(rawText, sections);
-  const projects = extractProjects(rawText, lines, sections, bullets, skills);
-  return { rawText, sections, bullets, skills, projects };
+  const blockStart = rawText.indexOf(`
+${CONFIRMED_DETAILS_HEADING}
+`);
+  // The resume's own sections end where the confirmed block begins.
+  const resumeText = blockStart >= 0 ? rawText.slice(0, blockStart) : rawText;
+  const lines = splitSourceLines(resumeText);
+  const sections = buildSections(resumeText, lines);
+  const bullets = extractBullets(resumeText, lines, sections);
+  const skills = extractGroundedSkills(resumeText, sections);
+  const projects = extractProjects(resumeText, lines, sections, bullets, skills);
+  const doc = { rawText, sections, bullets, skills, projects };
+  if (blockStart >= 0) applyConfirmedDetails(doc, rawText, blockStart);
+  return doc;
 };

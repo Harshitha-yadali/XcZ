@@ -11,6 +11,7 @@ import {
   SKILL_CATEGORIES,
   SKILL_DISPLAY_NAMES,
 } from '../constants/skillsTaxonomy';
+import { impliedSkillsOf } from './resumeEvidenceExtractor';
 
 export interface OptimizationChange {
   parameterId: number;
@@ -92,7 +93,9 @@ function addMissingKeywords(
     ...jdKeywords.map(skill => canonicalizeSkillLabel(skill)),
     ...explicitKeywords.map(skill => canonicalizeSkillLabel(skill)),
   ])];
-  const evidenceSkills = buildCanonicalSkillSet(extractSkillsFromResumeEvidence(resume));
+  const groundedSkills = extractSkillsFromResumeEvidence(resume);
+  // Express in a project proves Node.js; the parent may be listed when the JD asks for it.
+  const evidenceSkills = buildCanonicalSkillSet([...groundedSkills, ...impliedSkillsOf(groundedSkills)]);
   const structuredSkills = buildCanonicalSkillSet(
     resume.skills?.flatMap(category => category.list || []) || []
   );
