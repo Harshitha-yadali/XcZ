@@ -48,7 +48,7 @@ import ResumeEditor from './editor/ResumeEditor';
 import ExportResumeModal from './ExportResumeModal';
 import OptimizationQualityModal from './optimizer/OptimizationQualityModal';
 import BoostQuestionsModal from './optimizer/BoostQuestionsModal';
-import type { CandidateBoost } from '../services/candidateBoost';
+import { applyCandidateBoost, type CandidateBoost } from '../services/candidateBoost';
 import {
   DEFAULT_JD_OPTIMIZATION_TIER,
   getJdOptimizationPackage,
@@ -251,10 +251,11 @@ const ResumeOptimizer: React.FC<ResumeOptimizerProps> = ({
   const [qualitySelectionError, setQualitySelectionError] = useState<string | null>(null);
   const selectedOptimizationTierRef = useRef<JdOptimizationTierId>(DEFAULT_JD_OPTIMIZATION_TIER);
   const qualitySelectionLockRef = useRef(false);
-  // Boost step: what the candidate confirmed, and for which resume + JD it was asked.
-  const [showBoost, setShowBoost] = useState(false);
+  // Boost step: what the candidate confirmed, and for which resume + JD + tier it was asked.
+  // 'before-run' runs after the tier is chosen; 'after-run' re-scores a finished result.
+  const [boostStep, setBoostStep] = useState<'before-run' | 'after-run' | null>(null);
   const boostRef = useRef<CandidateBoost | null>(null);
-  const boostAskedForRef = useRef<{ resume: ResumeData; jd: string } | null>(null);
+  const boostAskedForRef = useRef<{ resume: ResumeData; jd: string; tier: JdOptimizationTierId } | null>(null);
   const [jobApplicationLink, setJobApplicationLink] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
@@ -486,8 +487,10 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
             (msg, pct) => console.log(`[OptLoop] ${pct}% - ${msg}`),
             resumeData,
             {
-              maxLoops: Math.max(0, qualityTier.aiPasses - 1),
-              modelSequence: qualityTier.refinementModels,
+              maxLoops: qualityTier.maxLoops,
+              modelSequence: [qualityTier.refinementModel],
+              fallbackModel: qualityTier.refinementFallbackModel,
+              refinementSections: qualityTier.refinementSections,
               candidateType: userType,
               optimizationTier: qualityTier.id,
               runId: optimizationRunId,
@@ -553,7 +556,9 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                 requestedModel: qualityTier.modelId,
                 firstPassModel,
                 creditsCharged: qualityTier.creditCost,
-                aiPasses: qualityTier.aiPasses,
+                maxLoops: qualityTier.maxLoops,
+                refinementLoops: loopResult.iterations.length,
+                targetScore: loopResult.targetScore,
                 scoringVersion: loopResult.scoringVersion,
                 beforeScoreId: loopResult.beforeScoreId,
                 afterScoreId: loopResult.afterScoreId,
@@ -832,13 +837,6 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
     // --- END NEW ---
 
     if (!requestedTier) {
-      // Ask the Boost questions once per resume + JD, before the paid step.
-      const asked = boostAskedForRef.current;
-      if (parsedResumeData && (asked?.resume !== parsedResumeData || asked.jd !== jobDescription)) {
-        boostRef.current = null;
-        setShowBoost(true);
-        return;
-      }
       try {
         const latestSubscription = await paymentService.getUserSubscription(user.id);
         const remainingCredits = latestSubscription
@@ -858,6 +856,15 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
 
     const qualityTier = getJdOptimizationTier(requestedTier);
     selectedOptimizationTierRef.current = requestedTier;
+
+    // Ask the Boost questions once per resume + JD + tier, now that the tier is
+    // known (Deep asks more). No credit is reserved until the run itself starts.
+    const asked = boostAskedForRef.current;
+    if (parsedResumeData && (asked?.resume !== parsedResumeData || asked.jd !== jobDescription || asked.tier !== requestedTier)) {
+      boostRef.current = null;
+      setBoostStep('before-run');
+      return;
+    }
 
     // Clear any previous interruption state at the start of optimization attempt
     setOptimizationInterrupted(false);
@@ -934,12 +941,49 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
   handleOptimizeRef.current = handleOptimize;
   const handleBoostContinue = useCallback((boost: CandidateBoost | null) => {
     if (!parsedResumeData) return;
+    const tier = selectedOptimizationTierRef.current;
     boostRef.current = boost;
-    boostAskedForRef.current = { resume: parsedResumeData, jd: jobDescription };
-    setShowBoost(false);
-    void handleOptimizeRef.current();
+    boostAskedForRef.current = { resume: parsedResumeData, jd: jobDescription, tier };
+    setBoostStep(null);
+    void handleOptimizeRef.current(tier);
   }, [parsedResumeData, jobDescription]);
-  const handleBoostClose = useCallback(() => setShowBoost(false), []);
+  const handleBoostClose = useCallback(() => setBoostStep(null), []);
+
+  // After a run: what the candidate now confirms is written into the delivered
+  // resume and re-scored. No AI call and no credit, so it is free to repeat.
+  const handleBoostAgain = useCallback(() => setBoostStep('after-run'), []);
+  const handleBoostRescore = useCallback(async (extra: CandidateBoost | null) => {
+    setBoostStep(null);
+    if (!extra || !optimizedResume || !submittedResume) return;
+    const merged: CandidateBoost = {
+      skills: [...(boostRef.current?.skills || []), ...extra.skills],
+      metrics: [...(boostRef.current?.metrics || []), ...extra.metrics],
+    };
+    try {
+      const result = await runOptimizationLoop(
+        applyCandidateBoost(optimizedResume, extra),
+        jobDescriptionRef.current,
+        undefined,
+        submittedResume,
+        { maxLoops: 0, candidateType: userType, optimizationTier: selectedOptimizationTierRef.current, boost: merged },
+      );
+      boostRef.current = merged;
+      setJdOptimizationResult(result);
+      setOptimizedResume(result.optimizedResume);
+      setParameter16Scores({
+        overallBefore: result.beforeScore.overallScore,
+        overallAfter: result.afterScore.overallScore,
+        improvement: result.afterScore.overallScore - result.beforeScore.overallScore,
+      });
+      setOptimizationScoreSummary({
+        before: { score: result.beforeScore.overallScore, band: result.beforeScore.matchBand, probability: result.beforeScore.interviewProbability },
+        after: { score: result.afterScore.overallScore, band: result.afterScore.matchBand, probability: result.afterScore.interviewProbability },
+      });
+    } catch (rescoreError) {
+      console.error('Re-score with confirmed details failed:', rescoreError);
+      alert('We could not re-score your resume just now. Please try again.');
+    }
+  }, [optimizedResume, submittedResume, userType]);
 
   useEffect(() => {
     setToolProcessTrigger(() => handleOptimize);
@@ -1244,6 +1288,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
           editorMode={editorMode}
           onEditorModeChange={setEditorMode}
           optimizationTier={selectedOptimizationTierRef.current}
+          onBoostAgain={handleBoostAgain}
           evidenceReport={submittedResume && (
             <>
               {interviewPack && <InterviewPack pack={interviewPack} name={optimizedResume.name} />}
@@ -1635,6 +1680,7 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
                         userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                         scoreSummaryOverride={optimizationScoreSummary || undefined}
                         mode={selectedOptimizationTierRef.current === 'quick' ? 'quick' : 'comparison'}
+                        onBoostAgain={handleBoostAgain}
                       />
                     </div>
                   )}
@@ -1903,12 +1949,23 @@ const checkForMissingSections = useCallback((resumeData: ResumeData): string[] =
         onSectionsProvided={handleMissingSectionsProvided}
       />
 
-      {showBoost && parsedResumeData && (
+      {boostStep === 'before-run' && parsedResumeData && (
         <BoostQuestionsModal
           resume={parsedResumeData}
           jobDescription={jobDescription}
           candidateType={userType}
+          tier={selectedOptimizationTierRef.current}
           onContinue={handleBoostContinue}
+          onClose={handleBoostClose}
+        />
+      )}
+      {boostStep === 'after-run' && optimizedResume && (
+        <BoostQuestionsModal
+          resume={optimizedResume}
+          jobDescription={jobDescription}
+          candidateType={userType}
+          tier={selectedOptimizationTierRef.current}
+          onContinue={handleBoostRescore}
           onClose={handleBoostClose}
         />
       )}

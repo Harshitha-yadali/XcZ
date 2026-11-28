@@ -43,6 +43,7 @@ interface MobileOptimizedInterfaceProps {
   resumeEditor?: React.ReactNode;
   evidenceReport?: React.ReactNode;
   optimizationTier?: JdOptimizationTierId;
+  onBoostAgain?: () => void;
 }
 
 export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> = ({
@@ -61,6 +62,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
   resumeEditor,
   evidenceReport,
   optimizationTier = 'smart',
+  onBoostAgain,
 }) => {
   const hasScores = !!(jdOptimizationResult || parameter16Scores);
   const [activeTab, setActiveTab] = useState<'preview' | 'scores' | 'export'>('preview');
@@ -193,6 +195,7 @@ export const MobileOptimizedInterface: React.FC<MobileOptimizedInterfaceProps> =
                   userActionCards={jdOptimizationResult.gapClassification.userActionCards}
                   scoreSummaryOverride={scoreSummaryOverride || undefined}
                   mode="comparison"
+                  onBoostAgain={onBoostAgain}
                 />
               ) : parameter16Scores ? (
                 <Parameter16ScoreDisplay

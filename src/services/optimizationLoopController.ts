@@ -7,8 +7,13 @@ import {
   CanonicalJdScoringService,
   type CanonicalScoreContext,
 } from './canonicalJdScoringService';
-import type { JdOptimizationTierId } from '../config/jdOptimizationTiers';
-import { applyCandidateBoost, type CandidateBoost } from './candidateBoost';
+import {
+  getJdOptimizationTier,
+  getTierTargetScore,
+  type JdOptimizationTierId,
+  type RefinementSection,
+} from '../config/jdOptimizationTiers';
+import { applyCandidateBoost, boostSkillChoices, buildMetricQuestions, type CandidateBoost } from './candidateBoost';
 
 export interface LoopIterationResult {
   iteration: number;
@@ -27,6 +32,10 @@ export interface OptimizationSessionResult {
   parameterDeltas: ParameterDelta[];
   categoryDeltas: CategoryDelta[];
   reachedTarget: boolean;
+  /** The score this run aimed for (tier target). */
+  targetScore: number;
+  /** Why the target was not reached, from the remaining gaps; null when it was. */
+  targetGuidance: TargetGuidance | null;
   processingTimeMs: number;
   evidenceViolations: EvidenceViolation[];
   scoringVersion: string;
@@ -57,9 +66,26 @@ export interface CategoryDelta {
   weight: number;
 }
 
+/** What only the candidate can add to close the gap to the target. */
+export interface TargetGuidance {
+  /** JD skills the resume does not show; credited only if the candidate confirms them. */
+  missingSkills: string[];
+  /** Bullets Boost would ask a number for (one per entry, up to the tier limit). */
+  bulletsWithoutNumbers: number;
+  /** Highest-value remaining gaps, by weighted points. */
+  topGaps: string[];
+  message: string;
+}
+
 export interface OptimizationLoopOptions {
   maxLoops?: number;
   modelSequence?: string[];
+  /** Tried once when the loop model errors on the AI rewrite. */
+  fallbackModel?: string;
+  /** Sections the AI rewrites each loop. Omitted: deterministic fixes only. */
+  refinementSections?: readonly RefinementSection[];
+  /** Absolute score to stop at. Default: the tier target computed from the before score. */
+  targetScore?: number;
   candidateType?: UserType;
   optimizationTier?: JdOptimizationTierId;
   runId?: string;
@@ -68,35 +94,62 @@ export interface OptimizationLoopOptions {
 }
 
 const MAX_LOOPS = 6;
-const TARGET_SCORE = 90;
+/** A loop that gains less than this many points ends the run. */
+const MIN_LOOP_GAIN = 1;
 
-function prioritizeFixableGaps(
+/** Overall-score points a parameter still leaves on the table (weighted max − earned, scaled to 100). */
+export function remainingWeightedPoints(parameter: ParameterScore, parameters: ParameterScore[]): number {
+  const applicableMax = parameters.reduce((sum, p) => sum + (p.weightedMaxPoints || 0), 0);
+  if (applicableMax <= 0 || parameter.applicable === false) return 0;
+  return (((parameter.weightedMaxPoints || 0) - (parameter.earnedPoints || 0)) / applicableMax) * 100;
+}
+
+/** Gaps ordered by the overall points they can still add, most first. */
+export function rankGapsByWeightedPoints<T extends { parameterId: number }>(
   parameters: ParameterScore[],
-  gaps: GapClassification['fixableGaps'],
-  batchSize: number = 8
-): GapClassification['fixableGaps'] {
-  const priorityOrder: Record<'critical' | 'high' | 'medium' | 'low', number> = {
-    critical: 0,
-    high: 1,
-    medium: 2,
-    low: 3,
-  };
-
+  gaps: T[],
+  batchSize: number = 8,
+): T[] {
   const byId = new Map(parameters.map(p => [p.id, p]));
-  const prioritized = [...gaps].sort((a, b) => {
-    const priorityDelta = priorityOrder[a.priority] - priorityOrder[b.priority];
-    if (priorityDelta !== 0) return priorityDelta;
+  const points = (gap: T) => {
+    const parameter = byId.get(gap.parameterId);
+    return parameter ? remainingWeightedPoints(parameter, parameters) : 0;
+  };
+  return [...gaps].sort((a, b) => points(b) - points(a)).slice(0, batchSize);
+}
 
-    if (a.percentage !== b.percentage) return a.percentage - b.percentage;
+const listNames = (names: string[], max = 4) =>
+  names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} and ${names.length - max} more`;
 
-    const aParam = byId.get(a.parameterId);
-    const bParam = byId.get(b.parameterId);
-    const aGain = aParam ? (aParam.maxScore - aParam.score) : (a.maxScore - a.currentScore);
-    const bGain = bParam ? (bParam.maxScore - bParam.score) : (b.maxScore - b.currentScore);
-    return bGain - aGain;
-  });
-
-  return prioritized.slice(0, batchSize);
+/** The honest "why not the target" line, from what is still missing in the delivered resume. */
+export function buildTargetGuidance(
+  resume: ResumeData,
+  jobDescription: string,
+  score: JDScoringResult,
+  gaps: GapClassification,
+  targetScore: number,
+  tierId: JdOptimizationTierId,
+): TargetGuidance | null {
+  if (score.overallScore >= targetScore) return null;
+  const limits = getJdOptimizationTier(tierId).boostLimits;
+  let missingSkills: string[] = [];
+  let bulletsWithoutNumbers = 0;
+  try {
+    missingSkills = boostSkillChoices(resume, jobDescription, limits.skills ?? Number.MAX_SAFE_INTEGER);
+    bulletsWithoutNumbers = buildMetricQuestions(resume, limits.metrics).length;
+  } catch (error) {
+    console.warn('Target guidance could not list missing skills:', error);
+  }
+  const topGaps = rankGapsByWeightedPoints(score.parameters, [...gaps.fixableGaps, ...gaps.nonFixableGaps], 3)
+    .map(gap => gap.parameterName);
+  const steps = [
+    missingSkills.length > 0 ? `confirm ${listNames(missingSkills)} if you have used them` : '',
+    bulletsWithoutNumbers > 0 ? `add real numbers to ${bulletsWithoutNumbers} bullet${bulletsWithoutNumbers === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  const message = steps.length > 0
+    ? `Reached ${score.overallScore}. To reach ${targetScore}: ${steps.join('; ')}.`
+    : `Reached ${score.overallScore}. The rest of the gap to ${targetScore} is in ${listNames(topGaps)}, which needs details only you can add.`;
+  return { missingSkills, bulletsWithoutNumbers, topGaps, message };
 }
 
 export async function runOptimizationLoop(
@@ -149,12 +202,19 @@ export async function runOptimizationLoop(
   let currentGaps = classifyGaps(currentScore.parameters, currentScore.overallScore);
   const maxLoops = Math.max(0, Math.min(MAX_LOOPS, Math.floor(options.maxLoops ?? MAX_LOOPS)));
   const modelSequence = options.modelSequence || [];
+  const targetScore = options.targetScore ?? getTierTargetScore(optimizationTier, beforeScore.overallScore);
+  const optimizeOptions = (loop: number) => ({
+    model: modelSequence[loop] || modelSequence[modelSequence.length - 1],
+    fallbackModel: options.fallbackModel,
+    sections: options.refinementSections,
+  });
 
   for (let loop = 0; loop < maxLoops; loop++) {
+    if (currentScore.overallScore >= targetScore) break;
     if (currentGaps.fixableGaps.length === 0) break;
 
     const progressBase = Math.min(80, 20 + loop * Math.max(8, Math.floor(50 / Math.max(1, maxLoops))));
-    const selectedGaps = prioritizeFixableGaps(currentScore.parameters, currentGaps.fixableGaps);
+    const selectedGaps = rankGapsByWeightedPoints(currentScore.parameters, currentGaps.fixableGaps);
     onProgress?.(
       `Optimization pass ${loop + 1}: targeting ${selectedGaps.length} lowest-scoring fixable parameters...`,
       progressBase
@@ -166,15 +226,15 @@ export async function runOptimizationLoop(
       currentResume,
       jobDescription,
       selectedGaps,
-      { model: modelSequence[loop] || modelSequence[modelSequence.length - 1] },
+      optimizeOptions(loop),
     );
 
     if (optimizationResult.changes.length === 0) {
       optimizationResult = await optimizeByParameter(
         currentResume,
         jobDescription,
-        currentGaps.fixableGaps,
-        { model: modelSequence[loop] || modelSequence[modelSequence.length - 1] },
+        rankGapsByWeightedPoints(currentScore.parameters, currentGaps.fixableGaps, currentGaps.fixableGaps.length),
+        optimizeOptions(loop),
       );
       if (optimizationResult.changes.length === 0) {
         break;
@@ -187,7 +247,6 @@ export async function runOptimizationLoop(
 
     onProgress?.(`Re-scoring after pass ${loop + 1}...`, Math.min(88, progressBase + 8));
     const previousOverall = currentScore.overallScore;
-    const previousFixableCount = currentGaps.fixableGaps.length;
     latestAfterCanonical = await CanonicalJdScoringService.score({
       resumeData: currentResume,
       jobDescription,
@@ -213,12 +272,13 @@ export async function runOptimizationLoop(
       })
       .filter(Boolean) as Array<{ id: number; name: string }>;
 
-    if (severeUnintendedRegressions.length > 0) {
+    // A pass that lowers the overall score is never kept.
+    if (severeUnintendedRegressions.length > 0 || currentScore.overallScore < previousOverall) {
       currentResume = previousResumeSnapshot;
       currentScore = previousScoreSnapshot;
       currentGaps = classifyGaps(currentScore.parameters, currentScore.overallScore);
       onProgress?.(
-        `Stopped pass ${loop + 1}: prevented regression in ${severeUnintendedRegressions.map(r => `#${r.id}`).join(', ')}.`,
+        `Stopped pass ${loop + 1}: prevented regression${severeUnintendedRegressions.length ? ` in ${severeUnintendedRegressions.map(r => `#${r.id}`).join(', ')}` : ''}.`,
         Math.min(88, progressBase + 8)
       );
       break;
@@ -233,9 +293,7 @@ export async function runOptimizationLoop(
       changes: optimizationResult.changes,
     });
 
-    const overallImproved = currentScore.overallScore > previousOverall;
-    const fixableReduced = currentGaps.fixableGaps.length < previousFixableCount;
-    if (!overallImproved && !fixableReduced) {
+    if (currentScore.overallScore - previousOverall < MIN_LOOP_GAIN) {
       break;
     }
   }
@@ -256,7 +314,9 @@ export async function runOptimizationLoop(
     totalChanges: allChanges,
     parameterDeltas,
     categoryDeltas,
-    reachedTarget: currentScore.overallScore >= TARGET_SCORE && currentGaps.fixableGaps.length === 0,
+    reachedTarget: currentScore.overallScore >= targetScore,
+    targetScore,
+    targetGuidance: buildTargetGuidance(currentResume, jobDescription, currentScore, currentGaps, targetScore, optimizationTier),
     processingTimeMs: Date.now() - startTime,
     evidenceViolations,
     scoringVersion: beforeCanonical.scoringVersion,

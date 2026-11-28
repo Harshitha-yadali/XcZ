@@ -21,9 +21,11 @@ interface ScoreDeltaDisplayProps {
   userActionCards?: UserActionCard[];
   scoreSummaryOverride?: ScoreSummaryOverride;
   mode?: 'comparison' | 'quick' | 'scan';
+  /** Reopens Boost to confirm what the guidance asks for, then re-scores. Omit to show guidance only. */
+  onBoostAgain?: () => void;
 }
 
-const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison' }) => {
+const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActionCards, scoreSummaryOverride, mode = 'comparison', onBoostAgain }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [showAllParameters, setShowAllParameters] = useState(false);
 
@@ -39,7 +41,10 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
     probability: afterScore.interviewProbability,
   };
   const displayedDelta = displayAfter.score - displayBefore.score;
-  const showReachedTarget = reachedTarget || displayAfter.score >= 90;
+  const targetScore = result.targetScore ?? 90;
+  const showReachedTarget = reachedTarget || displayAfter.score >= targetScore;
+  const guidance = showReachedTarget ? null : result.targetGuidance;
+  const canBoostAgain = Boolean(onBoostAgain && guidance && (guidance.missingSkills.length > 0 || guidance.bulletsWithoutNumbers > 0));
   const isScan = mode === 'scan';
   const isQuick = mode === 'quick';
   // Quick is paid, so it shows the before/after it already computed. Only the
@@ -90,7 +95,7 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
           <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
           <div>
             <p className="font-semibold text-emerald-100">Target Score Reached</p>
-            <p className="text-sm text-emerald-200/80">Your resume scores {displayAfter.score}/100 and is ready for submission.</p>
+            <p className="text-sm text-emerald-200/80">Your resume scores {displayAfter.score}/100 (target {targetScore}).</p>
           </div>
         </div>
       ) : (
@@ -98,8 +103,23 @@ const ScoreDeltaDisplay: React.FC<ScoreDeltaDisplayProps> = ({ result, userActio
           <AlertTriangle className="w-5 h-5 text-amber-300 flex-shrink-0" />
           <div>
             <p className="font-semibold text-amber-100">Some Gaps Need Your Input</p>
-            <p className="text-sm text-amber-200/80">AI optimization brought you to {displayAfter.score}/100. Review the action items below to push past 90.</p>
+            <p className="text-sm text-amber-200/80">AI optimization brought you to {displayAfter.score}/100. Review the action items below to reach {targetScore}.</p>
           </div>
+        </div>
+      )}
+
+      {!isScan && guidance && (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-700/60 bg-slate-950/45 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-200">{guidance.message}</p>
+          {canBoostAgain && (
+            <button
+              type="button"
+              onClick={onBoostAgain}
+              className="min-h-[44px] flex-shrink-0 rounded-lg bg-emerald-500 px-4 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+            >
+              Add details &amp; re-score (free)
+            </button>
+          )}
         </div>
       )}
 

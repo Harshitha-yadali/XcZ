@@ -301,8 +301,8 @@ class AutoApplyOrchestratorService {
       });
       try {
         const loop = await runOptimizationLoop(resumeData, jd, undefined, profileResumeData(applicant) ?? undefined, {
-          maxLoops: Math.max(0, QUICK_TIER.aiPasses - 1),
-          modelSequence: QUICK_TIER.refinementModels,
+          maxLoops: QUICK_TIER.maxLoops,
+          modelSequence: [QUICK_TIER.refinementModel],
           candidateType: 'fresher',
           optimizationTier: 'quick',
         });

@@ -19,6 +19,18 @@ export interface JdOptimizationPackage {
   addOnId: string;
 }
 
+/** What the refinement AI rewrites in each loop, on top of the deterministic fixes. */
+export type RefinementSection = 'summary' | 'bullets';
+
+/** How many Boost questions a tier asks. skills: null means every missing JD skill. */
+export interface BoostLimits {
+  skills: number | null;
+  metrics: number;
+}
+
+/** Score the refinement loop aims for: a gain over the before score, or an absolute score. */
+export type TierTarget = { kind: 'gain'; points: number } | { kind: 'score'; points: number };
+
 export interface JdOptimizationTier {
   id: JdOptimizationTierId;
   name: string;
@@ -30,8 +42,14 @@ export interface JdOptimizationTier {
   modelLabel: string;
   modelId: string;
   mode: OptimizationMode;
-  aiPasses: number;
-  refinementModels: string[];
+  /** Refinement loops after the first pass; the loop stops early at the target or when a loop gains < 1 point. */
+  maxLoops: number;
+  target: TierTarget;
+  /** Writes the refinement rewrites; refinementFallbackModel is tried once when it errors. */
+  refinementModel: string;
+  refinementFallbackModel: string;
+  refinementSections: readonly RefinementSection[];
+  boostLimits: BoostLimits;
   sectionSuggestions: boolean;
   summaryRewriting: boolean;
   experienceRewriting: boolean;
@@ -63,8 +81,12 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     modelLabel: 'GPT-6 Luna',
     modelId: QUICK_OPTIMIZATION_MODEL,
     mode: 'light',
-    aiPasses: 2,
-    refinementModels: [SIDE_JOB_MODEL],
+    maxLoops: 1,
+    target: { kind: 'gain', points: 20 },
+    refinementModel: QUICK_OPTIMIZATION_MODEL,
+    refinementFallbackModel: SIDE_JOB_MODEL,
+    refinementSections: ['summary'],
+    boostLimits: { skills: 12, metrics: 4 },
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,
@@ -94,8 +116,12 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     modelLabel: 'GPT-6.1 Terra',
     modelId: SMART_OPTIMIZATION_MODEL,
     mode: 'standard',
-    aiPasses: 2,
-    refinementModels: [SIDE_JOB_MODEL],
+    maxLoops: 3,
+    target: { kind: 'score', points: 80 },
+    refinementModel: SMART_OPTIMIZATION_MODEL,
+    refinementFallbackModel: SIDE_JOB_MODEL,
+    refinementSections: ['summary', 'bullets'],
+    boostLimits: { skills: 12, metrics: 6 },
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,
@@ -125,8 +151,12 @@ export const JD_OPTIMIZATION_TIERS: readonly JdOptimizationTier[] = [
     modelLabel: 'Claude Sonnet 5.5',
     modelId: DEEP_OPTIMIZATION_MODEL,
     mode: 'aggressive',
-    aiPasses: 3,
-    refinementModels: [SIDE_JOB_MODEL, SIDE_JOB_MODEL],
+    maxLoops: 6,
+    target: { kind: 'score', points: 90 },
+    refinementModel: DEEP_OPTIMIZATION_MODEL,
+    refinementFallbackModel: SIDE_JOB_MODEL,
+    refinementSections: ['summary', 'bullets'],
+    boostLimits: { skills: null, metrics: 8 },
     sectionSuggestions: true,
     summaryRewriting: true,
     experienceRewriting: true,
@@ -161,4 +191,10 @@ export const getJdOptimizationPackage = (
     throw new Error(`Unknown JD optimization package: ${tierId} ${packageSize}`);
   }
   return optimizationPackage;
+};
+
+/** The score a tier's refinement aims for, given the resume's before score. */
+export const getTierTargetScore = (tierId: JdOptimizationTierId, beforeScore: number): number => {
+  const { target } = getJdOptimizationTier(tierId);
+  return Math.min(100, target.kind === 'gain' ? beforeScore + target.points : target.points);
 };

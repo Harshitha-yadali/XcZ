@@ -239,3 +239,58 @@ describe('targetedParameterOptimizer', () => {
     expect(groups.Frontend).toEqual(['HTML5', 'CSS3']);
   });
 });
+
+describe('tier refinement rewrite', () => {
+  const base = (): ResumeData => ({
+    name: 'Test Candidate', phone: '', email: 'test@example.com', linkedin: '', github: '',
+    summary: 'Computer science graduate who builds web apps with Django and Python.',
+    education: [], certifications: [],
+    workExperience: [],
+    projects: [{ title: 'Portal', bullets: ['made a portal with Django for clubs', 'login for admins'], techStack: ['Django'] }],
+    skills: [{ category: 'Technical Skills', count: 3, list: ['Git', 'Django', 'Python'] }],
+  });
+  const jd = 'Junior Backend Developer. Required skills: Python, Django, Git.';
+  const rewrite = JSON.stringify({
+    summary: 'Computer science graduate building Python and Django web applications, seeking a junior backend developer role to apply Django, Python and Git skills on reliable services for real users.',
+    entries: [{ section: 'projects', index: 0, bullets: ['Built a Django portal for college clubs to publish events.', 'Implemented admin login for club organisers.'] }],
+  });
+
+  beforeEach(() => { chatWithSystemMock.mockReset(); });
+
+  it('falls back to the cheaper model when the tier model errors, and rewrites summary and bullets', async () => {
+    chatWithSystemMock.mockImplementation(async (_system: string, prompt: string, options: { model?: string }) => {
+      if (prompt.includes('INPUT_JSON:')) {
+        if (options.model === 'tier-model') throw new Error('tier model down');
+        return rewrite;
+      }
+      throw new Error('no categorisation in this test');
+    });
+    const { optimizedResume } = await optimizeByParameter(base(), jd, [], { model: 'tier-model', fallbackModel: 'cheap-model', sections: ['summary', 'bullets'] });
+    const rewriteModels = chatWithSystemMock.mock.calls.filter(call => String(call[1]).includes('INPUT_JSON:')).map(call => call[2].model);
+    expect(rewriteModels).toEqual(['tier-model', 'cheap-model']);
+    expect(optimizedResume.summary).toMatch(/^Computer science graduate building Python/);
+    expect(optimizedResume.projects[0].bullets[0]).toBe('Built a Django portal for college clubs to publish events.');
+  });
+
+  it('only rewrites the summary for Quick, and orders skills by the JD', async () => {
+    chatWithSystemMock.mockImplementation(async (_system: string, prompt: string) => {
+      if (prompt.includes('INPUT_JSON:')) {
+        expect(prompt).not.toContain('"entries"');
+        return rewrite;
+      }
+      throw new Error('no categorisation in this test');
+    });
+    const { optimizedResume } = await optimizeByParameter(base(), jd, [], { model: 'm', sections: ['summary'] });
+    expect(optimizedResume.projects[0].bullets[0]).toBe('made a portal with Django for clubs');
+    expect(optimizedResume.skills.flatMap(group => group.list).slice(0, 3)).toEqual(['Python', 'Django', 'Git']);
+  });
+
+  it('skips an entry whose bullet count changed', async () => {
+    chatWithSystemMock.mockImplementation(async (_system: string, prompt: string) => {
+      if (prompt.includes('INPUT_JSON:')) return JSON.stringify({ entries: [{ section: 'projects', index: 0, bullets: ['One merged bullet about the Django portal and admin login.'] }] });
+      throw new Error('no categorisation in this test');
+    });
+    const { optimizedResume } = await optimizeByParameter(base(), jd, [], { model: 'm', sections: ['bullets'] });
+    expect(optimizedResume.projects[0].bullets).toEqual(['made a portal with Django for clubs', 'login for admins']);
+  });
+});

@@ -211,3 +211,26 @@ describe('candidate boost (confirmed evidence)', () => {
     expect(estimate).toBeGreaterThan(before);
   });
 });
+
+describe('Boost limits per tier', () => {
+  it('Deep lists every missing JD skill; Quick and Smart cap at 12', async () => {
+    const { getJdOptimizationTier } = await import('../config/jdOptimizationTiers');
+    const all = boostSkillChoices(resume, jd, Number.MAX_SAFE_INTEGER);
+    const deep = getJdOptimizationTier('deep').boostLimits;
+    expect(deep.skills).toBeNull();
+    expect(boostSkillChoices(resume, jd, deep.skills ?? Number.MAX_SAFE_INTEGER)).toEqual(all);
+    for (const tier of ['quick', 'smart'] as const) {
+      expect(getJdOptimizationTier(tier).boostLimits.skills).toBe(12);
+    }
+  });
+
+  it('asks 4 / 6 / 8 number questions for Quick / Smart / Deep', async () => {
+    const { getJdOptimizationTier } = await import('../config/jdOptimizationTiers');
+    const many: ResumeData = {
+      ...resume,
+      projects: Array.from({ length: 10 }, (_, i) => ({ title: `Project ${i + 1}`, bullets: ["Built a web portal feature with Django views for students."] })),
+    };
+    expect(['quick', 'smart', 'deep'].map(tier => buildMetricQuestions(many, getJdOptimizationTier(tier as 'quick').boostLimits.metrics).length))
+      .toEqual([4, 6, 8]);
+  });
+});

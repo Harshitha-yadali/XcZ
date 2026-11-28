@@ -16,14 +16,14 @@ const repoFile = (relativePath: string) =>
  * collapse two paid tiers onto identical behaviour the way commit cd6c63f did.
  */
 describe('JD optimization tiers — runtime differentiators', () => {
-  it('gives each tier a distinct model, and never more passes than the tier above', () => {
+  it('gives each tier a distinct model, and more refinement loops than the tier below', () => {
     const quick = getJdOptimizationTier('quick');
     const smart = getJdOptimizationTier('smart');
     const deep = getJdOptimizationTier('deep');
 
     expect(new Set([quick.modelId, smart.modelId, deep.modelId]).size).toBe(3);
-    expect(quick.aiPasses).toBeLessThanOrEqual(smart.aiPasses);
-    expect(smart.aiPasses).toBeLessThan(deep.aiPasses);
+    expect(quick.maxLoops).toBeLessThan(smart.maxLoops);
+    expect(smart.maxLoops).toBeLessThan(deep.maxLoops);
   });
 
   /**
@@ -50,9 +50,9 @@ describe('JD optimization tiers — runtime differentiators', () => {
     expect(new Set(modes).size).toBe(3);
   });
 
-  it('has one side-job model per extra pass, and writes the resume with the tier model', () => {
+  it('writes and refines the resume with the tier model', () => {
     for (const tier of JD_OPTIMIZATION_TIERS) {
-      expect(tier.refinementModels).toHaveLength(tier.aiPasses - 1);
+      expect(tier.refinementModel).toBe(tier.modelId);
     }
     expect(repoFile('src/components/ResumeOptimizer.tsx')).toContain('let firstPassModel = qualityTier.modelId;');
   });
@@ -75,14 +75,14 @@ describe('JD optimization tiers — runtime differentiators', () => {
 
   it('keeps the loop ceiling above the highest tier so Deep is never clamped to Smart', () => {
     // optimizationLoopController clamps with Math.min(MAX_LOOPS, options.maxLoops).
-    // Deep requests aiPasses - 1 refinement loops. If MAX_LOOPS ever drops below
+    // Deep requests maxLoops refinement loops. If MAX_LOOPS ever drops below
     // that, Deep silently degrades to Smart output while still charging Deep prices.
     const source = repoFile('src/services/optimizationLoopController.ts');
     const declared = source.match(/const MAX_LOOPS = (\d+)/);
     expect(declared).not.toBeNull();
 
     const maxLoops = Number(declared![1]);
-    const deepRefinementLoops = getJdOptimizationTier('deep').aiPasses - 1;
+    const deepRefinementLoops = getJdOptimizationTier('deep').maxLoops;
     expect(maxLoops).toBeGreaterThanOrEqual(deepRefinementLoops);
   });
 
@@ -90,8 +90,9 @@ describe('JD optimization tiers — runtime differentiators', () => {
     const source = repoFile('src/components/ResumeOptimizer.tsx');
     expect(source).toContain('qualityTier.mode');
     expect(source).toContain('qualityTier.modelId');
-    expect(source).toContain('qualityTier.aiPasses - 1');
-    expect(source).toContain('qualityTier.refinementModels');
+    expect(source).toContain('qualityTier.maxLoops');
+    expect(source).toContain('qualityTier.refinementModel');
+    expect(source).toContain('qualityTier.refinementSections');
   });
 
   /**

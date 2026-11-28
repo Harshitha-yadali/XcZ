@@ -4,6 +4,7 @@ import {
   JD_OPTIMIZATION_TIERS,
   getJdOptimizationPackage,
   getJdOptimizationTier,
+  getTierTargetScore,
 } from './jdOptimizationTiers';
 
 describe('JD optimization quality tiers', () => {
@@ -89,15 +90,26 @@ describe('JD optimization quality tiers', () => {
     expect(getJdOptimizationPackage('smart', 1).offerPrice).toBe(49);
   });
 
-  it('uses one refinement model per additional pass', () => {
-    for (const tier of JD_OPTIMIZATION_TIERS) {
-      expect(tier.refinementModels).toHaveLength(Math.max(0, tier.aiPasses - 1));
-    }
+  it('sets loops, targets, refinement work and Boost limits per tier', () => {
+    expect(JD_OPTIMIZATION_TIERS.map(({ id, maxLoops, target, refinementSections, boostLimits }) => ({
+      id, maxLoops, target, refinementSections, boostLimits,
+    }))).toEqual([
+      { id: 'quick', maxLoops: 1, target: { kind: 'gain', points: 20 }, refinementSections: ['summary'], boostLimits: { skills: 12, metrics: 4 } },
+      { id: 'smart', maxLoops: 3, target: { kind: 'score', points: 80 }, refinementSections: ['summary', 'bullets'], boostLimits: { skills: 12, metrics: 6 } },
+      { id: 'deep', maxLoops: 6, target: { kind: 'score', points: 90 }, refinementSections: ['summary', 'bullets'], boostLimits: { skills: null, metrics: 8 } },
+    ]);
+  });
+
+  it('computes Quick target as before + 20 (capped at 100) and fixed targets for Smart and Deep', () => {
+    expect(getTierTargetScore('quick', 60)).toBe(80);
+    expect(getTierTargetScore('quick', 92)).toBe(100);
+    expect(getTierTargetScore('smart', 60)).toBe(80);
+    expect(getTierTargetScore('deep', 40)).toBe(90);
   });
 
   it('makes Quick a full rewrite plus one refinement pass, without the separate project-analysis step', () => {
     const quick = getJdOptimizationTier('quick');
-    expect(quick.aiPasses).toBe(2);
+    expect(quick.maxLoops).toBe(1);
     expect(quick.summaryRewriting).toBe(true);
     expect(quick.experienceRewriting).toBe(true);
     expect(quick.projectRewriting).toBe(true);
@@ -107,9 +119,10 @@ describe('JD optimization quality tiers', () => {
     expect(getJdOptimizationTier('deep').projectAnalysis).toBe(true);
   });
 
-  it('keeps side jobs on the cheapest model in every tier', () => {
+  it('refines with the tier model and falls back to the cheapest model on error', () => {
     for (const tier of JD_OPTIMIZATION_TIERS) {
-      expect(tier.refinementModels.every((model) => model === 'openai/gpt-6-luna')).toBe(true);
+      expect(tier.refinementModel).toBe(tier.modelId);
+      expect(tier.refinementFallbackModel).toBe('openai/gpt-6-luna');
     }
   });
 

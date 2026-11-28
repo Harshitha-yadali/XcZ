@@ -12,11 +12,14 @@ import {
   type CandidateBoost,
   type ConfirmedSkill,
 } from '../../services/candidateBoost';
+import { getJdOptimizationTier, type JdOptimizationTierId } from '../../config/jdOptimizationTiers';
 
 interface BoostQuestionsModalProps {
   resume: ResumeData;
   jobDescription: string;
   candidateType: UserType;
+  /** Sets how many questions are asked: Deep lists every missing JD skill and more numbers. */
+  tier: JdOptimizationTierId;
   /** Continue to the paid step; null when nothing was confirmed. */
   onContinue: (boost: CandidateBoost | null) => void;
   /** Close without continuing. */
@@ -26,20 +29,21 @@ interface BoostQuestionsModalProps {
 type SkillAnswer = { where: string; other: string };
 
 export const BoostQuestionsModal: React.FC<BoostQuestionsModalProps> = ({
-  resume, jobDescription, candidateType, onContinue, onClose,
+  resume, jobDescription, candidateType, tier, onContinue, onClose,
 }) => {
   const setup = useMemo(() => {
     try {
+      const limits = getJdOptimizationTier(tier).boostLimits;
       return {
-        skills: boostSkillChoices(resume, jobDescription),
-        questions: buildMetricQuestions(resume, 4),
+        skills: boostSkillChoices(resume, jobDescription, limits.skills ?? Number.MAX_SAFE_INTEGER),
+        questions: buildMetricQuestions(resume, limits.metrics),
         baseline: scoreLikeServer(resume, jobDescription, candidateType),
       };
     } catch (error) {
       console.warn('Boost questions unavailable:', error);
       return null;
     }
-  }, [resume, jobDescription, candidateType]);
+  }, [resume, jobDescription, candidateType, tier]);
 
   const [ticked, setTicked] = useState<Record<string, SkillAnswer>>({});
   const [numbers, setNumbers] = useState<Record<number, string>>({});

@@ -12,6 +12,7 @@ import {
   SKILL_DISPLAY_NAMES,
 } from '../constants/skillsTaxonomy';
 import { impliedSkillsOf } from './resumeEvidenceExtractor';
+import type { RefinementSection } from '../config/jdOptimizationTiers';
 
 export interface OptimizationChange {
   parameterId: number;
@@ -29,6 +30,10 @@ export interface TargetedOptimizationResult {
 
 export interface TargetedOptimizationOptions {
   model?: string;
+  /** Tried once when `model` errors. */
+  fallbackModel?: string;
+  /** Sections the AI rewrites this pass (tier work). Empty: deterministic fixes only. */
+  sections?: readonly RefinementSection[];
 }
 
 function extractOptimizationKeywordsFromJD(jobDescription: string): string[] {
@@ -781,6 +786,106 @@ function fixSkillsQuality(resume: ResumeData): OptimizationChange[] {
   return changes;
 }
 
+/** Skills the JD names first come first in each category; categories with an earlier JD skill come first. */
+function orderSkillsByJdPriority(resume: ResumeData, jobDescription: string): OptimizationChange[] {
+  if (!resume.skills || resume.skills.length === 0) return [];
+  const jdLower = jobDescription.toLowerCase();
+  const rank = (skill: string) => {
+    const at = jdLower.search(new RegExp(`(^|[^a-z0-9+#])${escapeRegExp(skill.toLowerCase().trim())}($|[^a-z0-9+#])`));
+    return at < 0 ? Number.MAX_SAFE_INTEGER : at;
+  };
+  const before = resume.skills.map(c => `${c.category}: ${c.list.join(', ')}`).join(' | ');
+  resume.skills = resume.skills
+    .map(category => ({ ...category, list: [...category.list].sort((a, b) => rank(a) - rank(b)) }))
+    .sort((a, b) => Math.min(...a.list.map(rank)) - Math.min(...b.list.map(rank)));
+  const after = resume.skills.map(c => `${c.category}: ${c.list.join(', ')}`).join(' | ');
+  return before === after ? [] : [{ parameterId: 23, section: 'skills', before, after, description: 'Ordered skills by job-description priority.' }];
+}
+
+interface RewriteEntry { section: 'workExperience' | 'projects'; index: number; title: string; bullets: string[] }
+
+/** Marks where the section JSON starts in the rewrite prompt (tests read it back). */
+export const REWRITE_INPUT_MARKER = 'INPUT_JSON:';
+
+/**
+ * Tier work: the AI rewrites the summary (all tiers) and every bullet (Smart,
+ * Deep) toward the JD, using only skills the resume already grounds. The loop
+ * runs the evidence validator over the result, so anything invented is reverted.
+ */
+async function rewriteSectionsWithAI(
+  resume: ResumeData,
+  jobDescription: string,
+  sections: readonly RefinementSection[],
+  gaps: GapItem[],
+  models: string[],
+): Promise<OptimizationChange[]> {
+  const summaryField: 'summary' | 'careerObjective' = resume.summary?.trim() || !resume.careerObjective?.trim() ? 'summary' : 'careerObjective';
+  const currentSummary = (resume[summaryField] || '').trim();
+  const entries: RewriteEntry[] = sections.includes('bullets') ? [
+    ...(resume.workExperience || []).map((job, index) => ({ section: 'workExperience' as const, index, title: [job.role, job.company].filter(Boolean).join(' at '), bullets: job.bullets || [] })),
+    ...(resume.projects || []).map((project, index) => ({ section: 'projects' as const, index, title: project.title, bullets: project.bullets || [] })),
+  ].filter(entry => entry.bullets.length > 0) : [];
+  const wantSummary = sections.includes('summary') && currentSummary.length > 0;
+  if (!wantSummary && entries.length === 0) return [];
+
+  const jdLower = jobDescription.toLowerCase();
+  const groundedJdSkills = extractSkillsFromResumeEvidence(resume).filter(skill => skillAppearsInText(jdLower, skill));
+  const input = { ...(wantSummary ? { summary: currentSummary } : {}), ...(entries.length ? { entries } : {}) };
+  const prompt = [
+    'Rewrite the resume sections in INPUT_JSON for the job description below.',
+    'Rules:',
+    '- Use ONLY facts in INPUT_JSON. Never add a skill, tool, employer, project, credential, date or number that is not already there.',
+    '- Keep every number exactly as written. Never add, round or estimate a number.',
+    '- Each bullet: one sentence of about 12-22 words that starts with a strong action verb (Built, Developed, Automated, Designed, Implemented). No "helped", "worked on", "responsible for", no passive voice.',
+    `- Use the job's wording for these skills where the bullet already shows that skill: ${groundedJdSkills.join(', ') || '(none)'}.`,
+    '- Keep the same entries, the same number of bullets and the same order; rewrite bullet 1 from bullet 1, and so on.',
+    '- Summary: 40-60 words, aimed at this role, naming the matching skills above. Do not claim years of experience the input does not state.',
+    `- Weakest scoring areas to improve: ${gaps.slice(0, 6).map(g => g.parameterName).join(', ') || 'general alignment'}.`,
+    '- Return ONLY JSON in the same shape as INPUT_JSON.',
+    '',
+    `Job Description: ${jobDescription.slice(0, 4000)}`,
+    '',
+    `${REWRITE_INPUT_MARKER}\n${JSON.stringify(input)}`,
+  ].join('\n');
+
+  let parsed: { summary?: unknown; entries?: Array<{ section?: string; index?: number; bullets?: unknown }> } | null = null;
+  for (const model of [...new Set(models.filter(Boolean))]) {
+    try {
+      const response = await openrouter.chatWithSystem(
+        'You are an evidence-locked resume writer. You improve wording and never add facts. Output strict JSON only.',
+        prompt,
+        { model, temperature: 0.3 },
+      );
+      parsed = JSON.parse(response.replace(/```json?\s*/g, '').replace(/```/g, '').trim());
+      break;
+    } catch (error) {
+      console.warn(`Refinement rewrite on ${model} failed:`, error);
+    }
+  }
+  if (!parsed) return [];
+
+  const changes: OptimizationChange[] = [];
+  const nextSummary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+  if (wantSummary && nextSummary.length >= 40 && nextSummary !== currentSummary) {
+    resume[summaryField] = nextSummary;
+    changes.push({ parameterId: 9, section: summaryField, before: currentSummary, after: nextSummary, description: 'Rewrote summary toward the job using grounded skills.' });
+  }
+  for (const entry of entries.length > 0 ? parsed.entries || [] : []) {
+    const index = typeof entry.index === 'number' ? entry.index : -1;
+    const target = entry.section === 'projects' ? resume.projects?.[index] : entry.section === 'workExperience' ? resume.workExperience?.[index] : undefined;
+    const bullets = Array.isArray(entry.bullets) ? entry.bullets : [];
+    // A changed bullet count would break the one-to-one evidence check; skip that entry.
+    if (!target || bullets.length !== target.bullets.length || !bullets.every(b => typeof b === 'string' && b.trim().length > 0)) continue;
+    bullets.forEach((bullet, i) => {
+      const next = (bullet as string).trim();
+      if (next === target.bullets[i]) return;
+      changes.push({ parameterId: 12, section: entry.section === 'projects' ? 'projects' : 'experience', before: target.bullets[i], after: next, description: 'Rewrote bullet with an action verb and job wording.' });
+      target.bullets[i] = next;
+    });
+  }
+  return changes;
+}
+
 export async function optimizeByParameter(
   resume: ResumeData,
   jobDescription: string,
@@ -817,7 +922,9 @@ export async function optimizeByParameter(
     parametersFixed.push(4);
   }
 
-  if (gapIds.has(19) || gapIds.has(20) || gapIds.has(25)) {
+  const sections = options.sections || [];
+  // Smart and Deep align every project's tech stack (own evidence only), not just on a gap.
+  if (gapIds.has(19) || gapIds.has(20) || gapIds.has(25) || sections.includes('bullets')) {
     // This helper extracts technologies from the candidate's own project text;
     // JD-only tools are deliberately excluded.
     allChanges.push(...addProjectTechStacks(optimized, jobDescription));
@@ -832,9 +939,15 @@ export async function optimizeByParameter(
   // Project technologies, impact, metrics, and JD-only industry terms are
   // reported as user actions instead of being inserted automatically.
 
-  const aiSkillReorgChanges = await reorganizeSkillsForATS(optimized, jobDescription, options.model);
+  if (sections.length > 0) {
+    allChanges.push(...await rewriteSectionsWithAI(optimized, jobDescription, sections, gaps, [options.model || '', options.fallbackModel || '']));
+  }
+
+  // Skill categorisation is a side job: the cheap fallback model is enough when one is given.
+  const aiSkillReorgChanges = await reorganizeSkillsForATS(optimized, jobDescription, options.fallbackModel || options.model);
   allChanges.push(...aiSkillReorgChanges);
   allChanges.push(...pruneIrrelevantSkillsToJD(optimized, jobDescription));
+  allChanges.push(...orderSkillsByJdPriority(optimized, jobDescription));
   parametersFixed.push(22, 23);
 
   return {
