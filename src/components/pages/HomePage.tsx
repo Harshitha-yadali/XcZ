@@ -259,6 +259,7 @@ const trustedCompanies = [
   'Qualcomm',
   'ASML',
 ];
+const marqueeCompanies = trustedCompanies.slice(0, 24);
 
 const serviceCards: Array<{
   title: string;
@@ -924,21 +925,21 @@ export const HomePage: React.FC<HomePageProps> = ({
             Built for candidates applying to teams at
           </p>
           <div className="relative mt-5 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
-            <motion.div
-              className="flex w-max items-center"
-              animate={{ x: ['0%', '-50%'] }}
-              transition={{ duration: trustedCompanies.length, repeat: Infinity, ease: 'linear' }}
+            {/* CSS loop over a short list: the full ~200-name list made an 83,000px
+                strip whose JS animation stalled on phones. */}
+            <div
+              className="flex w-max items-center animate-[marquee-continuous_45s_linear_infinite] motion-reduce:animate-none"
             >
-              {[...trustedCompanies, ...trustedCompanies].map((company, index) => (
+              {[...marqueeCompanies, ...marqueeCompanies].map((company, index) => (
                 <div
                   key={`${company}-${index}`}
-                  aria-hidden={index >= trustedCompanies.length}
+                  aria-hidden={index >= marqueeCompanies.length}
                   className="w-44 flex-none text-center text-sm font-semibold tracking-[-0.02em] text-slate-500 transition hover:text-slate-300 sm:w-52 sm:text-base"
                 >
                   {company}
                 </div>
               ))}
-            </motion.div>
+            </div>
           </div>
         </div>
       </section>
